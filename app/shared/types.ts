@@ -149,6 +149,14 @@ export interface Doc {
   path: string;
   type: DocType;
   label: string;
+  /**
+   * Готовое дополнение к команде: `колонку`, `в аудиторию`. Оболочка не склоняет
+   * русский язык — форма пишется в заметке, вместе с предлогом. По умолчанию
+   * совпадает с `label`: `учебник`, `окно`, `Тоби` в падеже не меняются.
+   */
+  target: string;
+  /** Формы для отдельных глаголов, если общей не хватает: `подойти: к доске`. */
+  targets: Record<string, string>;
   date: string | null;
   fm: Record<string, unknown>;
   nodes: Node[];

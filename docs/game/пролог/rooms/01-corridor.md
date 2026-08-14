@@ -2,6 +2,7 @@
 id: 01-corridor
 type: room
 label: коридор
+target: в коридор
 date: 14.10.2024
 exits: [01-hall]
 items: [01-notice]
@@ -18,3 +19,4 @@ items: [01-notice]
 ```
 
 → уйти [[scenes/02-titles]]
+  - advance

@@ -24,6 +24,10 @@ export interface TargetInfo {
   docId: string;
   type: DocType;
   label: string;
+  /** Готовое дополнение к команде: `колонку`, `в аудиторию`. */
+  target: string;
+  /** Дополнения для отдельных глаголов: `подойти: к доске`. */
+  targets: Record<string, string>;
   nodeIds: Set<string>;
   /** Глаголы предмета, работающие только когда он на руках. */
   inHand: string[];
@@ -47,6 +51,20 @@ export function verbOf(phrase: string): string {
 
 function label(phrase: string, object: string): string {
   return `${phrase} ${object}`.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Чем заканчивается сгенерированная команда (07-оболочка-тз, «Генераторы опций»).
+ *
+ * Оболочка не склоняет русский язык и не пытается: `label` — это название вещи,
+ * а после глагола нужна форма, и она пишется в заметке готовой, вместе с предлогом.
+ * Порядок: форма для этого глагола → общая форма → название.
+ *
+ * `target` можно не писать, только если форма буквально совпадает с названием
+ * (`учебник`, `окно`, `Тоби`), — падеж совпал, и врать не о чем.
+ */
+function form(target: TargetInfo, verb: string): string {
+  return target.targets[verb] ?? target.target;
 }
 
 function optionTo(
@@ -112,7 +130,7 @@ function expandGenerator(
     if (PLACES.includes(target.type)) {
       options.push(
         optionTo(ctx, docId, ref, gen.line, (t) => ({
-          label: label(gen.phrase, t.label),
+          label: label(gen.phrase, form(t, verb)),
           kind: kindOf(t),
           attrs: emptyAttrs(),
           verb,
@@ -138,7 +156,7 @@ function expandGenerator(
 
     options.push(
       optionTo(ctx, docId, `${ref}#${paged ? target.pages[0]! : verb}`, gen.line, (t) => ({
-        label: label(gen.phrase, t.label),
+        label: label(gen.phrase, form(t, verb)),
         kind: kindOf(t),
         attrs: emptyAttrs(),
         verb,

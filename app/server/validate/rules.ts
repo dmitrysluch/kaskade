@@ -898,9 +898,58 @@ const pages: Rule = {
   },
 };
 
+/**
+ * Формы дополнения (07-оболочка-тз, «Генераторы опций»).
+ *
+ * Проверяем типы и то, что точечная форма адресована существующему глаголу:
+ * опечатка в ключе `targets` иначе не видна вовсе — команда молча соберётся
+ * с общей формой, и `подойти к доске` однажды станет `подойти доску`.
+ */
+const targetForms: Rule = {
+  id: 'targets',
+  title: 'форма дополнения написана неверно',
+  run(content) {
+    const found: Finding[] = [];
+    const byEpisode = new Map(content.episodes.map((e) => [e.id, e]));
+
+    for (const doc of Object.values(content.docs)) {
+      const complain = (message: string) =>
+        found.push({ rule: 'targets', severity: 'error', file: doc.path, message });
+
+      const target = doc.fm.target;
+      if (target != null && (typeof target !== 'string' || target.trim() === '')) {
+        complain('target — это готовое дополнение к команде одной строкой: `в аудиторию`');
+      }
+
+      const targets = doc.fm.targets;
+      if (targets == null) continue;
+      if (typeof targets !== 'object' || Array.isArray(targets)) {
+        complain('targets — это словарь «глагол: форма», например `подойти: к доске`');
+        continue;
+      }
+
+      const episodeId = episodeOf(doc.docId);
+      const episode = episodeId ? byEpisode.get(episodeId) : undefined;
+
+      for (const [verb, form] of Object.entries(targets as Record<string, unknown>)) {
+        if (typeof form !== 'string' || form.trim() === '') {
+          complain(`targets.${verb} — это строка: форма, которая встанет после глагола`);
+        }
+        // Глагол, которого нет, — опечатка: форма не сработает никогда.
+        if (episode && !episode.verbs.includes(verb) && !episode.itemVerbs.includes(verb)) {
+          complain(`targets.${verb}: глагол "${verb}" не объявлен ни в verbs, ни в itemVerbs эпизода "${episode.id}"`);
+        }
+      }
+    }
+
+    return found;
+  },
+};
+
 export const RULES: Rule[] = [
   brokenGraph,
   pages,
+  targetForms,
   routes,
   hubExit,
   dates,

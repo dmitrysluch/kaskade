@@ -185,6 +185,10 @@ export function loadContent(): GameContent {
         docId,
         type: raw.type,
         label: String(raw.fm.label ?? id),
+        // Форма после глагола: пишется в заметке готовой. Не написана — берём
+        // название: у слов вроде `учебник` падеж и так совпадает.
+        target: raw.fm.target == null ? String(raw.fm.label ?? id) : String(raw.fm.target).trim(),
+        targets: strMap(raw.fm.targets),
         nodeIds: new Set(raw.nodes.map((n) => n.id)),
         inHand: strArray(raw.fm.inHand),
         // Порядок страниц считаем один раз здесь: и генератор опций, и клиент,
@@ -248,6 +252,8 @@ export function loadContent(): GameContent {
       path: p.raw.path,
       type: p.raw.type,
       label: p.info.label,
+      target: p.info.target,
+      targets: p.info.targets,
       date,
       fm: p.raw.fm,
       nodes: built,

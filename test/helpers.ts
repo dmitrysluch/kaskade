@@ -42,6 +42,8 @@ export function doc(docId: string, patch: Partial<Doc> = {}): Doc {
     path: `/content/${docId}.md`,
     type: 'scene',
     label: id,
+    target: id,
+    targets: {},
     date: null,
     fm: {},
     nodes: [],

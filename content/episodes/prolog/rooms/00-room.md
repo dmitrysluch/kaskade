@@ -2,6 +2,7 @@
 id: 00-room
 type: room
 label: комната
+target: в комнату
 date: 12.10.2024
 items: [00-book, 00-schedule, 00-blister, 00-speaker, 00-window]
 # Первый экран игры. Два состояния — два узла ([[07-оболочка-тз]], «Комната —

@@ -9,11 +9,24 @@ import { expandNode, type ExpandContext, type TargetInfo } from '../app/server/c
  */
 
 const TARGETS: Record<string, TargetInfo> = {
-  'rooms/коридор': { docId: 'rooms/коридор', type: 'room', label: 'коридор', nodeIds: new Set(['']), inHand: [], pages: [] },
+  'rooms/коридор': {
+    docId: 'rooms/коридор',
+    type: 'room',
+    label: 'коридор',
+    // Форма после глагола пишется в заметке готовой, вместе с предлогом:
+    // склонять русский язык оболочка не умеет и не пробует.
+    target: 'в коридор',
+    targets: {},
+    nodeIds: new Set(['']),
+    inHand: [],
+    pages: [],
+  },
   'items/телефон': {
     docId: 'items/телефон',
     type: 'item',
     label: 'телефон',
+    target: 'телефон',
+    targets: {},
     nodeIds: new Set(['', 'осмотреть', 'взять', 'позвонить']),
     inHand: ['позвонить'],
     pages: [],
@@ -22,7 +35,9 @@ const TARGETS: Record<string, TargetInfo> = {
     docId: 'items/доска',
     type: 'item',
     label: 'доска',
-    nodeIds: new Set(['', 'осмотреть']),
+    target: 'доску',
+    targets: { подойти: 'к доске' },
+    nodeIds: new Set(['', 'осмотреть', 'подойти']),
     inHand: [],
     pages: [],
   },
@@ -48,7 +63,7 @@ test('комната без блока options ведёт себя очевид�
 
   assert.deepEqual(
     options.map((o) => o.label),
-    ['идти коридор', 'осмотреть доска'],
+    ['идти в коридор', 'осмотреть доску'],
   );
 });
 
@@ -65,12 +80,36 @@ test('предмет отвечает только на то, что умеет,
   const doc = room('\n```options\nосмотреть: items\nвзять: items\n```\n');
   const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], ['доска', 'телефон']);
 
-  // У доски есть только `осмотреть` — `взять доска` не появляется.
+  // У доски есть только `осмотреть` — `взять доску` не появляется.
   assert.deepEqual(
     options.map((o) => o.label),
-    ['осмотреть доска', 'осмотреть телефон', 'взять телефон'],
+    ['осмотреть доску', 'осмотреть телефон', 'взять телефон'],
   );
   assert.equal(options.every((o) => !o.moves), true);
+});
+
+test('после глагола стоит готовая форма, а не название вещи', () => {
+  const doc = room('\n```options\nосмотреть: items\nподойти: items\n```\n');
+  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], ['доска']);
+
+  // Общая форма — из `target`, а глагол, которому нужна своя, берёт её из
+  // `targets`: склонять русский язык оболочка не умеет и не пробует.
+  assert.deepEqual(
+    options.map((o) => o.label),
+    ['осмотреть доску', 'подойти к доске'],
+  );
+
+  // Название при этом остаётся названием: в «предметах» и в карточке — `доска`.
+  assert.deepEqual(
+    options.map((o) => o.object),
+    ['items/доска', 'items/доска'],
+  );
+});
+
+test('форма не написана — берётся название: падеж и так совпал', () => {
+  const doc = room('\n```options\nосмотреть: items\n```\n');
+  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], ['телефон']);
+  assert.deepEqual(options.map((o) => o.label), ['осмотреть телефон']);
 });
 
 test('глагол из inHand комната не отдаёт: сначала возьми', () => {

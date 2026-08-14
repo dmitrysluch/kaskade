@@ -120,8 +120,9 @@ function fromInventory(content: GameContent, save: SaveState): CatalogOption[] {
           : doc.nodes.find((n) => n.id === verb);
       if (!node) continue;
       const option: Option = {
-        // Вещь на руках — то же окружение, только оно ездит с игроком.
-        label: node.attrs.label ?? `${verb} ${doc.label}`,
+        // Вещь на руках — то же окружение, только оно ездит с игроком. После
+        // глагола идёт готовая форма из заметки, как и у опций комнаты.
+        label: node.attrs.label ?? `${verb} ${doc.targets[verb] ?? doc.target}`,
         kind: 'environment',
         target: node.addr,
         attrs: node.attrs,
