@@ -1,3 +1,4 @@
+import { said, voiceOf } from '../../shared/speech.ts';
 import type { GameContent, Node, Option, SaveState } from '../../shared/types.ts';
 
 /**
@@ -146,13 +147,27 @@ export function pageAt(content: GameContent, save: SaveState, docId: string): No
  * Точная реплика, которую Марго скажет, если выбрать эту опцию (07-оболочка-тз,
  * «Команда короче реплики»).
  *
- * Считается из первой строки целевого узла и в контенте не дублируется: метка —
- * короткое ядро, реплика живёт там, где она и прозвучит. Если за действием
- * реплики Марго нет, предпросмотра нет тоже.
+ * Считается из целевого узла и в контенте не дублируется: метка — короткое ядро,
+ * реплика живёт там, где она и прозвучит.
+ *
+ * Узел читается сверху, ремарки пропускаются: произнести их оболочке нечем,
+ * а показать в области реплики значит соврать, будто это скажет Марго. Пропуск
+ * кончается на первой же реплике — она либо Марго, и тогда попадает
+ * в предпросмотр, либо собеседника, и тогда за этим ходом слов Марго нет.
+ *
+ * Так устроены, например, три подстановки в `00-talk`: перед репликой стоит
+ * «Ты правишь три слова карандашом и читаешь вслух», и игрок всё равно видит,
+ * что именно прочтёт вслух.
  */
 export function previewOf(content: GameContent, option: Option): string | null {
-  const first = (option.target ? content.nodes[option.target]?.text : '')?.split('\n')[0]?.trim();
-  return first && /^—\s/.test(first) ? first : null;
+  const text = (option.target ? content.nodes[option.target]?.text : '') ?? '';
+  for (const line of text.split('\n')) {
+    if (line.trim() === '') continue;
+    const voice = voiceOf(line);
+    if (voice === 'remark') continue;
+    return voice === 'margo' ? said(line).trim() : null;
+  }
+  return null;
 }
 
 /** Срок с подписью и датой — то, что показывает статус. Только назначенные. */

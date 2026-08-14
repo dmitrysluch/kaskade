@@ -1,6 +1,7 @@
 import {
   clip,
   codes,
+  ellipsis,
   hanging,
   highlight,
   MARGIN,
@@ -15,27 +16,18 @@ import {
 import type { CatalogOption } from '../engine/catalog.ts';
 import type { OverlayCall, OverlayCommand, StreamEntry, Term } from '../engine/state.ts';
 import { days, daysBetween } from '../../shared/dates.ts';
+import { said, voiceOf } from '../../shared/speech.ts';
 import type { GameContent, Portrait, SaveState } from '../../shared/types.ts';
 
 /** Состояние → строки. Всё, что попадает на экран, сначала становится строками знаков. */
 
 /**
- * Кто говорит (07-оболочка-тз, «Кто говорит»):
- *
- *   `> — Знаю.`      собеседник
- *   `— Нет, ...`     Марго
- *   обычный абзац    ремарка, описание, действие
- *
- * Три слоя разведены цветом и отступом, объяснять игроку ничего не надо.
- * Цвета живут в палитре рендерера, здесь только классы.
+ * Кто говорит (07-оболочка-тз, «Кто говорит»). Три слоя разведены цветом и
+ * отступом, объяснять игроку ничего не надо; сам признак живёт в `shared/speech`,
+ * потому что по нему же предпросмотр ищет реплику Марго.
  */
 function speaker(line: string): { cls: string; body: string } {
-  // Реплики собеседника автор пишет цитатой — в Obsidian так и надо. На экране
-  // знак цитаты снимается целиком: `>` здесь занят приглашением ввода, а кто
-  // говорит, видно по цвету — отступ ничего к этому не добавлял.
-  if (/^\s*>\s?/.test(line)) return { cls: 'speech', body: line.replace(/^\s*>\s?/, '') };
-  if (/^\s*—\s/.test(line)) return { cls: 'margo', body: line.trimStart() };
-  return { cls: 'remark', body: line };
+  return { cls: voiceOf(line), body: said(line) };
 }
 
 export function streamLines(entries: StreamEntry[], max: number, words: string[] = []): Seg[][] {
@@ -244,6 +236,10 @@ export function commandLines(
  *
  * Предпросмотр приглушён и в поток не попадает: после `Enter` та же реплика
  * придёт как часть сцены, обычным цветом Марго.
+ *
+ * Длинную реплику разрешено обрезать, пересказывать — нет: дословность головы
+ * фразы и есть гарантия, ради которой предпросмотр существует, а многоточие
+ * честно говорит, что дальше есть ещё.
  */
 export function detailLines(
   preview: string | null,
@@ -253,11 +249,13 @@ export function detailLines(
 ): Seg[][] {
   const lines: Seg[][] = [];
   if (preview) {
-    // Реплика показывается целиком и дословно, поэтому переносится, а не режется.
     // Строку под предупреждение держим только тогда, когда оно будет.
-    for (const line of wrap(`Марго: ${preview}`, max).slice(0, Math.max(1, rows - (advance ? 1 : 0)))) {
-      lines.push([{ text: pad() }, { text: line, cls: 'preview' }]);
-    }
+    const room = Math.max(1, rows - (advance ? 1 : 0));
+    const all = wrap(`Марго: ${preview}`, max);
+    const shown = all.slice(0, room);
+    if (all.length > room) shown[shown.length - 1] = ellipsis(shown[shown.length - 1]!, max);
+
+    for (const line of shown) lines.push([{ text: pad() }, { text: line, cls: 'preview' }]);
   }
   if (advance) lines.push([{ text: pad() }, { text: ADVANCE_LEGEND, cls: 'dim' }]);
 

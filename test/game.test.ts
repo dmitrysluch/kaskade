@@ -7,6 +7,7 @@ import { begin, dateAt, enter, evalCondition, freshSave, interpolate, previewOf,
 import { overlayLines, statusText } from '../app/client/ui/lines.ts';
 import type { SaveState } from '../app/shared/types.ts';
 import type { StreamEntry } from '../app/client/engine/state.ts';
+import { option } from './helpers.ts';
 
 /**
  * Интеграция на настоящем vault: то, что нельзя проверить на стенде — проходится ли
@@ -386,7 +387,7 @@ test('выданное слово объявляется в потоке', () =>
   assert.deepEqual(enter(game, r.save, giver.addr, false).entries.filter((e) => e.kind === 'grant'), []);
 });
 
-test('предпросмотр берёт первую реплику целевого узла, а не выдумывает текст', () => {
+test('предпросмотр берёт реплику Марго целевого узла, а не выдумывает текст', () => {
   // Ищем по графу, а не по имени узла: реплики автор переписывает каждый день.
   const withReply = Object.values(game.nodes)
     .flatMap((n) => n.options)
@@ -395,13 +396,38 @@ test('предпросмотр берёт первую реплику целев
   assert.ok(withReply.length > 10, `предпросмотров всего ${withReply.length}`);
   for (const option of withReply) {
     const target = game.nodes[option.target!]!;
-    assert.equal(previewOf(game, option), target.text.split('\n')[0]);
-    assert.match(previewOf(game, option)!, /^—\s/, 'предпросмотр показывает реплику Марго');
+    const preview = previewOf(game, option)!;
+    assert.match(preview, /^—\s/, 'предпросмотр показывает реплику Марго');
+    // Дословно: строка обязана найтись в узле как есть, а не быть пересказом.
+    assert.ok(
+      target.text.split('\n').some((l) => l.trim() === preview),
+      `предпросмотра "${preview}" нет в узле ${target.addr}`,
+    );
   }
 
   // За действием без реплики Марго предпросмотра нет.
   const look = game.nodes['episodes/prolog/rooms/00-room#']!.options.find((o) => o.verb === 'осмотреть')!;
   assert.equal(previewOf(game, look), null);
+});
+
+test('предпросмотр проходит сквозь ремарку, но не сквозь чужую реплику', () => {
+  // Настоящий случай из пролога: перед репликой стоит «Ты правишь три слова
+  // карандашом и читаешь вслух». Оболочка обязана показать то, что прочтут.
+  const afterRemark = Object.values(game.nodes).filter((n) => {
+    const lines = n.text.split('\n').filter((l) => l.trim() !== '');
+    return lines.length > 1 && !/^[>—]/.test(lines[0]!.trim()) && /^—\s/.test(lines[1]!.trim());
+  });
+
+  assert.ok(afterRemark.length > 0, 'в прологе нет узла с ремаркой перед репликой Марго');
+  for (const node of afterRemark) {
+    const preview = previewOf(game, option({ target: node.addr }));
+    assert.equal(preview, node.text.split('\n').filter((l) => l.trim() !== '')[1]!.trim());
+  }
+
+  // Узел, который начинает собеседник, предпросмотра не даёт: за этим ходом
+  // слов Марго нет, и придумывать их нельзя.
+  const answers = Object.values(game.nodes).find((n) => /^>/.test(n.text.trim()))!;
+  assert.equal(previewOf(game, option({ target: answers.addr })), null);
 });
 
 test('список идёт в одном порядке: окружение, сюжет, advance, служебные', () => {

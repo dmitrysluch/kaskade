@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clip, highlight, spread, width, wrap } from '../app/client/ui/text.ts';
+import { clip, ellipsis, highlight, spread, width, wrap } from '../app/client/ui/text.ts';
 import {
   commandLines,
   detailLines,
@@ -375,6 +375,51 @@ test('детали показывают реплику Марго целиком
   // Без реплики область пустая, но высоту держит.
   assert.equal(detailLines(null, false, 60, rows).length, rows);
   assert.equal(detailLines(null, false, 60, rows).every((l) => l.length === 0), true);
+});
+
+test('длинную реплику обрезает многоточие, а не пересказ', () => {
+  const long =
+    '— Оболочка рассчитана на проектную аварию — аварию, условия которой перечислены ' +
+    'в проекте. Авария, условия которой в проекте не перечислены, называется запроектной.';
+  const shown = detailLines(long, false, 40, 2);
+  const text = shown.map((l) => l.map((s) => s.text).join('').trim());
+
+  // Голова фразы дословна: это и есть гарантия, ради которой предпросмотр живёт.
+  assert.equal(text[0], 'Марго: — Оболочка рассчитана на');
+  assert.match(text[1]!, /…$/, 'обрезка молчит о том, что дальше есть ещё');
+
+  // Показанное — начало реплики слово в слово; последнее могло лишиться точки,
+  // прилипшей к многоточию.
+  const shownWords = text.join(' ').replace('Марго: ', '').replace(/…$/, '').trim().split(/\s+/);
+  const said = long.split(/\s+/);
+  assert.deepEqual(shownWords.slice(0, -1), said.slice(0, shownWords.length - 1));
+  assert.ok(said[shownWords.length - 1]!.startsWith(shownWords.at(-1)!));
+
+  // Ширина колонки не превышена ни на знак: многоточие — часть строки.
+  for (const line of shown) assert.ok(line.map((s) => s.text).join('').length <= 40 + MARGIN.text);
+
+  // Короткая реплика многоточия не получает.
+  assert.equal(
+    detailLines('— Ладно.', false, 40, 2)[0]!.map((s) => s.text).join('').includes('…'),
+    false,
+  );
+
+  // Предупреждение advance отнимает строку, и обрезка это учитывает.
+  const warned = detailLines(long, true, 40, 2).map((l) => l.map((s) => s.text).join('').trim());
+  assert.match(warned[0]!, /…$/);
+  assert.match(warned[1]!, /нельзя вернуться/);
+});
+
+test('многоточие режет по границе слова и влезает в колонку', () => {
+  assert.equal(ellipsis('— Оболочка рассчитана на проектную', 40), '— Оболочка рассчитана на проектную…');
+  // Не влезает — уходит последнее слово целиком, а не его половина.
+  assert.equal(ellipsis('— Оболочка рассчитана на проектную', 34), '— Оболочка рассчитана на…');
+  // Одно длинное слово рвать приходится: пустой строки в деталях быть не должно.
+  assert.equal(ellipsis('BAYNOPV63991', 6), 'BAYNO…');
+  assert.equal(ellipsis('BAYNOPV63991', 6).length, 6);
+
+  // Точка, прилипшая к многоточию, уходит: слов это не меняет, вида — очень.
+  assert.equal(ellipsis('Всё перечислено в проекте.', 40), 'Всё перечислено в проекте…');
 });
 
 test('служебная полоса закреплена и не зависит от ввода', () => {
