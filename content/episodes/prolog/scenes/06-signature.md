@@ -3,6 +3,8 @@ id: 06-signature
 type: scene
 label: подпись
 date: 11.09.2026
+location: TU BERLIN · КАФЕДРА 2.14
+timeLabel: шесть дней спустя
 ---
 
 Кафедра, комната 2.14. Он стоит у окна спиной и ждёт чайник.

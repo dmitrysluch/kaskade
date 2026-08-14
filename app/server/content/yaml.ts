@@ -81,24 +81,11 @@ export function parseRenderer(file: string, id: string, raw: unknown): RendererD
     throw new ContentError(file, `рендерер "${id}": нет линейки "${rule}"; есть light, heavy, double, dashed, none`);
   }
 
-  // Длительность полноэкранных состояний. Ноль — законное значение (титр без
-  // паузы), отрицательное и нечисловое — нет: экран завис бы навсегда.
-  const timingRaw = (r.timing ?? {}) as Record<string, unknown>;
-  const ms = (key: string, fallback: number): number => {
-    if (timingRaw[key] == null) return fallback;
-    const n = Number(timingRaw[key]);
-    if (!Number.isFinite(n) || n < 0) {
-      throw new ContentError(file, `рендерер "${id}": timing.${key} должен быть числом миллисекунд, а не "${timingRaw[key]}"`);
-    }
-    return n;
-  };
-
   return {
     id,
     palette,
     frame,
     rule,
-    timing: { splash: ms('splash', 3000), titlecard: ms('titlecard', 2400), bios: ms('bios', 2200) },
     font: {
       family: String(font.family ?? 'IBM Plex Mono'),
       size: Number(font.size ?? 16),

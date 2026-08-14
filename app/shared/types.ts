@@ -184,12 +184,6 @@ export interface RendererDef {
   rule: string;
   /** `rows` — сколько строк должно влезать в окно; ширина следует из неё (metrics.ts). */
   font: { family: string; size: number; rows: number; line: number };
-  /**
-   * Сколько держится полноэкранное состояние, в миллисекундах. Это темп машины,
-   * а не константа кода: у академической TU титр висит спокойно, у аварийного
-   * пульта 2038-го он мелькает, и разница задаётся в game.yaml, а не правкой.
-   */
-  timing: { splash: number; titlecard: number; bios: number };
   effects: string[];
   ambience: string | null;
   keyboard: string | null;

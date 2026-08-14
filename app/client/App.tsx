@@ -448,7 +448,6 @@ export function App() {
           lines={portraitLines(splash)}
           card={node?.text ?? ''}
           glyphs={frameGlyphs(renderer.frame)}
-          ms={renderer.timing.splash}
           onDone={splashCardDone}
         />
       );
@@ -461,14 +460,13 @@ export function App() {
           cols={cols}
           rows={rows}
           glyphs={frameGlyphs(renderer.frame)}
-          timing={renderer.timing}
           onDone={cardDone}
         />
       );
     }
     if (splash) {
       return (
-        <Splash lines={portraitLines(splash)} ms={renderer.timing.splash} onDone={splashDone} />
+        <Splash lines={portraitLines(splash)} onDone={splashDone} />
       );
     }
     // Обучающий слой поверх всего: инструкция к игре, а не игра.

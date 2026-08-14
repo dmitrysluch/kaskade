@@ -3,6 +3,8 @@ id: 01-hall
 type: room
 label: аудитория
 date: 14.10.2024
+location: TU BERLIN · АУДИТОРИЯ H 1012
+timeLabel: два дня спустя
 exits: [01-corridor]
 items: [01-board]
 # Два состояния — два узла ([[07-оболочка-тз]], «Комната — не одно место»).

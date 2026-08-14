@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import { clip, width as segWidth, wrap, type Seg } from './text.ts';
+import { clip, MARGIN, width as segWidth, wrap, type Seg } from './text.ts';
 
 /**
  * Экран как сетка знаков.
@@ -289,11 +289,14 @@ export function CardScreen({
   rows,
   text,
   glyphs,
+  hint,
 }: {
   cols: number;
   rows: number;
   text: string;
   glyphs: FrameGlyphs | null;
+  /** Подпись в правом нижнем поле: единственное, что тут можно сделать. */
+  hint?: string;
 }) {
   const box = cardBox(text, glyphs, Math.max(1, Math.min(cols - 8, CARD_MAX)));
   const width = Math.max(...box.map((l) => l.length));
@@ -314,10 +317,14 @@ export function CardScreen({
   );
 
   const above = Math.max(0, Math.floor((rows - lines.length) / 2));
+  // Подсказка стоит в правом нижнем поле — там же, где статус в терминале.
+  const foot: Seg[] =
+    hint == null ? [] : [{ text: ' '.repeat(Math.max(0, cols - MARGIN.right - hint.length)) }, { text: hint, cls: 'dim' }];
+
   return (
     <>
       {Array.from({ length: rows }, (_, i) => (
-        <Line key={i} segs={lines[i - above] ?? []} cols={cols} />
+        <Line key={i} segs={(i === rows - 2 ? foot : lines[i - above]) ?? []} cols={cols} />
       ))}
     </>
   );

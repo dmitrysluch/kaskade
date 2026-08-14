@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { ADVANCE_HINT, useAdvance } from './advance.ts';
 import { CardScreen, type FrameGlyphs } from './Screen.tsx';
 
 /**
@@ -17,7 +18,9 @@ import { CardScreen, type FrameGlyphs } from './Screen.tsx';
  * за игру. Псевдо-BIOS рамки не получает: это не вещь, которую предъявляют,
  * а машина, говорящая от себя.
  *
- * Сколько всё это висит — из `timing` рендерера: темп машины, как палитра.
+ * Ни один кадр не закрывается по таймеру: каждый ждёт отдельного нового нажатия
+ * `Enter`. Последовательность не может проехать сама и не может быть проскочена
+ * удерживаемой клавишей.
  */
 export function Transition({
   card,
@@ -25,7 +28,6 @@ export function Transition({
   cols,
   rows,
   glyphs,
-  timing,
   onDone,
 }: {
   card: string;
@@ -33,21 +35,18 @@ export function Transition({
   cols: number;
   rows: number;
   glyphs: FrameGlyphs;
-  timing: { titlecard: number; bios: number };
   onDone: () => void;
 }) {
   const [stage, setStage] = useState<'card' | 'bios'>('card');
 
-  useEffect(() => {
-    if (stage === 'card') {
-      const t = setTimeout(bios.length > 0 ? () => setStage('bios') : onDone, timing.titlecard);
-      return () => clearTimeout(t);
-    }
-    const t = setTimeout(onDone, timing.bios);
-    return () => clearTimeout(t);
-  }, [stage, bios.length, timing.titlecard, timing.bios, onDone]);
+  // Каждый кадр ждёт своего нажатия: карточка уводит в bios, bios — дальше.
+  const next = useCallback(
+    () => (stage === 'card' && bios.length > 0 ? setStage('bios') : onDone()),
+    [stage, bios.length, onDone],
+  );
+  useAdvance(next);
 
   return stage === 'card' ?
-      <CardScreen cols={cols} rows={rows} text={card} glyphs={glyphs} />
-    : <CardScreen cols={cols} rows={rows} text={bios.join('\n')} glyphs={null} />;
+      <CardScreen cols={cols} rows={rows} text={card} glyphs={glyphs} hint={ADVANCE_HINT} />
+    : <CardScreen cols={cols} rows={rows} text={bios.join('\n')} glyphs={null} hint={ADVANCE_HINT} />;
 }

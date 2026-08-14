@@ -222,3 +222,18 @@ test('псевдо-BIOS идёт без рамки: это не предъявл
   }
   assert.ok(lines.some((l) => l.includes('ПАМЯТЬ 640K OK')));
 });
+
+test('кадр говорит, что ждёт Enter, и подпись стоит в правом нижнем поле', () => {
+  const lines = screenText(
+    <CardScreen cols={72} rows={12} text="08.06.2025" glyphs={FRAMES.heavy!} hint="Enter" />,
+  );
+
+  assertRectangular(lines, 72);
+  const foot = lines[lines.length - 2]!;
+  assert.equal(foot.trim(), 'Enter');
+  assert.equal(foot.trimEnd().length, 72 - MARGIN.right);
+
+  // Без подсказки — пусто: у финального кадра дальше ничего нет.
+  const silent = screenText(<CardScreen cols={72} rows={12} text="08.06.2025" glyphs={FRAMES.heavy!} />);
+  assert.equal(silent.some((l) => l.includes('Enter')), false);
+});

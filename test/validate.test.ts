@@ -215,7 +215,6 @@ test('сплэш, который не влезает в кадр, находит
         frame: 'light',
         rule: 'light',
         font: { family: 'mono', size: 16, rows: 34, line: 1 },
-        timing: { splash: 3000, titlecard: 2400, bios: 2200 },
         effects: [],
         ambience: null,
         keyboard: null,

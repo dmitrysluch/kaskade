@@ -267,10 +267,10 @@ test('портрет Марго — сетка индексов, и в прол�
   assert.equal(portrait.colors['o'], undefined);
 });
 
-test('длительность титра и сплэша берётся из конфига, а не из кода', () => {
-  const timing = game.renderers.academic!.timing;
-  assert.ok(timing.splash > 0 && timing.titlecard > 0 && timing.bios > 0);
-  assert.equal(timing.splash, 3000);
+test('длительности показа в конфиге нет: кадр ждёт Enter, а не таймер', () => {
+  // Решение «игрок уже посмотрел» машина за него не принимает
+  // (07-оболочка-тз, «Полноэкранный кадр ждёт Enter»).
+  assert.equal('timing' in game.renderers.academic!, false);
 });
 
 test('титр передаёт дату статусу', () => {
