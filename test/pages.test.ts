@@ -153,7 +153,7 @@ test('служебные команды есть и внутри книги', ()
   const opened = enter(g, save(), `${BOOK}#обложка`, false).save;
   const system = buildCatalog(g, opened, BOOK).filter((o) => o.system).map((o) => o.label);
 
-  assert.deepEqual(system, ['справочник', 'дело', 'предметы']);
+  assert.deepEqual(system, ['справочник', 'дело', 'предметы', 'меню']);
 });
 
 test('закрыть возвращает комнату, а закладку оставляет', () => {

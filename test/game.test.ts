@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { loadContent } from '../app/server/content/load.ts';
 import { validate } from '../app/server/validate/index.ts';
 import { buildCatalog } from '../app/client/engine/catalog.ts';
-import { dateAt, enter, evalCondition, freshSave, interpolate, previewOf, sceneOf, terms } from '../app/client/engine/state.ts';
+import { begin, dateAt, enter, evalCondition, freshSave, interpolate, previewOf, sceneOf, terms } from '../app/client/engine/state.ts';
 import { overlayLines, statusText } from '../app/client/ui/lines.ts';
 import type { SaveState } from '../app/shared/types.ts';
 import type { StreamEntry } from '../app/client/engine/state.ts';
@@ -335,6 +335,41 @@ test('управление — действие оболочки, а не ком
   const all = labels(at('episodes/prolog/rooms/00-room#'));
   assert.equal(all.includes('управление'), false);
   assert.ok(all.includes('справочник') && all.includes('дело') && all.includes('предметы'));
+});
+
+test('меню — команда: сброс обязан находиться набором, а не только клавишей', () => {
+  const all = labels(at('episodes/prolog/rooms/00-room#'));
+  assert.ok(all.includes('меню'));
+
+  // Оно служебное, значит стоит в конце списка, а не среди действий комнаты.
+  const catalog = buildCatalog(game, at('episodes/prolog/rooms/00-room#'));
+  const option = catalog.find((o) => o.label === 'меню')!;
+  assert.equal(option.kind, 'system');
+  assert.equal(option.system?.kind, 'меню');
+  assert.equal(catalog.indexOf(option) > catalog.findIndex((o) => !o.system), true);
+
+  // Аргумента у меню нет: `меню сброс` вводить негде и не надо — выбор внутри.
+  assert.deepEqual(all.filter((l) => l.startsWith('меню ')), []);
+});
+
+test('начать заново — то же состояние, что первый запуск', () => {
+  // Сброс проходит через ту же дверь, что запуск: `begin` от чистого сейва.
+  const played = enter(game, at('episodes/prolog/rooms/00-room#'), 'episodes/prolog/rooms/00-room#').save;
+  assert.notDeepEqual(played.episodeState.at, freshSave(game).episodeState.at);
+
+  const again = begin(game, freshSave(game));
+  assert.equal(again.save.episodeState.at, game.episodes[0]!.entry);
+  assert.deepEqual(again.save.words, {});
+  assert.deepEqual(again.save.flags, {});
+  assert.deepEqual(again.save.inventory, []);
+  assert.deepEqual(again.save.splashes, []);
+  assert.deepEqual(again.save.itemStates, {});
+  assert.deepEqual(again.history, []);
+  assert.equal(again.reading, null);
+  assert.equal(again.overlay, null);
+  // Обучающий экран показывается снова: заново — значит и для нового игрока тоже.
+  assert.equal(again.save.taught, false);
+  assert.equal(again.save.hinted, false);
 });
 
 test('выданное слово объявляется в потоке', () => {

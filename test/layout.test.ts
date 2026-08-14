@@ -14,7 +14,7 @@ import { days, daysBetween, parseDate } from '../app/shared/dates.ts';
 import { fit } from '../app/client/ui/metrics.ts';
 import { MARGIN } from '../app/client/ui/text.ts';
 import { attrs } from './helpers.ts';
-import type { CatalogOption } from '../app/client/engine/catalog.ts';
+import { SYSTEM_COMMANDS, type CatalogOption } from '../app/client/engine/catalog.ts';
 
 /**
  * Раскладка экрана: каждая строка обязана быть ровно той ширины, которую ей отвели,
@@ -378,10 +378,13 @@ test('детали показывают реплику Марго целиком
 });
 
 test('служебная полоса закреплена и не зависит от ввода', () => {
-  const line = systemLine(['справочник', 'дело', 'предметы'], 60);
+  const line = systemLine(SYSTEM_COMMANDS, 80);
   const text = line.map((s) => s.text).join('').trim();
 
-  assert.equal(text, 'F1 справочник · F2 дело · предметы · F3 управление');
+  assert.equal(text, 'F1 справочник · F2 дело · предметы · F10 меню · F3 управление');
   // Все служебные — своим цветом.
-  assert.equal(line.filter((s) => s.cls === 'system').length, 4);
+  assert.equal(line.filter((s) => s.cls === 'system').length, 5);
+
+  // Полоса не ломает сетку и на узком экране: лишнее режется, а не переносится.
+  assert.equal(systemLine(SYSTEM_COMMANDS, 30).map((s) => s.text).join('').length, 30 + MARGIN.text);
 });

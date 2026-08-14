@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildCatalog, SYSTEM_COMMANDS, type CatalogOption } from './engine/catalog.ts';
 import { commonPrefix, exact, matches } from './engine/completion.ts';
 import {
+  begin,
   dateAt,
   enter,
   freshSave,
@@ -13,7 +14,7 @@ import {
   type StreamEntry,
   type SystemCommand,
 } from './engine/state.ts';
-import { loadSave, persistSave } from './engine/save.ts';
+import { clearSave, loadSave, persistSave } from './engine/save.ts';
 import { rendererFor } from './renderers/registry.ts';
 import { useMetrics } from './ui/metrics.ts';
 import {
@@ -41,6 +42,7 @@ import {
   viewport,
 } from './ui/lines.ts';
 import { Manual, Hint } from './ui/Manual.tsx';
+import { Menu } from './ui/Menu.tsx';
 import { Splash } from './ui/Splash.tsx';
 import { Transition } from './ui/Transition.tsx';
 import { Ambience, keystroke } from './audio/index.ts';
@@ -58,6 +60,8 @@ type Bundle = { ok: true; content: GameContent } | { ok: false; errors: string[]
 const HOTKEYS: Record<string, SystemCommand> = {
   F1: 'справочник',
   F2: 'дело',
+  // F10 — меню, как в терминальных оболочках, из которых эта игра выросла.
+  F10: 'меню',
 };
 
 /**
@@ -87,6 +91,12 @@ export function App() {
    */
   const [pick, setPick] = useState<number | null>(null);
   const [scroll, setScroll] = useState(0);
+  /**
+   * Открыто ли меню оболочки. Не в `Session` и не в оверлее: оверлей показывает
+   * содержимое игры, а меню говорит о самой игре — и переживать перезагрузку
+   * ему незачем.
+   */
+  const [menu, setMenu] = useState(false);
   const screenRef = useRef<HTMLDivElement | null>(null);
 
   const content = bundle?.ok ? bundle.content : null;
@@ -116,16 +126,11 @@ export function App() {
         // Узел мог исчезнуть, пока автор правил заметки: тогда начинаем эпизод
         // заново, а не показываем пустой экран.
         if (content.nodes[prev.save.episodeState.at]) return prev;
-        const started = { ...freshSave(content), started: true };
-        const r = enter(content, started, started.episodeState.at);
-        return { save: r.save, stream: r.entries, overlay: null, reading: null, history: [] };
+        return begin(content, freshSave(content));
       }
 
       const save = loadSave(content);
-      if (!save.started) {
-        const r = enter(content, { ...save, started: true }, save.episodeState.at);
-        return { save: r.save, stream: r.entries, overlay: null, reading: null, history: [] };
-      }
+      if (!save.started) return begin(content, save);
       // Продолжение: узел уже отыгран, его атрибуты применять второй раз нельзя —
       // просто показываем, где игрок стоит.
       const node = content.nodes[save.episodeState.at];
@@ -241,10 +246,14 @@ export function App() {
         : session.reading;
 
       if (option.system) {
+        const call = option.system;
+        // Меню — экран оболочки, а не оверлей содержимого. Командой оно при этом
+        // остаётся полноправной: эхо в потоке и запись в истории у него такие же.
+        if (call.kind === 'меню') setMenu(true);
         setSession({
           ...session,
           save: counted,
-          overlay: option.system,
+          overlay: call.kind === 'меню' ? null : { ...call, kind: call.kind },
           stream: [...session.stream, echo],
           reading,
           history,
@@ -317,15 +326,42 @@ export function App() {
     setSession((prev) => (prev ? { ...prev, save: { ...prev.save, taught: true } } : prev));
   }, []);
 
+  // Управление из меню: тот же экран, что по F3, — второй копии инструкции нет.
+  const menuManual = useCallback(() => {
+    setMenu(false);
+    setReopened(true);
+  }, []);
+
+  /**
+   * Начать заново. Сейв стирается, а не переписывается: состояние обязано быть
+   * неотличимо от первого запуска с чистой машины — с кадрами вступления и
+   * экраном управления. Иначе «заново» означало бы «почти заново», а разницу
+   * нашёл бы не автор, а следующий игрок.
+   */
+  const restart = useCallback(() => {
+    if (!content) return;
+    clearSave();
+    setSession(begin(content, freshSave(content)));
+    setMenu(false);
+    setReopened(false);
+    setInput('');
+    setPick(null);
+    setScroll(0);
+  }, [content]);
+
   // Пока идёт сплэш или обучение, ввод не принимается: терминал в этот момент
   // не терминал.
-  const accepting = Boolean(session) && !isCard && !splash && !manual && !session?.overlay;
+  const accepting = Boolean(session) && !isCard && !splash && !manual && !menu && !session?.overlay;
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (!session) return;
       const key = event.key;
       const page = Math.max(1, layout.streamRows - 1);
+
+      // Пока меню открыто, клавиши принадлежат ему одному: у него свои стрелки,
+      // свой Enter и свой Esc, и терминал под ним не должен их слышать.
+      if (menu) return;
 
       // Обучающий слой закрывается любой клавишей — это не «нажмите любую
       // клавишу», а «понял, дальше сам».
@@ -440,6 +476,16 @@ export function App() {
     if (!bundle) return <div className="dim">…</div>;
     if (!bundle.ok) return <ErrorScreen cols={cols} rows={rows} errors={bundle.errors} />;
     if (!session || !episode || !renderer) return <div className="dim">…</div>;
+    /*
+     * Слои оболочки идут поверх всего, включая кадры: F10 и F3 обязаны работать
+     * в любой момент. Иначе игрок, открывший меню на сплэше, нажимает клавишу
+     * и не видит ничего — экран открыт, а показан кадр.
+     *
+     * Сам собой обучающий слой поверх кадра не встанет: `teaching` требует, чтобы
+     * кадра не было. Сюда попадает только открытое руками.
+     */
+    if (menu) return <Menu onClose={() => setMenu(false)} onManual={menuManual} onRestart={restart} />;
+    if (manual) return <Manual first={!session.save.taught} />;
     // Лицо и запись на одном узле — личное дело: лицо, под ним рамка. Держится
     // столько же, сколько сплэш: разглядеть надо и то, и другое.
     if (splash && isCard) {
@@ -469,8 +515,6 @@ export function App() {
         <Splash lines={portraitLines(splash)} onDone={splashDone} />
       );
     }
-    // Обучающий слой поверх всего: инструкция к игре, а не игра.
-    if (manual) return <Manual first={!session.save.taught} />;
     if (session.overlay) {
       return (
         <OverlayScreen
@@ -516,7 +560,7 @@ export function App() {
   // обучение живёт в обучающем слое, а терминал с первой секунды выглядит так,
   // как будет выглядеть всегда.
   const hint =
-    session && episode?.tutorial.hint && !manual && !session.save.hinted &&
+    session && episode?.tutorial.hint && !manual && !menu && !session.save.hinted &&
     session.save.episodeState.at === episode.tutorial.at
       ? episode.tutorial.hint
       : null;

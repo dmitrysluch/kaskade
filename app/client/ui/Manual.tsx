@@ -21,6 +21,7 @@ const KEYS: [string, string][] = [
   ['F1', 'справочник'],
   ['F2', 'дело — слова, которые вы узнали'],
   ['F3', 'управление'],
+  ['F10', 'меню — начать заново'],
 ];
 
 export function Manual({ first }: { first: boolean }) {

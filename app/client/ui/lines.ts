@@ -13,7 +13,7 @@ import {
   type Span,
 } from './text.ts';
 import type { CatalogOption } from '../engine/catalog.ts';
-import type { StreamEntry, SystemCall, SystemCommand, Term } from '../engine/state.ts';
+import type { OverlayCall, OverlayCommand, StreamEntry, Term } from '../engine/state.ts';
 import { days, daysBetween } from '../../shared/dates.ts';
 import type { GameContent, Portrait, SaveState } from '../../shared/types.ts';
 
@@ -167,6 +167,7 @@ export const PICK_MARK = '›';
 const HOTKEY: Partial<Record<string, string>> = {
   справочник: 'F1',
   дело: 'F2',
+  меню: 'F10',
 };
 
 /** Категория опции → класс. Цвет — из палитры рендерера, здесь только связь. */
@@ -291,13 +292,13 @@ export function inputLine(input: string): Seg[] {
   ];
 }
 
-const TITLES: Record<SystemCommand, string> = {
+const TITLES: Record<OverlayCommand, string> = {
   справочник: 'СПРАВОЧНИК',
   дело: 'ДЕЛО',
   предметы: 'ПРЕДМЕТЫ',
 };
 
-export function overlayTitle(call: SystemCall): string {
+export function overlayTitle(call: OverlayCall): string {
   return call.arg ? `${TITLES[call.kind]} · ${call.arg.toUpperCase()}` : TITLES[call.kind];
 }
 
@@ -307,7 +308,7 @@ function picked(arg: string | null, label: string): boolean {
 }
 
 export function overlayLines(
-  call: SystemCall,
+  call: OverlayCall,
   content: GameContent,
   save: SaveState,
   max: number,

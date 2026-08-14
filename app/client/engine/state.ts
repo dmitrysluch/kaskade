@@ -11,7 +11,15 @@ export interface StreamEntry {
   text: string;
 }
 
-export type SystemCommand = 'справочник' | 'дело' | 'предметы';
+/** Служебные команды, которые открывают оверлей с содержимым игры. */
+export type OverlayCommand = 'справочник' | 'дело' | 'предметы';
+
+/**
+ * Все служебные команды. `меню` стоит особняком: остальные показывают то, что
+ * игрок в игре набрал, а меню говорит о самой игре — и потому оверлеем
+ * содержимого не является.
+ */
+export type SystemCommand = OverlayCommand | 'меню';
 
 /**
  * Служебная команда с необязательным аргументом: `справочник` открывает список,
@@ -23,10 +31,15 @@ export interface SystemCall {
   arg: string | null;
 }
 
+/** То же, но заведомо про содержимое: такой вызов умеет нарисовать оверлей. */
+export interface OverlayCall extends SystemCall {
+  kind: OverlayCommand;
+}
+
 export interface Session {
   save: SaveState;
   stream: StreamEntry[];
-  overlay: SystemCall | null;
+  overlay: OverlayCall | null;
   /**
    * Какой предмет сейчас читают: `docId` или `null`. Пока книга открыта, список
    * команд состоит из неё одной — комната ждёт снаружи.
@@ -317,6 +330,20 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
   }
 
   return { save: state, entries };
+}
+
+/**
+ * Начало сессии: войти туда, где стоит сейв, и показать, что там написано.
+ * `started` взводится здесь — узел отыгрывается ровно один раз, и второй запуск
+ * не выдаёт слова по второму разу.
+ *
+ * Через эту же дверь проходит «начать заново»: `begin(content, freshSave(...))`
+ * обязано быть неотличимо от первого запуска с чистой машины, иначе сброс
+ * оставлял бы хвосты — и заметил бы их не автор, а игрок.
+ */
+export function begin(content: GameContent, save: SaveState): Session {
+  const r = enter(content, { ...save, started: true }, save.episodeState.at);
+  return { save: r.save, stream: r.entries, overlay: null, reading: null, history: [] };
 }
 
 export function freshSave(content: GameContent): SaveState {
