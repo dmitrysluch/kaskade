@@ -5,6 +5,7 @@ import {
   dateAt,
   enter,
   freshSave,
+  pagesOf,
   previewOf,
   sceneOf,
   terms,
@@ -43,6 +44,7 @@ import { Manual, Hint } from './ui/Manual.tsx';
 import { Splash } from './ui/Splash.tsx';
 import { Transition } from './ui/Transition.tsx';
 import { Ambience, keystroke } from './audio/index.ts';
+import { CLOSE, EXAMINE } from '../shared/pages.ts';
 import { MARGIN } from './ui/text.ts';
 import type { GameContent } from '../shared/types.ts';
 
@@ -116,19 +118,19 @@ export function App() {
         if (content.nodes[prev.save.episodeState.at]) return prev;
         const started = { ...freshSave(content), started: true };
         const r = enter(content, started, started.episodeState.at);
-        return { save: r.save, stream: r.entries, overlay: null, history: [] };
+        return { save: r.save, stream: r.entries, overlay: null, reading: null, history: [] };
       }
 
       const save = loadSave(content);
       if (!save.started) {
         const r = enter(content, { ...save, started: true }, save.episodeState.at);
-        return { save: r.save, stream: r.entries, overlay: null, history: [] };
+        return { save: r.save, stream: r.entries, overlay: null, reading: null, history: [] };
       }
       // Продолжение: узел уже отыгран, его атрибуты применять второй раз нельзя —
       // просто показываем, где игрок стоит.
       const node = content.nodes[save.episodeState.at];
       const stream: StreamEntry[] = node?.text ? [{ kind: 'text', text: node.text }] : [];
-      return { save, stream, overlay: null, history: [] };
+      return { save, stream, overlay: null, reading: null, history: [] };
     });
   }, [content]);
 
@@ -165,7 +167,7 @@ export function App() {
       : undefined;
 
   const catalog = useMemo(
-    () => (content && session ? buildCatalog(content, session.save) : []),
+    () => (content && session ? buildCatalog(content, session.save, session.reading) : []),
     [content, session],
   );
 
@@ -223,19 +225,35 @@ export function App() {
       const counted =
         option.label === episode?.tutorial.hint ? { ...session.save, hinted: true } : session.save;
 
+      /*
+       * Чтение — отдельный уровень (07-оболочка-тз, «Страницы предмета»): пока
+       * книга открыта, список состоит из неё одной. Новых полей у опции для
+       * этого не нужно, глагол уже несёт смысл.
+       *
+       * Одностраничный предмет в режим не входит: экран, где единственная
+       * команда «закрыть», не стоит того, чтобы из него выходить.
+       */
+      const opens =
+        option.verb === EXAMINE && option.object && pagesOf(content, option.object).length > 1;
+      const reading =
+        option.verb === CLOSE ? null
+        : opens ? option.object
+        : session.reading;
+
       if (option.system) {
         setSession({
           ...session,
           save: counted,
           overlay: option.system,
           stream: [...session.stream, echo],
+          reading,
           history,
         });
         setScroll(0);
         return;
       }
       if (!option.target) {
-        setSession({ ...session, save: counted, stream: [...session.stream, echo], history });
+        setSession({ ...session, save: counted, stream: [...session.stream, echo], reading, history });
         return;
       }
 
@@ -250,6 +268,9 @@ export function App() {
         save: r.save,
         stream: moved ? r.entries : [...session.stream, echo, ...r.entries],
         overlay: null,
+        // Уход в другое место закрывает книгу сам: читать её из соседней комнаты
+        // нельзя, а специально гасить режим в контенте — лишняя обязанность.
+        reading: moved ? null : reading,
         history,
       });
       setInput('');

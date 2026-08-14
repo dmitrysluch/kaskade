@@ -78,7 +78,10 @@ function game() {
   });
 }
 
-const labels = (g: ReturnType<typeof game>, s: SaveState) => buildCatalog(g, s).map((o) => o.label);
+const labels = (g: ReturnType<typeof game>, s: SaveState, reading: string | null = null) =>
+  buildCatalog(g, s, reading)
+    .filter((o) => !o.system)
+    .map((o) => o.label);
 
 test('первый осмотр открывает минимальный page, а не первую секцию файла', () => {
   const g = game();
@@ -98,23 +101,74 @@ test('осмотр возвращает на текущую страницу, а
   assert.equal(again.target, `${BOOK}#оглавление`);
 });
 
-test('листание появляется после осмотра и знает края книги', () => {
+test('одностраничный предмет читать нечем — режим ему не нужен', () => {
+  const ONE = 'episodes/p/items/note';
+  const g = content({
+    episodes: [episode('p', { entry: `${R}#`, verbs: ['осмотреть'] })],
+    docs: {
+      [ONE]: doc(ONE, {
+        type: 'item',
+        label: 'записка',
+        pages: ['лист'],
+        nodes: [node(`${ONE}#`), node(`${ONE}#лист`, { text: 'Одна страница.', attrs: attrs({ page: 1 }) })],
+      }),
+      [R]: doc(R, { type: 'room', nodes: [node(`${R}#`, { text: 'комната' })] }),
+    },
+  });
+
+  // Внутри такого предмета листать нечего: остаётся одна команда выхода,
+  // и открывать ради неё отдельный уровень незачем — это решает App.
+  assert.deepEqual(
+    buildCatalog(g, save(), ONE).filter((o) => !o.system).map((o) => o.label),
+    ['закрыть записка'],
+  );
+});
+
+test('чтение — отдельный уровень: комната из списка уходит', () => {
   const g = game();
 
-  // Не открывали — листать нечего.
-  assert.deepEqual(labels(g, save()).filter((l) => l.startsWith('листать')), []);
+  // Пока книга закрыта, в списке комната и ни одной команды листания.
+  assert.deepEqual(labels(g, save()), ['осмотреть учебник']);
 
+  // Открыли — список принадлежит книге.
   const opened = enter(g, save(), `${BOOK}#обложка`, false).save;
-  assert.deepEqual(labels(g, opened).filter((l) => l.startsWith('листать')), ['листать учебник вперёд']);
+  assert.deepEqual(labels(g, opened, BOOK), ['вперёд', 'закрыть учебник']);
+});
 
-  const middle = enter(g, opened, `${BOOK}#оглавление`, false).save;
-  assert.deepEqual(labels(g, middle).filter((l) => l.startsWith('листать')), [
-    'листать учебник вперёд',
-    'листать учебник назад',
-  ]);
+test('листание знает края книги', () => {
+  const g = game();
+
+  const first = enter(g, save(), `${BOOK}#обложка`, false).save;
+  assert.deepEqual(labels(g, first, BOOK), ['вперёд', 'закрыть учебник']);
+
+  const middle = enter(g, first, `${BOOK}#оглавление`, false).save;
+  assert.deepEqual(labels(g, middle, BOOK), ['вперёд', 'назад', 'закрыть учебник']);
 
   const last = enter(g, middle, `${BOOK}#вклейка`, false).save;
-  assert.deepEqual(labels(g, last).filter((l) => l.startsWith('листать')), ['листать учебник назад']);
+  assert.deepEqual(labels(g, last, BOOK), ['назад', 'закрыть учебник']);
+});
+
+test('служебные команды есть и внутри книги', () => {
+  const g = game();
+  const opened = enter(g, save(), `${BOOK}#обложка`, false).save;
+  const system = buildCatalog(g, opened, BOOK).filter((o) => o.system).map((o) => o.label);
+
+  assert.deepEqual(system, ['справочник', 'дело', 'предметы']);
+});
+
+test('закрыть возвращает комнату, а закладку оставляет', () => {
+  const g = game();
+  const read = enter(g, save(), `${BOOK}#вклейка`, false).save;
+
+  // `закрыть` ничего не исполняет: цели у неё нет, режим гасит оболочка.
+  const close = buildCatalog(g, read, BOOK).find((o) => o.label === 'закрыть учебник')!;
+  assert.equal(close.target, null);
+  assert.equal(close.verb, 'закрыть');
+
+  // Вышли — комната на месте, листания нет, страница помнится.
+  assert.deepEqual(labels(g, read), ['осмотреть учебник']);
+  assert.equal(read.itemStates['book'], 'вклейка');
+  assert.equal(buildCatalog(g, read).find((o) => o.verb === 'осмотреть')!.target, `${BOOK}#вклейка`);
 });
 
 test('страница показывает свой текст и применяет свои атрибуты', () => {
@@ -128,7 +182,8 @@ test('страница показывает свой текст и примен�
   assert.equal(flipped.save.words['word-mark-i'], 'white');
   assert.ok(flipped.entries.some((e) => e.kind === 'grant'));
 
-  // Игрок при этом остался в комнате: предмет не модальный экран.
+  // Позиция игрока при этом не двигается: читают, стоя в комнате, и `закрыть`
+  // возвращает список, а не переносит откуда-то обратно.
   assert.equal(flipped.save.episodeState.at, `${R}#`);
 });
 

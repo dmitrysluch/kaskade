@@ -1,6 +1,6 @@
 import { optionAvailable, pageAt, pagesOf, sceneOf } from './state.ts';
 import type { SystemCall, SystemCommand } from './state.ts';
-import { EXAMINE, leafLabel, LEAF } from '../../shared/pages.ts';
+import { BACK, closeLabel, CLOSE, EXAMINE, FORWARD, LEAF } from '../../shared/pages.ts';
 import { emptyAttrs, type Doc, type GameContent, type Option, type SaveState } from '../../shared/types.ts';
 
 /**
@@ -59,27 +59,24 @@ function retarget(content: GameContent, save: SaveState, option: Option): Option
 }
 
 /**
- * Листание (07-оболочка-тз, «Страницы предмета»). Опций в контенте нет: их
- * создаёт движок, и есть они, только пока предмет открыт. До первого осмотра
- * листать нечего — иначе комната с двумя книгами сразу вываливает четыре
- * строки про перелистывание того, чего игрок не открывал.
+ * Чтение — отдельный уровень: пока книга открыта, список состоит из неё одной.
+ * Комната ждёт снаружи и возвращается по `закрыть`.
  *
+ * Опций в контенте нет — их строит движок. Имя предмета в метках не нужно:
+ * листаешь то, что открыто, и спорить командам не с чем.
  * На первой странице нет «назад», на последней — «вперёд».
  */
-function leafOptions(content: GameContent, save: SaveState, doc: Doc): CatalogOption[] {
-  if (save.itemStates[doc.id] == null) return [];
-
+function readingOptions(content: GameContent, save: SaveState, doc: Doc): CatalogOption[] {
   const pages = pagesOf(content, doc.docId);
-  const at = pages.findIndex((n) => n.id === save.itemStates[doc.id]);
-  if (at === -1) return [];
+  const at = pages.findIndex((n) => n.id === pageAt(content, save, doc.docId)?.id);
 
   const out: CatalogOption[] = [];
-  for (const [step, forward] of [[1, true] as const, [-1, false] as const]) {
-    const page = pages[at + step];
+  for (const [step, label] of [[1, FORWARD] as const, [-1, BACK] as const]) {
+    const page = at === -1 ? undefined : pages[at + step];
     if (!page) continue;
     out.push(
       plain({
-        label: leafLabel(doc.label, forward),
+        label,
         kind: 'environment',
         target: page.addr,
         attrs: page.attrs,
@@ -89,6 +86,18 @@ function leafOptions(content: GameContent, save: SaveState, doc: Doc): CatalogOp
       }),
     );
   }
+
+  out.push(
+    plain({
+      label: closeLabel(doc.label),
+      kind: 'environment',
+      target: null,
+      attrs: emptyAttrs(),
+      verb: CLOSE,
+      object: doc.docId,
+      moves: false,
+    }),
+  );
   return out;
 }
 
@@ -116,10 +125,7 @@ function fromInventory(content: GameContent, save: SaveState): CatalogOption[] {
         object: doc.docId,
         moves: false,
       };
-      if (optionAvailable(content, save, option)) {
-        out.push(plain(option));
-        out.push(...leafOptions(content, save, doc));
-      }
+      if (optionAvailable(content, save, option)) out.push(plain(option));
     }
   }
   return out;
@@ -145,11 +151,23 @@ function fromWords(content: GameContent, save: SaveState, phrase: string): Catal
   }));
 }
 
-export function buildCatalog(content: GameContent, save: SaveState): CatalogOption[] {
+/**
+ * `reading` — `docId` открытого предмета. Пока он задан, комната из списка
+ * уходит целиком: игрок читает, а не действует. Служебные команды остаются —
+ * они часть оболочки, а не содержимого сцены.
+ */
+export function buildCatalog(
+  content: GameContent,
+  save: SaveState,
+  reading: string | null = null,
+): CatalogOption[] {
   const node = content.nodes[save.episodeState.at];
   const out: CatalogOption[] = [];
+  const book = reading ? content.docs[reading] : undefined;
 
-  if (node) {
+  if (book) {
+    out.push(...readingOptions(content, save, book));
+  } else if (node) {
     // Безусловные переходы каталогом не показываются: у них нет метки, потому что
     // игрок их не выбирает — узел уводит сам.
     for (const raw of node.options) {
@@ -159,11 +177,9 @@ export function buildCatalog(content: GameContent, save: SaveState): CatalogOpti
       const option = retarget(content, save, raw);
       if (!optionAvailable(content, save, option)) continue;
 
+      // Листание из комнаты не показывается: `осмотреть` открывает книгу,
+      // и дальше список принадлежит ей одной.
       out.push(plain(option));
-      const item = option.object ? content.docs[option.object] : undefined;
-      if (option.verb === EXAMINE && item && item.pages.length > 0) {
-        out.push(...leafOptions(content, save, item));
-      }
     }
 
     for (const pending of node.pending) {

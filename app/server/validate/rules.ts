@@ -1,6 +1,6 @@
 import { verbOf } from '../content/options.ts';
 import { parseDate } from '../../shared/dates.ts';
-import { EXAMINE, leafLabel } from '../../shared/pages.ts';
+import { closeLabel, EXAMINE } from '../../shared/pages.ts';
 import type { Doc, GameContent, Node, Option } from '../../shared/types.ts';
 
 /**
@@ -880,14 +880,16 @@ const pages: Rule = {
         });
       }
 
-      // Метку листания строит движок, и вылезти за строку списка она может так же.
-      const leaf = leafLabel(doc.label, true);
-      if (leaf.length > LABEL_MAX) {
+      // Выход из чтения строит движок, и вылезти за строку списка он может так же,
+      // как авторская метка. Листание меряет себя само: `вперёд` и `назад` короче
+      // любого предела.
+      const close = closeLabel(doc.label);
+      if (close.length > LABEL_MAX) {
         found.push({
           rule: 'pages',
           severity: 'error',
           file: doc.path,
-          message: `"${leaf}" длиннее ${LABEL_MAX} знаков — в строку списка команда не влезет`,
+          message: `"${close}" длиннее ${LABEL_MAX} знаков — в строку списка команда не влезет`,
         });
       }
     }
