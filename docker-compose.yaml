@@ -1,0 +1,28 @@
+# «Принято к сведению» на coffeecode.io.
+#
+# Порт наружу не публикуется: на этом хосте 8080 уже слушает общий Caddy из
+# стека mlflow-server, и второй раз тот же порт не занять. Поэтому наружу
+# отдаёт Caddy, а сюда ходит по имени сервиса через внешнюю сеть all-services —
+# тем же способом, что и tauwetter.
+#
+# Блок в Caddyfile общего стека:
+#
+#   http://coffeecode.io:8080 {
+#       encode gzip zstd
+#       reverse_proxy kaskade:8080
+#   }
+
+services:
+  kaskade:
+    build: .
+    image: kaskade:local
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+    networks: [all-services]
+
+networks:
+  all-services:
+    external: true
+    name: all-services

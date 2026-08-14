@@ -1,0 +1,41 @@
+id: margo
+label: Марго
+
+# Символ сетки → ключ палитры. Ключ без цвета (`bg`) означает фон: клетка
+# остаётся прозрачной, сквозь неё виден фон терминала.
+palette:
+  o: bg
+  s: skin
+  k: skin-shadow
+  h: hair
+  r: hair-dark
+  g: temple
+  l: cloth-light
+  c: cloth
+  b: black
+  w: white
+
+skin:
+  default: "#ffb570"
+skin-shadow:
+  default: "#f2a65e"
+
+# В прологе волосы крашеные, в 2038-м отросли и не крашены. Никто это
+# не комментирует — меняется только палитра, сетка та же самая.
+hair:
+  default: "#eb564b"
+  hub-2038: "#9a9aa2"
+hair-dark:
+  default: "#b40c00"
+  hub-2038: "#6b6b74"
+
+temple:
+  default: "#606070"
+cloth-light:
+  default: "#43434f"
+cloth:
+  default: "#272736"
+black:
+  default: "#000000"
+white:
+  default: "#ffffff"

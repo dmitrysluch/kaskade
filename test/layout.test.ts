@@ -1,0 +1,387 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { clip, highlight, spread, width, wrap } from '../app/client/ui/text.ts';
+import {
+  commandLines,
+  detailLines,
+  portraitLines,
+  statusText,
+  streamLines,
+  systemLine,
+  viewport,
+} from '../app/client/ui/lines.ts';
+import { days, daysBetween, parseDate } from '../app/shared/dates.ts';
+import { fit } from '../app/client/ui/metrics.ts';
+import { MARGIN } from '../app/client/ui/text.ts';
+import { attrs } from './helpers.ts';
+import type { CatalogOption } from '../app/client/engine/catalog.ts';
+
+/**
+ * Раскладка экрана: каждая строка обязана быть ровно той ширины, которую ей отвели,
+ * иначе символьная рамка разъедется. Проверяем именно это, а не «красиво ли».
+ */
+
+function opt(label: string, locked = false): CatalogOption {
+  return { label, kind: 'story', target: null, attrs: attrs(), verb: null, object: null, moves: false, locked, system: null };
+}
+
+test('перенос идёт по словам и держится в ширине', () => {
+  const lines = wrap('Аудитория на сорок мест, занято одиннадцать.', 20);
+  assert.ok(lines.every((l) => l.length <= 20));
+  assert.equal(lines.join(' '), 'Аудитория на сорок мест, занято одиннадцать.');
+});
+
+test('пустая строка между абзацами сохраняется', () => {
+  assert.deepEqual(wrap('первый\n\nвторой', 20), ['первый', '', 'второй']);
+});
+
+test('слово длиннее колонки рвётся, а не вылезает за рамку', () => {
+  const lines = wrap('BAYN-OPV-63991-и-так-далее', 8);
+  assert.ok(lines.every((l) => l.length <= 8));
+});
+
+test('обрезка режет по знакам, а не по сегментам', () => {
+  const cut = clip([{ text: 'спросить' }, { text: ' о ' }, { text: 'партии' }], 10);
+  assert.equal(width(cut), 10);
+  assert.equal(cut.map((s) => s.text).join(''), 'спросить о');
+});
+
+test('набранное подсвечивается в любом слове опции', () => {
+  const segs = highlight('спросить о партии', 'парт');
+  const hit = segs.filter((s) => s.cls === 'hit');
+  assert.deepEqual(
+    hit.map((s) => s.text),
+    ['парт'],
+  );
+  assert.equal(segs.map((s) => s.text).join(''), 'спросить о партии');
+});
+
+test('без ввода не подсвечивается ничего', () => {
+  assert.deepEqual(highlight('идти коридор', '   '), [{ text: 'идти коридор' }]);
+});
+
+test('узкий экран не ломает раскладку: строка всё равно по ширине', () => {
+  const line = spread([{ text: 'очень длинные глаголы' }], [{ text: 'и хоткеи' }], 12);
+  assert.equal(width(line), 12);
+});
+
+// IBM Plex Mono: знак примерно 0,6 кегля, строка 1,35.
+const FONT = { cellRatio: 0.6, lineRatio: 1.35 };
+
+test('сетка заполняет окно: незанятого края не остаётся', () => {
+  for (const availW of [640, 900, 1280, 1440]) {
+    const m = fit({ availW, availH: 900, rows: 34, ...FONT });
+    const cell = m.size * FONT.cellRatio;
+    const used = m.cols * cell;
+    assert.ok(used <= availW + 1e-6, `кадр шире окна: ${used} > ${availW}`);
+    assert.ok(availW - used < cell, `остался незанятый край: ${availW - used}px`);
+  }
+});
+
+test('строк выходит примерно столько, сколько заказано', () => {
+  // Ровно столько не выйдет: ширина знака округляется до пикселя, и кегль вместе
+  // с ней прыгает шагом. Заказ — намерение, а не обещание до строки.
+  for (const rows of [24, 34, 48]) {
+    const m = fit({ availW: 1440, availH: 900, rows, ...FONT });
+    assert.ok(Math.abs(m.rows - rows) <= 2, `заказано ${rows}, вышло ${m.rows}`);
+  }
+});
+
+test('знак шириной в целое число пикселей: иначе рейки рамки едут по строкам', () => {
+  // Строка собрана из нескольких span: ширина каждого округляется отдельно,
+  // и дробный знак копит остаток по-разному в разных строках.
+  for (const availH of [640, 780, 900, 1200]) {
+    const m = fit({ availW: 1440, availH, rows: 34, ...FONT });
+    const cell = m.size * FONT.cellRatio;
+    assert.ok(Math.abs(cell - Math.round(cell)) < 1e-9, `знак шириной ${cell}px`);
+  }
+});
+
+test('клетки стыкуются: высота строки — ровно кегль на множитель', () => {
+  // `line: 1` значит «клетки стыкаются»: полублоки портрета не разъезжаются
+  // на полоски, вертикальные рейки идут сплошной линией.
+  const m = fit({ availW: 1440, availH: 900, rows: 34, cellRatio: 0.6, lineRatio: 1 });
+  assert.equal(m.line, m.size);
+});
+
+test('высота задаёт кегль, а ширина следует за ним', () => {
+  // Единственная настройка — число строк. Меньше строк: буквы крупнее, и в ту же
+  // ширину их влезает меньше — строка текста становится короче сама собой.
+  const few = fit({ availW: 1440, availH: 900, rows: 24, ...FONT });
+  const many = fit({ availW: 1440, availH: 900, rows: 48, ...FONT });
+
+  assert.ok(few.size > many.size, 'меньше строк — а буквы не крупнее');
+  assert.ok(few.cols < many.cols, 'крупнее буквы — а колонок не меньше');
+});
+
+test('шире окно — больше колонок, а кегль на месте', () => {
+  const laptop = fit({ availW: 1280, availH: 900, rows: 34, ...FONT });
+  const wide = fit({ availW: 1900, availH: 900, rows: 34, ...FONT });
+
+  assert.equal(wide.size, laptop.size);
+  assert.ok(wide.cols > laptop.cols);
+});
+
+test('кегль упирается в потолок и в пол, раскладка не рассыпается', () => {
+  const huge = fit({ availW: 3200, availH: 2400, rows: 34, ...FONT });
+  assert.equal(huge.size, 30);
+  assert.ok(huge.rows > 34, 'кегль упёрся в потолок — строк должно стать больше');
+
+  // Совсем низкое окно: мельче десяти пикселей букв не бывает, поэтому строк
+  // остаётся меньше заказанного. Раскладке при этом должно хватать.
+  const low = fit({ availW: 1440, availH: 200, rows: 34, ...FONT });
+  assert.equal(low.size, 10);
+  assert.ok(low.rows >= 12, `в окно влезло только ${low.rows} строк`);
+});
+
+test('узкое окно сужает сетку, но не ниже минимума', () => {
+  const narrow = fit({ availW: 320, availH: 900, rows: 34, ...FONT });
+  assert.ok(narrow.cols >= 40, `сетка ужалась до ${narrow.cols} колонок`);
+});
+
+test('портрет паруется в полублоки, и прозрачные половины остаются пустыми', () => {
+  const lines = portraitLines({
+    grid: ['hs', 'co', 'oo', 'so'],
+    colors: { h: '#eb564b', s: '#ffb570', c: '#272736' },
+    width: 2,
+    height: 4,
+  });
+
+  // Четыре ряда пикселей — две строки клеток.
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0]!.length, 2);
+
+  // Обе половины закрашены: верх — цветом текста, низ — цветом фона.
+  assert.deepEqual(lines[0]![0], { text: '▀', color: '#eb564b', bg: '#272736' });
+  // Низ прозрачный — фон не назначается вовсе, сквозь него виден фон терминала.
+  assert.deepEqual(lines[0]![1], { text: '▀', color: '#ffb570' });
+  // Верх прозрачный — знак переворачивается, иначе он взял бы цвет текста
+  // и половина клетки оказалась бы закрашенной ни с того ни с сего.
+  assert.deepEqual(lines[1]![0], { text: '▄', color: '#ffb570' });
+  // Обе половины пустые — просто пробел.
+  assert.deepEqual(lines[1]![1], { text: ' ' });
+});
+
+test('пока текст помещается, он пишется сверху', () => {
+  const lines = [[{ text: 'а' }], [{ text: 'б' }]];
+  const view = viewport(lines, 5, 0);
+
+  // Сцена читается как страница, которая заполняется, а не как лента,
+  // ползущая вверх от пустого места.
+  assert.equal(view.length, 5);
+  assert.equal(view[0]![0]!.text, 'а');
+  assert.equal(view[1]![0]!.text, 'б');
+  assert.deepEqual(view.slice(2), [[], [], []]);
+});
+
+test('переполнилось — окно едет за концом, свежий текст рядом с вводом', () => {
+  const lines = Array.from({ length: 7 }, (_, i) => [{ text: `строка-${i}` }]);
+  assert.deepEqual(
+    viewport(lines, 3, 0).map((l) => l[0]?.text),
+    ['строка-4', 'строка-5', 'строка-6'],
+  );
+});
+
+test('прокрутка отсчитывается от низа и сама зажимается по краям', () => {
+  const lines = Array.from({ length: 10 }, (_, i) => [{ text: `строка-${i}` }]);
+
+  const bottom = viewport(lines, 4, 0).map((l) => l[0]?.text);
+  assert.deepEqual(bottom, ['строка-6', 'строка-7', 'строка-8', 'строка-9']);
+
+  const up = viewport(lines, 4, 3).map((l) => l[0]?.text);
+  assert.deepEqual(up, ['строка-3', 'строка-4', 'строка-5', 'строка-6']);
+
+  // Выше начала потока и ниже его конца уехать нельзя, сколько ни жми.
+  assert.deepEqual(viewport(lines, 4, 999).map((l) => l[0]?.text), ['строка-0', 'строка-1', 'строка-2', 'строка-3']);
+  assert.deepEqual(viewport(lines, 4, -5).map((l) => l[0]?.text), bottom);
+});
+
+test('поток режется по ширине колонки и разделяет реплики пустой строкой', () => {
+  const lines = streamLines(
+    [
+      { kind: 'text', text: 'Первая реплика.' },
+      { kind: 'echo', text: 'взять телефон' },
+    ],
+    20,
+  );
+
+  assert.ok(lines.every((l) => width(l) <= 20 + MARGIN.text));
+  assert.deepEqual(lines[1], []);
+  assert.equal(lines[2]![1]!.cls, 'echo');
+});
+
+test('три голоса разведены классами: собеседник, Марго, ремарка', () => {
+  const lines = streamLines(
+    [{ kind: 'text', text: '> — Знаю.\n— Нет. Осколки деления распадаются сами.\nОн не поднимает головы.' }],
+    60,
+  );
+
+  // Знак цитаты снимается целиком: кто говорит, видно по цвету.
+  // Первый сегмент строки — поле, второй — сам текст.
+  assert.equal(lines[0]![1]!.cls, 'speech');
+  assert.equal(lines[0]![1]!.text, '— Знаю.');
+
+  assert.equal(lines[1]![1]!.cls, 'margo');
+  assert.equal(lines[1]![1]!.text, '— Нет. Осколки деления распадаются сами.');
+
+  assert.equal(lines[2]![1]!.cls, 'remark');
+  assert.equal(lines[2]![1]!.text, 'Он не поднимает головы.');
+});
+
+test('реплика-цитата становится отступом и не путается с эхом команды', () => {
+  const lines = streamLines(
+    [
+      { kind: 'text', text: '> — Да. Всё верно.\nОн не спорит.' },
+      { kind: 'echo', text: 'взять телефон' },
+    ],
+    40,
+  );
+
+  assert.equal(lines[0]![1]!.text, '— Да. Всё верно.');
+  assert.ok((lines[0]![1]!.cls ?? '').includes('speech'));
+  assert.equal(lines[1]![1]!.text, 'Он не спорит.');
+
+  // Эхо печатается с висящим промптом: `>` стоит в поле, команда — под текстом.
+  assert.equal(lines[3]![0]!.text.indexOf('>'), MARGIN.prompt);
+  assert.equal(lines[3]![1]!.text, 'взять телефон');
+  assert.equal(lines[3]![1]!.cls, 'echo');
+});
+
+test('срок в статусе склоняется по-русски и считается от даты заметки', () => {
+  assert.equal(days(1), '1 день');
+  assert.equal(days(2), '2 дня');
+  assert.equal(days(5), '5 дней');
+  assert.equal(days(11), '11 дней');
+  assert.equal(days(111), '111 дней');
+  assert.equal(days(233), '233 дня');
+  // Срок может и пройти: показываем как есть, а не выдумываем «просрочено».
+  assert.equal(days(-3), '-3 дня');
+
+  assert.equal(daysBetween('12.05.2026', '31.12.2026'), 233);
+  assert.equal(daysBetween('31.12.2026', '12.05.2026'), -233);
+  // Февраль тридцать первого не бывает — такая дата не разбирается вовсе.
+  assert.equal(parseDate('31.02.2026'), null);
+  assert.equal(parseDate('2026-05-12'), null);
+});
+
+test('статус: дата, потом сроки, и ни слова, если даты нет', () => {
+  const terms = [{ name: 'blueCard', label: 'BLUE CARD', at: '31.12.2026', expired: 'истекла' }];
+  assert.equal(statusText('12.05.2026', terms), '12.05.2026 · BLUE CARD 233 дня');
+  assert.equal(statusText('12.05.2026', []), '12.05.2026');
+  assert.equal(statusText(null, terms), '');
+  // Сломанная дата срока молчит: соврать в статусе хуже, чем промолчать.
+  assert.equal(statusText('12.05.2026', [{ name: 'x', label: 'X', at: 'скоро', expired: 'истёк' }]), '12.05.2026');
+});
+
+test('разметка означает механику: слова дела и коды, и ничего сверх', () => {
+  const lines = streamLines(
+    [{ kind: 'text', text: 'Он читает `H 1012` и говорит про контейнмент вслух.' }],
+    60,
+    ['КОНТЕЙНМЕНТ'],
+  );
+  const segs = lines[0]!;
+  const text = segs.map((s) => s.text).join('');
+
+  // Обратные кавычки сняты: колонок они не занимают.
+  assert.ok(!text.includes('`'), `кавычки остались: ${text}`);
+  assert.equal(segs.find((s) => s.cls === 'code')?.text, 'H 1012');
+  assert.equal(segs.find((s) => s.cls === 'word')?.text, 'контейнмент');
+});
+
+test('подсвечивается только целое слово и только известное', () => {
+  const [line] = streamLines([{ kind: 'text', text: 'Дело о делопроизводстве.' }], 60, ['дело']);
+  const marked = line!.filter((s) => s.cls === 'word');
+
+  assert.deepEqual(marked.map((s) => s.text), ['Дело']);
+  // Слова, которого у игрока нет, оболочка не трогает.
+  const [none] = streamLines([{ kind: 'text', text: 'Дело о делопроизводстве.' }], 60, []);
+  assert.equal(none!.some((s) => s.cls === 'word'), false);
+});
+
+test('выдача слова видна в потоке: первая с хоткеем, дальше без', () => {
+  const lines = streamLines(
+    [
+      { kind: 'grant', text: 'КОНТЕЙНМЕНТ — в деле, F2' },
+      { kind: 'grant', text: 'BLUE CARD — в деле' },
+    ],
+    60,
+  );
+  assert.equal(lines[0]![1]!.cls, 'grant');
+  assert.match(lines[0]!.map((s) => s.text).join(''), /КОНТЕЙНМЕНТ — в деле, F2/);
+  assert.equal(lines[2]!.map((s) => s.text).join('').includes('F2'), false);
+});
+
+test('прошедший срок показывается словом, а не минусом', () => {
+  const term = { name: 'blueCard', label: 'BLUE CARD', at: '31.12.2026', expired: 'истекла' };
+  assert.equal(statusText('01.01.2029', [term]), '01.01.2029 · BLUE CARD истекла');
+  assert.equal(statusText('31.12.2026', [term]), '31.12.2026 · BLUE CARD 0 дней');
+  assert.equal(statusText('30.12.2026', [term]), '30.12.2026 · BLUE CARD 1 день');
+});
+
+
+test('список вертикальный: по команде на строку, маркер в своей колонке', () => {
+  const look = opt('осмотреть учебник');
+  look.kind = 'environment';
+  const talk = opt('поговорить с Тоби');
+  const leave = opt('идти на лекцию');
+  leave.attrs.advance = true;
+
+  const lines = commandLines([look, talk, leave], 1, '', 60, 7);
+  const text = lines.map((l) => l.map((s) => s.text).join('').trimEnd());
+
+  // Порядок плотный: окружение, сюжет, advance — без пустых разделителей.
+  // Команды стоят на той же колонке, что набранное и повествование, а маркер
+  // висит в поле — как промпт.
+  assert.equal(text[0], `${' '.repeat(MARGIN.text)}осмотреть учебник`);
+  assert.equal(text[1], `${' '.repeat(MARGIN.prompt)}›${' '.repeat(MARGIN.text - MARGIN.prompt - 1)}поговорить с Тоби`);
+  assert.equal(text[2], `${' '.repeat(MARGIN.text)}▶ идти на лекцию`);
+  assert.equal(text[3], '', 'свободное место остаётся под списком');
+  assert.equal(lines.length, 7);
+
+  // Маркер — не часть команды: в метке его нет.
+  assert.equal(talk.label, 'поговорить с Тоби');
+});
+
+test('без выбора маркера нет ни у кого', () => {
+  const lines = commandLines([opt('а'), opt('б')], null, '', 60, 3);
+  assert.equal(lines.map((l) => l.map((s) => s.text).join('')).some((l) => l.includes('›')), false);
+});
+
+test('вариантов больше, чем строк: окно едет за выбором', () => {
+  const many = Array.from({ length: 12 }, (_, i) => opt(`вариант-${i}`));
+  const text = (pick: number) =>
+    commandLines(many, pick, '', 60, 4).map((l) => l.map((s) => s.text).join('').trim());
+
+  assert.ok(text(0).includes('› вариант-0'));
+  const far = text(11);
+  assert.ok(far.some((l) => l.startsWith('› вариант-11')), `выбранного не видно: ${far.join(' | ')}`);
+  assert.equal(far.length, 4, 'высота списка не меняется');
+});
+
+test('детали показывают реплику Марго целиком, а предупреждение — под ней', () => {
+  const rows = 3;
+  const plain = detailLines('— Нет. Осколки деления распадаются сами.', false, 60, rows);
+  assert.equal(plain.length, rows);
+  assert.equal(
+    plain[0]!.map((s) => s.text).join('').trim(),
+    'Марго: — Нет. Осколки деления распадаются сами.',
+  );
+  assert.equal(plain[1]!.length, 0);
+
+  // У advance-команды предупреждение идёт следом, в той же области.
+  const warned = detailLines('— Ладно.', true, 60, rows);
+  assert.match(warned[1]!.map((s) => s.text).join(''), /нельзя вернуться/);
+
+  // Без реплики область пустая, но высоту держит.
+  assert.equal(detailLines(null, false, 60, rows).length, rows);
+  assert.equal(detailLines(null, false, 60, rows).every((l) => l.length === 0), true);
+});
+
+test('служебная полоса закреплена и не зависит от ввода', () => {
+  const line = systemLine(['справочник', 'дело', 'предметы'], 60);
+  const text = line.map((s) => s.text).join('').trim();
+
+  assert.equal(text, 'F1 справочник · F2 дело · предметы · F3 управление');
+  // Все служебные — своим цветом.
+  assert.equal(line.filter((s) => s.cls === 'system').length, 4);
+});

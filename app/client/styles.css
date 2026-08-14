@@ -1,0 +1,347 @@
+/*
+ * Экран — сетка знакомест. Псевдографика нарисована символами и живёт в потоке
+ * текста, поэтому у CSS здесь одна работа: не мешать. Никаких border, никакого переноса,
+ * никакого скролла — всё это оболочка считает сама, в строках и колонках.
+ *
+ * Мышью **не играют**: ни одного :hover, ни клика, который что-то делает. Но она
+ * работает так, как работает в любом эмуляторе терминала — курсор виден, текст
+ * выделяется и копируется. Прятать курсор значит запирать игрока в окне.
+ */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root,
+.renderer {
+  height: 100%;
+}
+
+body {
+  background: var(--bg, #0b0b0b);
+  color: var(--fg, #d8d2c4);
+  font-family: var(--font, 'JetBrains Mono'), ui-monospace, 'Courier New', monospace;
+  /* Лигатур в терминале быть не должно нигде: знак — это клетка. */
+  font-variant-ligatures: none;
+  font-feature-settings: 'calt' 0, 'liga' 0, 'dlig' 0;
+  font-size: var(--size, 16px);
+  /*
+   * Единица, а не привычные 1.2–1.4: экран — сетка знакомест, и при любом
+   * межстрочном интервале клетки перестают стыкаться. Видно это сразу в двух
+   * местах: вертикальные рейки рамки становятся пунктиром, а полублоки портрета
+   * разъезжаются на полоски. Настраивается через `font.line` в game.yaml.
+   */
+  line-height: var(--line, 1);
+  overflow: hidden;
+
+  /* Выделять и копировать можно: это терминал, а не киоск. Играть мышью
+     по-прежнему нельзя — кликать попросту не по чему. */
+  cursor: text;
+  user-select: text;
+}
+
+.screen {
+  height: 100%;
+  /* Полей у экрана нет вовсе: они набираются пробелами, как в настоящем
+     терминале. Нулевая колонка — это край окна, и линейка доходит до него. */
+  padding: 0;
+
+  /* Прижимаем к низу: если окно совсем маленькое и кадр не влезает, обрежется
+     верх потока, а не строка ввода. Потерять ввод нельзя. */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* Никакого центрирования: сетка и есть окно, нулевая колонка — его левый край. */
+  align-items: flex-start;
+  overflow: hidden;
+
+  /* Ширина знака должна быть ровно одна на все символы, включая рамки. */
+  white-space: pre;
+  font-variant-ligatures: none;
+  font-feature-settings: 'calt' 0, 'liga' 0;
+  letter-spacing: 0;
+}
+
+.screen > div {
+  flex: none;
+}
+
+.rail {
+  color: var(--frame, var(--dim));
+}
+
+/* Линейка на экране одна — между потоком и вводом. Выше неё мир, ниже ты. */
+.rule {
+  color: var(--rule, var(--dim));
+}
+
+/* Указатель прокрутки живёт на правом конце линейки: ни полосы, ни лишней строки. */
+.more {
+  color: var(--accent);
+}
+
+.dim {
+  color: var(--dim);
+}
+
+/*
+ * Кто говорит (07-оболочка-тз). Цвета приходят из палитры рендерера, здесь
+ * только связь класса с ключом — поменять цвет можно в game.yaml.
+ */
+.speech {
+  color: var(--speech, var(--fg));
+}
+
+.margo {
+  color: var(--margo, var(--accent));
+}
+
+.remark {
+  color: var(--remark, var(--dim));
+}
+
+/* Введённая команда: она уже прозвучала и уходит на второй план. */
+.echo {
+  color: var(--echo, var(--dim));
+}
+
+/*
+ * Статус — единственная полоса машины на экране, поэтому у неё подложка: без
+ * неё дата висит в пустоте и читается как обрывок текста. Подложка идёт во всю
+ * сетку, как линейка, и по той же причине — она делит поверхность.
+ */
+.status {
+  background: var(--statusBg, var(--frame));
+  color: var(--dim);
+}
+
+.status .echo {
+  color: var(--statusFg, var(--dim));
+}
+
+.card {
+  color: var(--dim);
+}
+
+.error {
+  color: var(--error, #e2a0a0);
+}
+
+/*
+ * Разметка означает механику, а не важность (07-оболочка-тз, «Разметка»).
+ * Подсвечено ровно то, что можно набрать в строке ввода: слова дела оболочка
+ * находит сама, коды автор ставит обратными кавычками.
+ */
+.word {
+  color: var(--word, var(--accent));
+}
+
+.code {
+  color: var(--code, var(--frame));
+}
+
+/* Выдача слова: механика должна быть видна, иначе её как бы нет. */
+.grant {
+  color: var(--word, var(--accent));
+  letter-spacing: 0.05ch;
+}
+
+/*
+ * Категории опций в списке команд (07-оболочка-тз, «Опция»). Цвет — не главный
+ * носитель различия: категории разведены порядком, строками и постоянным местом
+ * служебной полосы. Он только помогает, когда всё это уже на месте.
+ */
+.environment {
+  color: var(--environment, var(--fg));
+}
+
+.story {
+  color: var(--story, var(--fg));
+}
+
+.system {
+  color: var(--system, var(--dim));
+}
+
+/*
+ * Команда, закрывающая текущие возможности (07-оболочка-тз, «Опция»). Цвет —
+ * не единственный сигнал: ту же работу делают знак `▶` и отдельная группа
+ * в автокомплите, поэтому помета не пропадёт ни на скриншоте, ни у дальтоника.
+ */
+.advance {
+  color: var(--advance, var(--accent));
+}
+
+/*
+ * Предпросмотр реплики: точная фраза, которую Марго скажет, если выбрать
+ * команду. Приглушена — это ещё не сказанное; скажет, и та же строка придёт
+ * в поток обычным цветом Марго.
+ */
+.preview {
+  color: var(--preview, var(--margo));
+}
+
+/* Набранное подсвечивается сразу — игрок видит, какие буквы уже сработали. */
+.hit {
+  color: var(--accent);
+}
+
+.pick {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 0.2em;
+}
+
+/* Серое слово: видно, что важное, и выбрать нельзя. */
+.locked {
+  color: var(--dim);
+  opacity: 0.6;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.locked.hit {
+  color: var(--dim);
+}
+
+.cursor {
+  background: var(--fg);
+  animation: blink 1.1s step-end infinite;
+}
+
+@keyframes blink {
+  50% {
+    background: transparent;
+  }
+}
+
+/*
+ * Сплэш: терминал перестаёт быть терминалом. Рамки нет, текста нет, ввод
+ * не принимается — только лицо в центре пустого экрана.
+ */
+.splash {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  background: var(--bg);
+  text-align: center;
+}
+
+/* Запись под лицом: `splash:` и `titlecard` на одном узле — это личное дело. */
+.splash-card {
+  margin-top: 2em;
+  color: var(--rail, var(--frame));
+}
+
+/*
+ * Титр рисуется знаками на общей сетке (CardScreen), поэтому своего стиля у него
+ * нет: рамка — символы, центровка — пробелы. Отдельный CSS-слой был бы вторым
+ * способом разложить экран, а способ должен быть один.
+ */
+
+.flicker-low {
+  animation: flicker 6s infinite;
+}
+
+@keyframes flicker {
+  0%,
+  97%,
+  100% {
+    opacity: 1;
+  }
+  98% {
+    opacity: 0.88;
+  }
+}
+
+/*
+ * Обучающий слой (07-оболочка-тз, «Обучающий слой»).
+ *
+ * Единственное место, где интерфейс выходит из сетки и говорит не голосом
+ * машины: это инструкция к игре, а не игра. Поэтому другая типографика,
+ * пропорциональный шрифт и обычный межстрочный — притворяться диегетичным
+ * ей не надо, притворство тут хуже прямоты.
+ */
+.manual {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.5;
+  letter-spacing: 0;
+  color: var(--fg);
+  /* Экран целиком живёт в `white-space: pre` ради сетки; здесь сетки нет,
+     и абзацы обязаны переноситься сами. */
+  white-space: normal;
+}
+
+.manual-box {
+  max-width: 34em;
+  padding: 2.5em 3em;
+  border: 1px solid var(--frame, var(--dim));
+}
+
+.manual-lead {
+  margin-bottom: 0.8em;
+  font-weight: 600;
+}
+
+.manual-keys {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35em 1.5em;
+  margin: 1.6em 0;
+}
+
+.manual-keys > div {
+  display: contents;
+}
+
+.manual-keys dt {
+  font-family: var(--font, monospace);
+  color: var(--accent);
+}
+
+.manual-keys dd {
+  color: var(--dim);
+}
+
+.manual-advance {
+  margin-bottom: 1.6em;
+  color: var(--dim);
+}
+
+.manual-go {
+  color: var(--dim);
+  text-align: right;
+}
+
+/*
+ * Подсказка-пример — параллельно, а не вместо: строка подсказок самого
+ * терминала не меняется никогда. Иначе игрок привыкнет к временному
+ * интерфейсу, а потом тот поменяется под ним.
+ */
+.hint {
+  position: fixed;
+  left: 50%;
+  /* Сверху, а не снизу: низ экрана и без того занят вводом, автокомплитом
+     и подсказками — подсказка там встала бы четвёртой строкой в очередь. */
+  top: 1.5em;
+  transform: translateX(-50%);
+  padding: 0.4em 1em;
+  border: 1px solid var(--frame, var(--dim));
+  background: var(--bg);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85em;
+  line-height: 1.4;
+  color: var(--dim);
+  white-space: normal;
+}

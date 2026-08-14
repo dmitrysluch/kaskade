@@ -1,0 +1,44 @@
+{
+  "name": "kaskade",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Принято к сведению — веб-игра в терминале",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false app/server/index.ts",
+    "build": "vite build",
+    "start": "NODE_ENV=production tsx app/server/index.ts",
+    "lint": "tsx scripts/validate.ts",
+    "sync": "bash scripts/sync.sh",
+    "frame": "tsx scripts/frame.ts",
+    "portrait": "tsx scripts/portrait.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "smoke:prod": "MODE=production tsx scripts/smoke.ts",
+    "test": "node --test --import tsx test/*.test.ts test/*.test.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "chokidar": "^4.0.3",
+    "express": "^4.21.2",
+    "js-yaml": "^4.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsx": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.5.13",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

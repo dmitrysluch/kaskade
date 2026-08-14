@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+
+# Obsidian хранит в vault свои настройки и рабочее состояние — они личные,
+# а контент (заметки) как раз версионируется.
+content/.obsidian/
+.DS_Store
