@@ -186,3 +186,26 @@ type: room
   assert.equal(leave!.attrs.advance, true);
   assert.equal(doc.nodes[0]!.text, 'Комната.');
 });
+
+test('page разбирается числом, а нечисловой падает с именем файла', () => {
+  const item = `---
+id: book
+type: item
+label: учебник
+---
+
+Учебник.
+
+## обложка
+- page: 2
+`;
+  const doc = parseMarkdown('book.md', item);
+  assert.equal(doc.nodes[1]!.attrs.page, 2);
+  // Секция без `page` остаётся действием — это по-прежнему глагол.
+  assert.equal(doc.nodes[0]!.attrs.page, null);
+
+  assert.throws(() => parseMarkdown('book.md', item.replace('page: 2', 'page: вторая')), (e: Error) => {
+    assert.match(e.message, /page должен быть числом/);
+    return true;
+  });
+});

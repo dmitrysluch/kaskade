@@ -89,6 +89,37 @@ export function dateAt(content: GameContent, save: SaveState): string | null {
   return content.nodes[save.episodeState.at]?.date ?? null;
 }
 
+/** Страницы предмета: узлы-секции в порядке `page`. У обычной заметки пусто. */
+export function pagesOf(content: GameContent, docId: string): Node[] {
+  const doc = content.docs[docId];
+  if (!doc) return [];
+  return doc.pages.flatMap((id) => {
+    const node = content.nodes[`${docId}#${id}`];
+    return node ? [node] : [];
+  });
+}
+
+/**
+ * На какой странице открыт предмет (07-оболочка-тз, «Страницы предмета»).
+ *
+ * Записи нет — предмет ещё не открывали, отдаём первую страницу. Записанной
+ * секции больше нет в контенте (автор переименовал заголовок) — тоже первую,
+ * но с жалобой в консоль: молчаливый сброс запрещён, а рушить прохождение
+ * из-за правки заметки хуже, чем показать книгу с начала.
+ */
+export function pageAt(content: GameContent, save: SaveState, docId: string): Node | null {
+  const pages = pagesOf(content, docId);
+  if (pages.length === 0) return null;
+
+  const saved = save.itemStates[content.docs[docId]?.id ?? ''];
+  if (saved == null) return pages[0]!;
+
+  const found = pages.find((n) => n.id === saved);
+  if (found) return found;
+  console.warn(`страницы "${saved}" в "${docId}" больше нет — открываю с начала`);
+  return pages[0]!;
+}
+
 /**
  * Точная реплика, которую Марго скажет, если выбрать эту опцию (07-оболочка-тз,
  * «Команда короче реплики»).
@@ -181,10 +212,24 @@ function applyAttrs(content: GameContent, save: SaveState, node: Node, stamp: st
   // Имя срока обязано быть объявлено в episode.yaml — это проверяет валидатор.
   const dates = { ...save.dates, ...node.attrs.dates };
 
+  // Страница — состояние предмета, и запоминается она здесь, а не в обработчике
+  // команды: тогда состояние обновляется при любом входе — из комнаты, с рук,
+  // из разговора — и переживает переходы само собой.
+  const item = node.attrs.page == null ? null : content.docs[sceneOf(node.addr)];
+  const itemStates = item ? { ...save.itemStates, [item.id]: node.id } : save.itemStates;
+
   const used = node.attrs.once ? [...new Set([...save.episodeState.used, node.addr])] : save.episodeState.used;
 
   return {
-    save: { ...save, flags, words, inventory, dates, episodeState: { ...save.episodeState, used } },
+    save: {
+      ...save,
+      flags,
+      words,
+      inventory,
+      dates,
+      itemStates,
+      episodeState: { ...save.episodeState, used },
+    },
     granted,
   };
 }
@@ -275,6 +320,7 @@ export function freshSave(content: GameContent): SaveState {
     inventory: [],
     splashes: [],
     chapter: 'prolog',
+    itemStates: {},
     taught: false,
     hinted: false,
     // Начальные сроки — из episode.yaml; дальше их двигают узлы.

@@ -534,7 +534,10 @@ test('метка длиннее строки списка находится: в
           node(`${S}#`, {
             options: [
               option({ label: 'спросить о партии', target: `${S}#а` }),
-              option({ label: 'спросить о том, что он думает про третий барьер', target: `${S}#а` }),
+              option({
+                label: 'спросить о том, что он думает про третий и четвёртый барьеры разом',
+                target: `${S}#а`,
+              }),
             ],
           }),
           node(`${S}#а`, { text: 'а' }),
@@ -546,4 +549,76 @@ test('метка длиннее строки списка находится: в
   const found = run('routes', game).filter((f) => /длиннее/.test(f.message));
   assert.equal(found.length, 1);
   assert.match(found[0]!.message, /в строку списка она не влезет/);
+});
+
+test('страница — состояние предмета, а не действие', () => {
+  const I = 'episodes/p/items/book';
+  const game = content({
+    episodes: [episode('p', { verbs: ['осмотреть'] })],
+    docs: {
+      [I]: doc(I, {
+        type: 'item',
+        label: 'учебник',
+        pages: ['обложка', 'вклейка'],
+        inHand: ['вклейка'],
+        nodes: [
+          node(`${I}#`),
+          node(`${I}#обложка`, { attrs: attrs({ page: 1 }) }),
+          node(`${I}#вклейка`, { attrs: attrs({ page: 1 }) }),
+          node(`${I}#осмотреть`),
+        ],
+      }),
+    },
+  });
+
+  const found = run('pages', game).map((f) => f.message);
+  // Номер повторился у обеих секций, «вклейка» стала глаголом через inHand,
+  // и рядом со страницами живёт конкурирующий `## осмотреть`.
+  assert.equal(found.filter((m) => /встречается в предмете дважды/.test(m)).length, 2);
+  assert.ok(found.some((m) => /объявлена глаголом/.test(m)));
+  assert.ok(found.some((m) => /два ответа на одну команду/.test(m)));
+});
+
+test('page только у предмета, только на секции и только положительным целым', () => {
+  const S = 'episodes/p/scenes/s';
+  const I = 'episodes/p/items/i';
+  const game = content({
+    docs: {
+      [S]: doc(S, { date: '12.05.2026', nodes: [node(`${S}#глава`, { attrs: attrs({ page: 1 }) })] }),
+      [I]: doc(I, {
+        type: 'item',
+        label: 'папка',
+        pages: ['лист'],
+        nodes: [
+          node(`${I}#`, { attrs: attrs({ page: 1 }) }),
+          node(`${I}#лист`, { attrs: attrs({ page: 0 }) }),
+        ],
+      }),
+    },
+  });
+
+  const found = run('pages', game).map((f) => f.message);
+  assert.ok(found.some((m) => /страницы бывают только у предметов/.test(m)));
+  assert.ok(found.some((m) => /карточка предмета, а не первая страница/.test(m)));
+  assert.ok(found.some((m) => /целое положительное число/.test(m)));
+});
+
+test('предмет со страницами не обязан иметь ни одного глагола', () => {
+  const I = 'episodes/p/items/book';
+  const game = content({
+    episodes: [episode('p', { verbs: ['осмотреть'] })],
+    docs: {
+      [I]: doc(I, {
+        type: 'item',
+        label: 'учебник',
+        pages: ['обложка'],
+        nodes: [node(`${I}#`), node(`${I}#обложка`, { attrs: attrs({ page: 1 }) })],
+      }),
+    },
+  });
+
+  assert.deepEqual(run('pages', game), []);
+  assert.deepEqual(run('generators', game), []);
+  // И секцию-страницу не требует объявлять в itemVerbs.
+  assert.deepEqual(run('verbs', game), []);
 });

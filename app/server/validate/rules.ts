@@ -1,5 +1,6 @@
 import { verbOf } from '../content/options.ts';
 import { parseDate } from '../../shared/dates.ts';
+import { EXAMINE, leafLabel } from '../../shared/pages.ts';
 import type { Doc, GameContent, Node, Option } from '../../shared/types.ts';
 
 /**
@@ -180,7 +181,9 @@ const verbsDeclared: Rule = {
         );
 
         for (const node of doc.nodes) {
-          if (node.id === '' || inner.has(node.id)) continue;
+          // Секция со страницей — состояние предмета, а не глагол: объявлять
+          // «вклейку» в itemVerbs незачем, командой она не становится.
+          if (node.id === '' || inner.has(node.id) || node.attrs.page != null) continue;
           const declared = episode.verbs.includes(node.id) || episode.itemVerbs.includes(node.id);
           if (!declared) {
             found.push({
@@ -193,6 +196,9 @@ const verbsDeclared: Rule = {
           }
         }
         for (const verb of doc.inHand) {
+          // Осмотр многостраничной вещи отвечают страницы: узла с таким именем
+          // у неё нет и быть не должно.
+          if (verb === EXAMINE && doc.pages.length > 0) continue;
           if (!doc.nodes.some((n) => n.id === verb)) {
             found.push({
               rule: 'verbs',
@@ -238,7 +244,8 @@ const deadGenerators: Rule = {
           });
         }
       }
-      if (doc.type === 'item' && doc.nodes.every((n) => n.id === '')) {
+      // Страницы сами значат «этот предмет можно осмотреть», глагол ему не нужен.
+      if (doc.type === 'item' && doc.pages.length === 0 && doc.nodes.every((n) => n.id === '')) {
         found.push({
           rule: 'generators',
           severity: 'error',
@@ -459,10 +466,13 @@ const splashes: Rule = {
 
 /**
  * Сколько знаков команде отведено. Список вертикальный, по команде на строку,
- * и метка обязана помещаться целиком: на узком экране (сорок колонок минус поля
- * и колонка маркера) остаётся примерно столько.
+ * и метка обязана помещаться целиком.
+ *
+ * Отсчёт от экрана в 56 колонок: минус поля слева и справа остаётся ровно
+ * столько. Уже — игру и так не показать, а мерить по сорока колонкам значит
+ * запретить нормальные реплики ради размера, в котором никто не играет.
  */
-const LABEL_MAX = 32;
+const LABEL_MAX = 48;
 
 /**
  * Маршруты (07-оболочка-тз, «Опция и маршрут»). Проверять их особенно нужно,
@@ -786,8 +796,109 @@ const hubExit: Rule = {
   },
 };
 
+/**
+ * Страницы предмета (07-оболочка-тз, «Страницы предмета — состояния»).
+ *
+ * Ошибка здесь молчаливая вдвойне: секция, случайно ставшая глаголом, добавляет
+ * команду, которой автор не писал, а страница-двойник по номеру просто теряется
+ * в перелистывании.
+ */
+const pages: Rule = {
+  id: 'pages',
+  title: 'страницы предмета: состояние, а не действие',
+  run(content) {
+    const found: Finding[] = [];
+
+    for (const doc of Object.values(content.docs)) {
+      const paged = doc.nodes.filter((n) => n.attrs.page != null);
+      const at = (node: Node): Omit<Finding, 'rule' | 'severity' | 'message'> => ({
+        file: doc.path,
+        line: node.line,
+      });
+
+      for (const node of paged) {
+        if (doc.type !== 'item') {
+          found.push({
+            rule: 'pages',
+            severity: 'error',
+            ...at(node),
+            message: `page стоит в заметке типа "${doc.type}" — страницы бывают только у предметов`,
+          });
+        }
+        if (node.id === '') {
+          found.push({
+            rule: 'pages',
+            severity: 'error',
+            ...at(node),
+            message: 'page стоит на вступлении файла — оно карточка предмета, а не первая страница',
+          });
+        }
+        const page = node.attrs.page!;
+        if (!Number.isInteger(page) || page <= 0) {
+          found.push({
+            rule: 'pages',
+            severity: 'error',
+            ...at(node),
+            message: `page: ${page} — номер страницы это целое положительное число`,
+          });
+        }
+        if (paged.filter((n) => n.attrs.page === page).length > 1) {
+          found.push({
+            rule: 'pages',
+            severity: 'error',
+            ...at(node),
+            message: `page: ${page} встречается в предмете дважды — порядок страниц неопределён`,
+          });
+        }
+
+        // Состояние, ставшее действием: команда появится там, где автор её не писал.
+        const asVerb =
+          doc.inHand.includes(node.id) ||
+          Object.values(content.nodes).some((n) =>
+            n.options.some((o) => o.verb === node.id && o.object === doc.docId),
+          );
+        if (asVerb) {
+          found.push({
+            rule: 'pages',
+            severity: 'error',
+            ...at(node),
+            message: `секция "${node.id}" со страницей объявлена глаголом — состояние стало действием`,
+          });
+        }
+      }
+
+      if (paged.length === 0) continue;
+
+      // Страницы уже значат «можно осмотреть»: второй ответ на ту же команду.
+      const examine = doc.nodes.find((n) => n.id === EXAMINE);
+      if (examine) {
+        found.push({
+          rule: 'pages',
+          severity: 'error',
+          ...at(examine),
+          message: `у предмета есть страницы и узел "${EXAMINE}" — два ответа на одну команду`,
+        });
+      }
+
+      // Метку листания строит движок, и вылезти за строку списка она может так же.
+      const leaf = leafLabel(doc.label, true);
+      if (leaf.length > LABEL_MAX) {
+        found.push({
+          rule: 'pages',
+          severity: 'error',
+          file: doc.path,
+          message: `"${leaf}" длиннее ${LABEL_MAX} знаков — в строку списка команда не влезет`,
+        });
+      }
+    }
+
+    return found;
+  },
+};
+
 export const RULES: Rule[] = [
   brokenGraph,
+  pages,
   routes,
   hubExit,
   dates,

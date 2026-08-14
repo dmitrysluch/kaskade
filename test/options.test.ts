@@ -9,13 +9,14 @@ import { expandNode, type ExpandContext, type TargetInfo } from '../app/server/c
  */
 
 const TARGETS: Record<string, TargetInfo> = {
-  'rooms/коридор': { docId: 'rooms/коридор', type: 'room', label: 'коридор', nodeIds: new Set(['']), inHand: [] },
+  'rooms/коридор': { docId: 'rooms/коридор', type: 'room', label: 'коридор', nodeIds: new Set(['']), inHand: [], pages: [] },
   'items/телефон': {
     docId: 'items/телефон',
     type: 'item',
     label: 'телефон',
     nodeIds: new Set(['', 'осмотреть', 'взять', 'позвонить']),
     inHand: ['позвонить'],
+    pages: [],
   },
   'items/доска': {
     docId: 'items/доска',
@@ -23,6 +24,7 @@ const TARGETS: Record<string, TargetInfo> = {
     label: 'доска',
     nodeIds: new Set(['', 'осмотреть']),
     inHand: [],
+    pages: [],
   },
 };
 

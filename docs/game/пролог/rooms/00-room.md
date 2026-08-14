@@ -18,7 +18,10 @@ items: [00-book, 00-schedule, 00-blister, 00-speaker, 00-window]
 
 Тоби лежит поперёк своей кровати, ногами на стене, с ноутбуком на животе.
 
+→ поговорить с Тоби [[scenes/00-talk#хаб]]
+  - if: prolog.talk-started
 → поговорить с Тоби [[scenes/00-talk]]
+  - if: "!prolog.talk-started"
 
 ## один
 

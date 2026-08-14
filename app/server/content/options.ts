@@ -1,4 +1,5 @@
 import { ContentError, type RawDoc, type RawGenerator, type RawNode } from './markdown.ts';
+import { EXAMINE } from '../../shared/pages.ts';
 import {
   emptyAttrs,
   type DocType,
@@ -26,6 +27,8 @@ export interface TargetInfo {
   nodeIds: Set<string>;
   /** Глаголы предмета, работающие только когда он на руках. */
   inHand: string[];
+  /** Страницы предмета: id секций в порядке `page`. */
+  pages: string[];
 }
 
 export interface ExpandContext {
@@ -121,10 +124,20 @@ function expandGenerator(
 
     // Предмет отвечает только на то, что умеет. Глагол из `inHand` комната не отдаёт:
     // он появится, когда предмет окажется на руках.
-    if (!target.nodeIds.has(verb) || target.inHand.includes(verb)) continue;
+    if (target.inHand.includes(verb)) continue;
+
+    /*
+     * Наличие страниц само значит «этот предмет можно осмотреть»: узел
+     * `## осмотреть` для этого не нужен и запрещён (07-оболочка-тз, «Страницы
+     * предмета»). Цель здесь — первая страница: сервер сейва не видит, а текущую
+     * подставит клиент при сборке каталога. Валидатор при этом видит настоящую
+     * опцию с настоящим глаголом, и граф остаётся целым.
+     */
+    const paged = verb === EXAMINE && target.pages.length > 0;
+    if (!paged && !target.nodeIds.has(verb)) continue;
 
     options.push(
-      optionTo(ctx, docId, `${ref}#${verb}`, gen.line, (t) => ({
+      optionTo(ctx, docId, `${ref}#${paged ? target.pages[0]! : verb}`, gen.line, (t) => ({
         label: label(gen.phrase, t.label),
         kind: kindOf(t),
         attrs: emptyAttrs(),

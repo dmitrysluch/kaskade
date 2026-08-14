@@ -21,6 +21,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     splashes: [],
     chapter: 'p',
     dates: {},
+    itemStates: {},
     taught: true,
     hinted: true,
     started: true,

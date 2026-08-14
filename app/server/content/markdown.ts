@@ -82,6 +82,8 @@ const ATTR_KEYS = new Set([
   'dates',
   // Помета на переходе: команда закрывает текущие возможности («Опция»).
   'advance',
+  // Номер страницы предмета: секция становится состоянием, а не глаголом.
+  'page',
 ]);
 
 /** Ключи, которые можно писать несколько раз: `- set: a` двумя строками. */
@@ -150,10 +152,11 @@ function parseAttrs(file: string, lines: { text: string; line: number }[]): Attr
         attrs.once = value !== false;
       } else if (key === 'advance') {
         attrs.advance = value !== false;
-      } else if (key === 'cost') {
+      } else if (key === 'cost' || key === 'page') {
         const n = Number(value);
-        if (!Number.isFinite(n)) throw new ContentError(file, `cost должен быть числом, а не "${value}"`, line);
-        attrs.cost = n;
+        if (!Number.isFinite(n)) throw new ContentError(file, `${key} должен быть числом, а не "${value}"`, line);
+        if (key === 'cost') attrs.cost = n;
+        else attrs.page = n;
       } else {
         const s = String(value).trim();
         if (key === 'if') attrs.if = s;

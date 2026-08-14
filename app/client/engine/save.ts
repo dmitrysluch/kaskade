@@ -47,6 +47,11 @@ export const MIGRATIONS: Record<number, (save: SaveState) => SaveState> = {
     const { entered: _, ...rest } = save as SaveState & { entered?: number };
     return { ...rest, hinted: rest.hinted ?? true };
   },
+
+  // 6 → 7: предметы стали многостраничными. Где игрок остановился в книге,
+  // старый сейв не знает, и выдумывать страницу нельзя: записи просто нет,
+  // при первом осмотре предмет откроется с начала.
+  6: (save) => ({ ...save, itemStates: save.itemStates ?? {} }),
 };
 
 export function migrate(save: SaveState, target: number): SaveState | null {

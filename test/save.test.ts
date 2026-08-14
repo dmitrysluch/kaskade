@@ -17,6 +17,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     inventory: ['телефон'],
     splashes: [],
     chapter: 'prolog',
+    itemStates: {},
     dates: { blueCard: '31.12.2026' },
     taught: true,
     hinted: true,
@@ -68,4 +69,14 @@ test('без миграции сейв не тащим — лучше начат
 
 test('сейв из будущего не принимается', () => {
   assert.equal(migrate(save({ saveVersion: 9 }), 3), null);
+});
+
+test('6 → 7: предметы стали многостраничными', () => {
+  const { itemStates: _, ...old } = { ...save(), saveVersion: 6 };
+
+  const migrated = migrate(old as SaveState, 7)!;
+  // Где игрок остановился в книге, старый сейв не знает: записи просто нет,
+  // и при первом осмотре предмет откроется с начала.
+  assert.deepEqual(migrated.itemStates, {});
+  assert.deepEqual(migrated.words, { alers: 'white' });
 });

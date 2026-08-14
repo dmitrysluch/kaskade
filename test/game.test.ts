@@ -230,10 +230,11 @@ test('демо-срез: сцены 00–02 открыты, 03 закрыта, �
 });
 
 test('слово, отданное прологом, становится белым', () => {
-  // Первое слово игрок добывает сам — осмотрев учебник в общаге.
+  // Первое слово игрок добывает сам — долистав учебник до вклейки с разрезом.
   const save = at('episodes/prolog/rooms/00-room#');
-  const r = enter(game, save, 'episodes/prolog/items/00-book#осмотреть', false);
+  const r = enter(game, save, 'episodes/prolog/items/00-book#вклейка', false);
   assert.equal(r.save.words['word-mark-i'], 'white');
+  assert.equal(r.save.itemStates['00-book'], 'вклейка');
 });
 
 test('в прологе все слова белые: играя за себя, Марго получает всё легально', () => {

@@ -1,5 +1,6 @@
-import { optionAvailable } from './state.ts';
+import { optionAvailable, pageAt, pagesOf, sceneOf } from './state.ts';
 import type { SystemCall, SystemCommand } from './state.ts';
+import { EXAMINE, leafLabel, LEAF } from '../../shared/pages.ts';
 import { emptyAttrs, type Doc, type GameContent, type Option, type SaveState } from '../../shared/types.ts';
 
 /**
@@ -46,6 +47,51 @@ function docById(content: GameContent, id: string): Doc | undefined {
   return Object.values(content.docs).find((d) => d.id === id);
 }
 
+/**
+ * Осмотр многостраничного предмета ведёт в **текущую** страницу, а не в первую.
+ * Сервер сейва не видит и целится в начало; здесь мы знаем, где книга открыта.
+ */
+function retarget(content: GameContent, save: SaveState, option: Option): Option {
+  const target = option.target ? content.nodes[option.target] : undefined;
+  if (!target || target.attrs.page == null) return option;
+  const page = pageAt(content, save, sceneOf(target.addr));
+  return page ? { ...option, target: page.addr } : option;
+}
+
+/**
+ * Листание (07-оболочка-тз, «Страницы предмета»). Опций в контенте нет: их
+ * создаёт движок, и есть они, только пока предмет открыт. До первого осмотра
+ * листать нечего — иначе комната с двумя книгами сразу вываливает четыре
+ * строки про перелистывание того, чего игрок не открывал.
+ *
+ * На первой странице нет «назад», на последней — «вперёд».
+ */
+function leafOptions(content: GameContent, save: SaveState, doc: Doc): CatalogOption[] {
+  if (save.itemStates[doc.id] == null) return [];
+
+  const pages = pagesOf(content, doc.docId);
+  const at = pages.findIndex((n) => n.id === save.itemStates[doc.id]);
+  if (at === -1) return [];
+
+  const out: CatalogOption[] = [];
+  for (const [step, forward] of [[1, true] as const, [-1, false] as const]) {
+    const page = pages[at + step];
+    if (!page) continue;
+    out.push(
+      plain({
+        label: leafLabel(doc.label, forward),
+        kind: 'environment',
+        target: page.addr,
+        attrs: page.attrs,
+        verb: LEAF,
+        object: doc.docId,
+        moves: false,
+      }),
+    );
+  }
+  return out;
+}
+
 /** Глаголы вещей на руках: предмет приносит их с собой, комната ни при чём. */
 function fromInventory(content: GameContent, save: SaveState): CatalogOption[] {
   const out: CatalogOption[] = [];
@@ -53,7 +99,12 @@ function fromInventory(content: GameContent, save: SaveState): CatalogOption[] {
     const doc = docById(content, id);
     if (!doc || doc.type !== 'item') continue;
     for (const verb of doc.inHand) {
-      const node = doc.nodes.find((n) => n.id === verb);
+      // Осмотр многостраничной вещи отвечает страницей, узла с таким именем
+      // у неё нет и быть не должно.
+      const node =
+        verb === EXAMINE && doc.pages.length > 0
+          ? pageAt(content, save, doc.docId)
+          : doc.nodes.find((n) => n.id === verb);
       if (!node) continue;
       const option: Option = {
         // Вещь на руках — то же окружение, только оно ездит с игроком.
@@ -65,7 +116,10 @@ function fromInventory(content: GameContent, save: SaveState): CatalogOption[] {
         object: doc.docId,
         moves: false,
       };
-      if (optionAvailable(content, save, option)) out.push(plain(option));
+      if (optionAvailable(content, save, option)) {
+        out.push(plain(option));
+        out.push(...leafOptions(content, save, doc));
+      }
     }
   }
   return out;
@@ -98,9 +152,18 @@ export function buildCatalog(content: GameContent, save: SaveState): CatalogOpti
   if (node) {
     // Безусловные переходы каталогом не показываются: у них нет метки, потому что
     // игрок их не выбирает — узел уводит сам.
-    for (const option of node.options) {
-      if (option.label === '') continue;
-      if (optionAvailable(content, save, option)) out.push(plain(option));
+    for (const raw of node.options) {
+      if (raw.label === '') continue;
+      // Перенацеливаем до проверки: условие должно сработать на той странице,
+      // которая откроется, а не на первой.
+      const option = retarget(content, save, raw);
+      if (!optionAvailable(content, save, option)) continue;
+
+      out.push(plain(option));
+      const item = option.object ? content.docs[option.object] : undefined;
+      if (option.verb === EXAMINE && item && item.pages.length > 0) {
+        out.push(...leafOptions(content, save, item));
+      }
     }
 
     for (const pending of node.pending) {

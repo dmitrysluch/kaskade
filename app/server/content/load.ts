@@ -187,6 +187,12 @@ export function loadContent(): GameContent {
         label: String(raw.fm.label ?? id),
         nodeIds: new Set(raw.nodes.map((n) => n.id)),
         inHand: strArray(raw.fm.inHand),
+        // Порядок страниц считаем один раз здесь: и генератор опций, и клиент,
+        // и валидатор обязаны видеть один и тот же порядок.
+        pages: raw.nodes
+          .filter((n) => n.id !== '' && n.attrs.page != null)
+          .sort((a, b) => a.attrs.page! - b.attrs.page!)
+          .map((n) => n.id),
       },
     });
   }
@@ -245,6 +251,7 @@ export function loadContent(): GameContent {
       date,
       fm: p.raw.fm,
       nodes: built,
+      pages: p.info.pages,
       exits: p.exits,
       items: p.items,
       inHand: p.info.inHand,

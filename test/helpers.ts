@@ -48,6 +48,7 @@ export function doc(docId: string, patch: Partial<Doc> = {}): Doc {
     exits: [],
     items: [],
     inHand: [],
+    pages: [],
     optionBlocks: [],
     ...patch,
   };
