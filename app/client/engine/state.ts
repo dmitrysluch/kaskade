@@ -272,7 +272,7 @@ function applyAttrs(content: GameContent, save: SaveState, node: Node, stamp: st
 }
 
 /**
- * Выдача слова видна в потоке: `КОНТЕЙНМЕНТ — в деле, F2`. Хоткей показывается
+ * Выдача слова видна в потоке: `КОНТЕЙНМЕНТ — в деле, 2`. Хоткей показывается
  * только у первого за игру — дальше он уже знаком, а строка должна быть короткой.
  *
  * Без этой строки механика прогрессии невидима: `give:` срабатывает на первом же
@@ -280,7 +280,7 @@ function applyAttrs(content: GameContent, save: SaveState, node: Node, stamp: st
  */
 function grantLine(content: GameContent, id: string, first: boolean): string {
   const label = content.words[id]?.label ?? id;
-  return `${label.toUpperCase()} — в деле${first ? ', F2' : ''}`;
+  return `${label.toUpperCase()} — в деле${first ? ', 2' : ''}`;
 }
 
 /**

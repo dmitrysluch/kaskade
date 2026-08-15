@@ -42,6 +42,9 @@ import {
   viewport,
 } from './ui/lines.ts';
 import { Manual, Hint } from './ui/Manual.tsx';
+import { MobileScreen } from './ui/Mobile.tsx';
+import { isMobilePath, MOBILE_COLS, TAP_HINT } from './ui/mode.ts';
+import { useAdvance } from './ui/advance.ts';
 import { Menu } from './ui/Menu.tsx';
 import { Splash } from './ui/Splash.tsx';
 import { Transition } from './ui/Transition.tsx';
@@ -52,33 +55,60 @@ import type { GameContent } from '../shared/types.ts';
 
 type Bundle = { ok: true; content: GameContent } | { ok: false; errors: string[] };
 
-/**
- * Хоткей — быстрый путь к той же команде, отдельной ветки поведения у него нет.
- * F3 в этот список не входит: экран управления принадлежит оболочке, а не
- * терминалу, и команды `управление` не существует.
+/*
+ * Хоткеи — цифровой ряд (07-оболочка-тз, «Клавиши»).
+ *
+ * Функциональные клавиши не сработали в жизни: на маке F3 — Mission Control,
+ * F4 — Launchpad, и до игры они не доходят вовсе. Цифры одинаковы на обеих
+ * платформах, ничего не перехватывают и не требуют аккордов; `Ctrl`/`Cmd`
+ * отпадают по той же причине, что и раньше, — они расходятся между системами
+ * и спорят с браузером.
+ *
+ * Цена ровно одна: цифра — обычный знак команды. Поэтому хоткеем она работает
+ * только на пустой строке, и `спросить о 4380-B` набирается как ни в чём
+ * не бывало.
  */
+
+/** Хоткей — быстрый путь к той же команде, отдельной ветки поведения у него нет. */
 const HOTKEYS: Record<string, SystemCommand> = {
-  F1: 'справочник',
-  F2: 'дело',
-  // F10 — меню, как в терминальных оболочках, из которых эта игра выросла.
-  F10: 'меню',
+  '1': 'справочник',
+  '2': 'дело',
 };
+
+/*
+ * Клавиши слоёв оболочки. Отдельно от `HOTKEYS`, потому что работают они шире:
+ * экран, который клавиша открывает, обязан показываться в любой момент, в том
+ * числе поверх полноэкранного кадра. Иначе игрок жмёт `0` на сплэше и не видит
+ * ничего.
+ *
+ * Справочник и дело так не умеют и не должны: терминал в этот момент не терминал.
+ */
+const MENU_KEY = '0';
+const MANUAL_KEY = '3';
 
 /**
  * Прокрутка потока. `PgUp`/`PgDn` по ТЗ, но на ноутбуке без цифрового блока это
- * `Fn` со стрелкой — поэтому те же действия продублированы функциональными
- * клавишами, как и всё остальное в этом интерфейсе.
+ * `Fn` со стрелкой, то есть аккорд, — поэтому то же есть на цифрах.
  *
  * `+1` — вверх, к тому, что было раньше.
  */
 const SCROLL_KEYS: Record<string, number> = {
   PageUp: 1,
-  F4: 1,
+  '4': 1,
   PageDown: -1,
-  F5: -1,
+  '5': -1,
 };
 
+/** Цифра работает хоткеем только на пустой строке — дальше она знак команды. */
+const DIGIT = /^[0-9]$/;
+
 const ambience = new Ambience();
+
+/**
+ * Мобильная версия — отдельный адрес `/m`, а не ширина окна (`ui/mode.ts`).
+ * Считаем один раз: внутри игры навигации нет, адрес под ногами не меняется.
+ */
+const TOUCH = typeof location === 'undefined' ? false : isMobilePath(location.pathname);
 
 export function App() {
   const [bundle, setBundle] = useState<Bundle | null>(null);
@@ -158,6 +188,7 @@ export function App() {
     renderer?.font.rows ?? 34,
     renderer?.font.size ?? 16,
     renderer?.font.line ?? 1,
+    TOUCH ? MOBILE_COLS : undefined,
   );
 
   const node = content && session ? content.nodes[session.save.episodeState.at] : undefined;
@@ -177,7 +208,7 @@ export function App() {
   );
 
   /**
-   * Последний термин справочника, который был на экране. F1 открывает справочник
+   * Последний термин справочника, который был на экране. `1` открывает справочник
    * на нём, а не на алфавитном списке: игрок, не понявший слова, должен получить
    * ответ, а не стену терминов.
    */
@@ -205,6 +236,8 @@ export function App() {
     // пробела, а не колонка посреди пустого экрана.
     const text = Math.max(1, cols - MARGIN.text - MARGIN.right);
 
+    // На телефоне поток прокручивается пальцем и окна в строках не имеет:
+    // высота там пляшет вместе с адресной строкой браузера.
     const streamRows = Math.max(3, rows - STATUS_ROWS - LOWER_ROWS);
     // Слова дела подсвечиваются в любом тексте: прогресс виден и в старом.
     const words = session && content ? Object.keys(session.save.words).map((id) => content.words[id]?.label ?? id) : [];
@@ -220,6 +253,16 @@ export function App() {
       if (!content || !session) return;
       // Серое слово не коммитится: курсор встаёт, выбор не проходит.
       if (option.locked) return;
+
+      /*
+       * Строка ввода тратится на команду в любом случае. Раньше её чистила
+       * только ветка перехода, и после `дело` в строке оставалось слово `дело`;
+       * с цифровыми хоткеями это стало ещё и небезопасно — непустая строка
+       * выключает цифры. Хоткей приходит сюда только с пустой строки, так что
+       * терять нечего.
+       */
+      setInput('');
+      setPick(null);
 
       // Промпт рисует поток: здесь только сама команда.
       const echo: StreamEntry = { kind: 'echo', text: option.label };
@@ -282,11 +325,46 @@ export function App() {
         reading: moved ? null : reading,
         history,
       });
-      setInput('');
-      setPick(null);
     },
     [content, session, episode],
   );
+
+  /**
+   * Исполнить служебную команду от лица хоткея. Отдельной ветки поведения у него
+   * нет: он находит ту же опцию каталога и отправляет её в общий обработчик —
+   * иначе клавиша и команда однажды разъедутся.
+   */
+  const runSystem = useCallback(
+    (kind: SystemCommand) => {
+      // `1` открывает справочник на последнем термине, который был на экране:
+      // иначе игрок, не понявший слова, получает вместо ответа стену терминов.
+      const arg = kind === 'справочник' ? lastTerm : null;
+      const option =
+        catalog.find((o) => o.system?.kind === kind && o.system.arg === arg) ??
+        catalog.find((o) => o.system?.kind === kind && o.system.arg === null);
+      if (option) run(option);
+    },
+    [catalog, lastTerm, run],
+  );
+
+  /**
+   * Служебная полоса телефона: те же команды и тот же порядок, что в полосе
+   * большого экрана, — только их трогают, а не вызывают клавишей. `управление`
+   * командой по-прежнему не является и живёт отдельным пунктом.
+   */
+  const systemTaps = useMemo(
+    () => [
+      ...SYSTEM_COMMANDS.map((kind) => ({ label: kind, run: () => runSystem(kind) })),
+      { label: 'управление', run: () => setReopened(true) },
+    ],
+    [runSystem],
+  );
+
+  /** Закрыть оверлей: `Esc` на большом экране, касание на телефоне. */
+  const closeOverlay = useCallback(() => {
+    setSession((prev) => (prev ? { ...prev, overlay: null } : prev));
+    setScroll(0);
+  }, []);
 
   const cardDone = useCallback(() => {
     if (!content || !session || !node) return;
@@ -326,7 +404,19 @@ export function App() {
     setSession((prev) => (prev ? { ...prev, save: { ...prev.save, taught: true } } : prev));
   }, []);
 
-  // Управление из меню: тот же экран, что по F3, — второй копии инструкции нет.
+  /*
+   * Обучающий экран закрывается `Enter`, как и полноэкранный кадр: клавиша,
+   * означающая «дальше», в игре одна. «Любая клавиша» была отдельным правилом
+   * ровно для одного экрана — и первым же, что игрок пробовал, оказывалась
+   * стрелка или цифра, то есть тот самый интерфейс, который экран объясняет.
+   *
+   * Тот же `useAdvance`, что у кадров, и по той же причине: экран открывается
+   * после кадра, и `Enter`, которым игрок его домотал, не должен закрыть
+   * инструкцию, которую он ещё не увидел.
+   */
+  useAdvance(manual ? manualDone : null);
+
+  // Управление из меню: тот же экран, что по `3`, — второй копии инструкции нет.
   const menuManual = useCallback(() => {
     setMenu(false);
     setReopened(true);
@@ -356,44 +446,36 @@ export function App() {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (!session) return;
+      /*
+       * На телефоне терминал клавиш не слушает: строки ввода там нет, и набранное
+       * ушло бы в состояние, которого игрок не видит. Всё, что делает клавиша
+       * на большом экране, там делает касание, — а кадры, меню и управление
+       * слушают свои клавиши сами и продолжают работать с внешней клавиатурой.
+       */
+      if (TOUCH) return;
       const key = event.key;
       const page = Math.max(1, layout.streamRows - 1);
 
-      // Пока меню открыто, клавиши принадлежат ему одному: у него свои стрелки,
-      // свой Enter и свой Esc, и терминал под ним не должен их слышать.
-      if (menu) return;
+      // Пока открыт слой со своим управлением, клавиши принадлежат ему одному.
+      // У меню свои стрелки, свой Enter и свой Esc; обучающий экран закрывается
+      // тем же новым Enter, что и полноэкранный кадр (useAdvance выше).
+      if (menu || manual) return;
 
-      // Обучающий слой закрывается любой клавишей — это не «нажмите любую
-      // клавишу», а «понял, дальше сам».
-      if (manual) {
-        event.preventDefault();
-        manualDone();
-        return;
-      }
-
-      // F3 принадлежит оболочке: открывает обучающий слой напрямую, не подставляет
-      // текст в строку, не эхается и не оставляет записи в истории.
-      if (key === 'F3') {
-        event.preventDefault();
-        setReopened(true);
-        return;
-      }
-
-      // Хоткей — быстрый путь к той же самой команде, отдельной ветки у него нет.
-      const hotkey = HOTKEYS[key];
-      if (hotkey) {
-        event.preventDefault();
-        // F1 открывает справочник на последнем термине, который был на экране:
-        // иначе игрок, не понявший слова, получает вместо ответа стену терминов.
-        const arg = hotkey === 'справочник' ? lastTerm : null;
-        const option =
-          catalog.find((o) => o.system?.kind === hotkey && o.system.arg === arg) ??
-          catalog.find((o) => o.system?.kind === hotkey && o.system.arg === null);
-        if (option) run(option);
-        return;
-      }
-
+      /*
+       * Цифра работает хоткеем только на пустой строке. После первого знака она
+       * снова обычный символ команды, иначе `спросить о 4380-B` было бы нечем
+       * набрать, а случайная цифра открывала бы справочник посреди ввода.
+       */
+      const meta = !DIGIT.test(key) || input === '';
       const scrollBy = SCROLL_KEYS[key];
+
+      // Слои оболочки открываются в любой момент, включая кадр и сплэш.
+      if (meta && (key === MANUAL_KEY || key === MENU_KEY)) {
+        event.preventDefault();
+        if (key === MANUAL_KEY) setReopened(true);
+        else runSystem('меню');
+        return;
+      }
 
       if (session.overlay) {
         event.preventDefault();
@@ -408,7 +490,14 @@ export function App() {
       }
       if (!accepting) return;
 
-      if (scrollBy) {
+      const hotkey = meta ? HOTKEYS[key] : undefined;
+      if (hotkey) {
+        event.preventDefault();
+        runSystem(hotkey);
+        return;
+      }
+
+      if (scrollBy && meta) {
         event.preventDefault();
         setScroll((s) => Math.max(0, Math.min(layout.maxScroll, s + scrollBy * page)));
         return;
@@ -477,15 +566,19 @@ export function App() {
     if (!bundle.ok) return <ErrorScreen cols={cols} rows={rows} errors={bundle.errors} />;
     if (!session || !episode || !renderer) return <div className="dim">…</div>;
     /*
-     * Слои оболочки идут поверх всего, включая кадры: F10 и F3 обязаны работать
+     * Слои оболочки идут поверх всего, включая кадры: `0` и `3` обязаны работать
      * в любой момент. Иначе игрок, открывший меню на сплэше, нажимает клавишу
      * и не видит ничего — экран открыт, а показан кадр.
      *
      * Сам собой обучающий слой поверх кадра не встанет: `teaching` требует, чтобы
      * кадра не было. Сюда попадает только открытое руками.
      */
-    if (menu) return <Menu onClose={() => setMenu(false)} onManual={menuManual} onRestart={restart} />;
-    if (manual) return <Manual first={!session.save.taught} />;
+    if (menu) {
+      return (
+        <Menu onClose={() => setMenu(false)} onManual={menuManual} onRestart={restart} touch={TOUCH} />
+      );
+    }
+    if (manual) return <Manual first={!session.save.taught} touch={TOUCH} onDone={manualDone} />;
     // Лицо и запись на одном узле — личное дело: лицо, под ним рамка. Держится
     // столько же, сколько сплэш: разглядеть надо и то, и другое.
     if (splash && isCard) {
@@ -495,6 +588,7 @@ export function App() {
           card={node?.text ?? ''}
           glyphs={frameGlyphs(renderer.frame)}
           onDone={splashCardDone}
+          touch={TOUCH}
         />
       );
     }
@@ -507,12 +601,13 @@ export function App() {
           rows={rows}
           glyphs={frameGlyphs(renderer.frame)}
           onDone={cardDone}
+          touch={TOUCH}
         />
       );
     }
     if (splash) {
       return (
-        <Splash lines={portraitLines(splash)} onDone={splashDone} />
+        <Splash lines={portraitLines(splash)} onDone={splashDone} touch={TOUCH} />
       );
     }
     if (session.overlay) {
@@ -524,6 +619,27 @@ export function App() {
           lines={overlayLines(session.overlay, bundle.content, session.save, cols - 3)}
           scroll={scroll}
           glyphs={frameGlyphs(renderer.frame)}
+          {...(TOUCH ? { close: `${TAP_HINT} — закрыть`, onClose: closeOverlay } : {})}
+        />
+      );
+    }
+
+    if (TOUCH) {
+      return (
+        <MobileScreen
+          cols={cols}
+          status={statusLine(
+            statusText(dateAt(bundle.content, session.save), terms(bundle.content, session.save)),
+            cols,
+          )}
+          stream={layout.stream}
+          // Аргументы служебных команд (`справочник контейнмент`) в список не
+          // идут: они существуют ради набора, а пальцем до статьи добираются
+          // через сам справочник. Иначе полсотни строк поверх трёх нужных.
+          options={catalog.filter((o) => !o.system)}
+          onPick={run}
+          system={systemTaps}
+          rule={ruleGlyph(renderer.rule)}
         />
       );
     }

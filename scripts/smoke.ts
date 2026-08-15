@@ -99,6 +99,13 @@ try {
   check(clientOk, 'клиент подключён');
   if (!clientOk) console.error(`\n--- отдано ---\n${html.slice(0, 400)}\n---`);
 
+  // Мобильная версия — тот же клиент на отдельном адресе. Проверяем, что адрес
+  // вообще отдаётся: без спа-фолбэка `/m` вернул бы 404, и это не заметно,
+  // пока не откроешь его с телефона.
+  const mobile = await fetch(`http://localhost:${PORT}/m`);
+  const mobileHtml = await mobile.text();
+  check(mobile.ok && mobileHtml.includes('<div id="root">'), 'мобильный адрес /m отдаётся');
+
   // Главное обещание архитектуры: правишь заметку — вкладка узнаёт об этом сама.
   check(await notifiesOnEdit(), 'правка заметки прилетает по ws');
 } finally {

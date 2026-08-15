@@ -157,9 +157,9 @@ export const PICK_MARK = '›';
 
 /** Хоткеи: показаны прямо в полосе, отдельной строки под них нет. */
 const HOTKEY: Partial<Record<string, string>> = {
-  справочник: 'F1',
-  дело: 'F2',
-  меню: 'F10',
+  справочник: '1',
+  дело: '2',
+  меню: '0',
 };
 
 /** Категория опции → класс. Цвет — из палитры рендерера, здесь только связь. */
@@ -268,14 +268,14 @@ export function detailLines(
  * оболочки, а не содержимого комнаты, — поэтому не исчезает при переходе и не
  * фильтруется набором.
  *
- * `F3 управление` стоит здесь ради обнаруживаемости, но командой не является:
+ * `3 управление` стоит здесь ради обнаруживаемости, но командой не является:
  * метаинструкция не притворяется действием терминала.
  */
 export function systemLine(commands: string[], max: number): Seg[] {
   const segs: Seg[] = [{ text: pad() }];
   for (const command of [...commands, 'управление']) {
     if (segs.length > 1) segs.push({ text: ' · ', cls: 'dim' });
-    const key = command === 'управление' ? 'F3' : HOTKEY[command];
+    const key = command === 'управление' ? '3' : HOTKEY[command];
     if (key) segs.push({ text: `${key} `, cls: 'dim' });
     segs.push({ text: command, cls: 'system' });
   }

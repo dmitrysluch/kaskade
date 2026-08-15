@@ -301,14 +301,14 @@ test('подсвечивается только целое слово и тол�
 test('выдача слова видна в потоке: первая с хоткеем, дальше без', () => {
   const lines = streamLines(
     [
-      { kind: 'grant', text: 'КОНТЕЙНМЕНТ — в деле, F2' },
+      { kind: 'grant', text: 'КОНТЕЙНМЕНТ — в деле, 2' },
       { kind: 'grant', text: 'BLUE CARD — в деле' },
     ],
     60,
   );
   assert.equal(lines[0]![1]!.cls, 'grant');
-  assert.match(lines[0]!.map((s) => s.text).join(''), /КОНТЕЙНМЕНТ — в деле, F2/);
-  assert.equal(lines[2]!.map((s) => s.text).join('').includes('F2'), false);
+  assert.match(lines[0]!.map((s) => s.text).join(''), /КОНТЕЙНМЕНТ — в деле, 2/);
+  assert.equal(lines[2]!.map((s) => s.text).join('').includes(', 2'), false);
 });
 
 test('прошедший срок показывается словом, а не минусом', () => {
@@ -426,7 +426,7 @@ test('служебная полоса закреплена и не зависи�
   const line = systemLine(SYSTEM_COMMANDS, 80);
   const text = line.map((s) => s.text).join('').trim();
 
-  assert.equal(text, 'F1 справочник · F2 дело · предметы · F10 меню · F3 управление');
+  assert.equal(text, '1 справочник · 2 дело · предметы · 0 меню · 3 управление');
   // Все служебные — своим цветом.
   assert.equal(line.filter((s) => s.cls === 'system').length, 5);
 

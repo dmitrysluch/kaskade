@@ -337,6 +337,8 @@ export function OverlayScreen({
   lines,
   scroll,
   glyphs,
+  close = 'Esc — закрыть',
+  onClose,
 }: {
   cols: number;
   rows: number;
@@ -344,6 +346,9 @@ export function OverlayScreen({
   lines: Seg[][];
   scroll: number;
   glyphs: FrameGlyphs;
+  /** Чем закрывают: клавишей на большом экране, касанием на телефоне. */
+  close?: string;
+  onClose?: () => void;
 }) {
   const inner = cols - 2;
   const body = rows - 4;
@@ -351,7 +356,7 @@ export function OverlayScreen({
   const from = Math.max(0, Math.min(scroll, Math.max(0, lines.length - body)));
   const visible = lines.slice(from, from + body);
 
-  return (
+  const box = (
     <>
       <Border widths={[inner]} glyphs={glyphs} left={glyphs.tl} mid={glyphs.h} right={glyphs.tr} title={title} />
       {Array.from({ length: body }, (_, i) => (
@@ -365,10 +370,14 @@ export function OverlayScreen({
         />
       ))}
       <Border widths={[inner]} glyphs={glyphs} left={glyphs.l} mid={glyphs.h} right={glyphs.r} />
-      <Row cells={[{ segs: [{ text: ' Esc — закрыть', cls: 'dim' }], w: inner }]} glyphs={glyphs} />
+      <Row cells={[{ segs: [{ text: ` ${close}`, cls: 'dim' }], w: inner }]} glyphs={glyphs} />
       <Border widths={[inner]} glyphs={glyphs} left={glyphs.bl} mid={glyphs.h} right={glyphs.br} />
     </>
   );
+
+  // Карточку закрывают касанием в любом месте: искать крестик в углу пальцем
+  // хуже, а другого действия на этом экране всё равно нет.
+  return onClose ? <div onClick={onClose}>{box}</div> : box;
 }
 
 export function ErrorScreen({ cols, rows, errors }: { cols: number; rows: number; errors: string[] }) {

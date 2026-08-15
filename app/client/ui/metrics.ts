@@ -38,6 +38,13 @@ export interface Fit {
   availH: number;
   /** Сколько строк должно помещаться по высоте — `font.rows` из game.yaml. */
   rows: number;
+  /**
+   * Сколько колонок должно помещаться по ширине. Задаётся только мобильной
+   * версией: у телефона высоты вдоволь, а ширины нет, и держать надо длину
+   * строки — иначе кегль, выведенный из высоты, оставляет два десятка колонок
+   * и текст рассыпается в столбик.
+   */
+  cols?: number;
   /** Ширина знака и высота строки на единицу кегля. */
   cellRatio: number;
   lineRatio: number;
@@ -47,10 +54,14 @@ export interface Fit {
  * Подбор кегля и сетки. Вынесено из хука отдельно, потому что здесь вся суть,
  * а замеры DOM — это только способ получить сюда четыре числа.
  */
-export function fit({ availW, availH, rows, cellRatio, lineRatio }: Fit): Metrics {
-  // Кегль — целиком следствие высоты. Потолок и пол нужны на краях: в почтовой
-  // марке буквы не должны стать нечитаемыми, на телевизоре — плакатными.
-  const wanted = Math.max(MIN_SIZE, Math.min(MAX_SIZE, availH / (rows * lineRatio)));
+export function fit({ availW, availH, rows, cols, cellRatio, lineRatio }: Fit): Metrics {
+  // Кегль — целиком следствие того измерения, которое держим: высоты на большом
+  // экране, ширины на телефоне. Потолок и пол нужны на краях: в почтовой марке
+  // буквы не должны стать нечитаемыми, на телевизоре — плакатными.
+  const wanted = Math.max(
+    MIN_SIZE,
+    Math.min(MAX_SIZE, cols == null ? availH / (rows * lineRatio) : availW / (cols * cellRatio)),
+  );
 
   /*
    * Клетка обязана быть целым числом пикселей — и по ширине, и по высоте.
@@ -66,10 +77,13 @@ export function fit({ availW, availH, rows, cellRatio, lineRatio }: Fit): Metric
    * по той же причине уезжает в пиксели и задаётся явно, а не множителем.
    */
   const exact = wanted * cellRatio;
-  // Из двух целых ширин берём ту, при которой строк выходит ближе к заказанному.
+  // Из двух целых ширин берём ту, при которой заказанного выходит ближе.
   const candidates = [Math.max(1, Math.floor(exact)), Math.max(1, Math.ceil(exact))];
   const cell = candidates.reduce((best, c) => {
-    const err = (w: number) => Math.abs(Math.floor(availH / ((w / cellRatio) * lineRatio)) - rows);
+    const err = (w: number) =>
+      cols == null
+        ? Math.abs(Math.floor(availH / ((w / cellRatio) * lineRatio)) - rows)
+        : Math.abs(Math.floor(availW / w) - cols);
     return err(c) < err(best) || (err(c) === err(best) && c > best) ? c : best;
   });
 
@@ -82,7 +96,10 @@ export function fit({ availW, availH, rows, cellRatio, lineRatio }: Fit): Metric
   return {
     size,
     line,
-    cols: Math.max(MIN_COLS, Math.floor(availW / cell)),
+    // Пол по колонкам — свойство большого экрана: там сетка обязана собраться
+    // хоть как-то. На телефоне колонки и есть заказ, и поднимать их до сорока
+    // значило бы врать про ширину, которой нет.
+    cols: cols == null ? Math.max(MIN_COLS, Math.floor(availW / cell)) : Math.floor(availW / cell),
     rows: Math.max(MIN_ROWS, Math.floor(availH / line)),
   };
 }
@@ -97,6 +114,7 @@ export function useMetrics(
   rows: number,
   base: number,
   lineRatio: number,
+  cols?: number,
 ): Metrics {
   const [metrics, setMetrics] = useState<Metrics>({ cols: MIN_COLS, rows, size: base, line: base });
 
@@ -119,7 +137,7 @@ export function useMetrics(
       const availW = el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
       const availH = el.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
 
-      setMetrics(fit({ availW, availH, rows, cellRatio, lineRatio }));
+      setMetrics(fit({ availW, availH, rows, cellRatio, lineRatio, ...(cols != null && { cols }) }));
     }
 
     measure();
@@ -129,7 +147,7 @@ export function useMetrics(
     const observer = new ResizeObserver(measure);
     if (ref.current) observer.observe(ref.current);
     return () => observer.disconnect();
-  }, [ref, rows, base, lineRatio]);
+  }, [ref, rows, base, lineRatio, cols]);
 
   return metrics;
 }

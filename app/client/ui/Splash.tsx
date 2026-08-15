@@ -1,4 +1,5 @@
 import { ADVANCE_HINT, useAdvance } from './advance.ts';
+import { TAP_HINT } from './mode.ts';
 import { cardBox, type FrameGlyphs } from './Screen.tsx';
 import type { Seg } from './text.ts';
 
@@ -18,6 +19,7 @@ export function Splash({
   card,
   glyphs,
   onDone,
+  touch = false,
 }: {
   lines: Seg[][];
   /** Запись под лицом: `splash:` и `titlecard` на одном узле — это личное дело. */
@@ -25,11 +27,13 @@ export function Splash({
   glyphs?: FrameGlyphs;
   /** `null` — дальше ничего нет: финальное лицо не закрывается вовсе. */
   onDone: (() => void) | null;
+  /** Мобильная версия: кадр уводит касание, а не Enter. */
+  touch?: boolean;
 }) {
   useAdvance(onDone);
 
   return (
-    <div className="splash">
+    <div className="splash" {...(touch && onDone ? { onClick: onDone } : {})}>
       <div>
         {lines.map((row, y) => (
           <div key={y}>
@@ -60,7 +64,7 @@ export function Splash({
           </div>
         )}
       </div>
-      {onDone && <div className="frame-hint">{ADVANCE_HINT}</div>}
+      {onDone && <div className="frame-hint">{touch ? TAP_HINT : ADVANCE_HINT}</div>}
     </div>
   );
 }

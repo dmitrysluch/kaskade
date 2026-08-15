@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { ADVANCE_HINT, useAdvance } from './advance.ts';
+import { TAP_HINT } from './mode.ts';
 import { CardScreen, type FrameGlyphs } from './Screen.tsx';
 
 /**
@@ -29,6 +30,7 @@ export function Transition({
   rows,
   glyphs,
   onDone,
+  touch = false,
 }: {
   card: string;
   bios: string[];
@@ -36,6 +38,8 @@ export function Transition({
   rows: number;
   glyphs: FrameGlyphs;
   onDone: () => void;
+  /** Мобильная версия: кадр уводит касание, а не Enter. */
+  touch?: boolean;
 }) {
   const [stage, setStage] = useState<'card' | 'bios'>('card');
 
@@ -46,7 +50,13 @@ export function Transition({
   );
   useAdvance(next);
 
-  return stage === 'card' ?
-      <CardScreen cols={cols} rows={rows} text={card} glyphs={glyphs} hint={ADVANCE_HINT} />
-    : <CardScreen cols={cols} rows={rows} text={bios.join('\n')} glyphs={null} hint={ADVANCE_HINT} />;
+  const hint = touch ? TAP_HINT : ADVANCE_HINT;
+  const frame =
+    stage === 'card' ?
+      <CardScreen cols={cols} rows={rows} text={card} glyphs={glyphs} hint={hint} />
+    : <CardScreen cols={cols} rows={rows} text={bios.join('\n')} glyphs={null} hint={hint} />;
+
+  // Касание уводит тот же кадр и в том же порядке, что Enter: карточка в bios,
+  // bios дальше. Ветки поведения две только по способу ввода.
+  return touch ? <div onClick={next}>{frame}</div> : frame;
 }

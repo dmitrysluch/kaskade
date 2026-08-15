@@ -8,6 +8,9 @@ import { overlayLines, statusText } from '../app/client/ui/lines.ts';
 import type { SaveState } from '../app/shared/types.ts';
 import type { StreamEntry } from '../app/client/engine/state.ts';
 import { option } from './helpers.ts';
+import { join } from 'node:path';
+import { readYaml } from '../app/server/content/yaml.ts';
+import { CONTENT } from '../app/server/content/paths.ts';
 
 /**
  * Интеграция на настоящем vault: то, что нельзя проверить на стенде — проходится ли
@@ -143,6 +146,23 @@ test('флаг помнит дату сцены, в которой постав�
   assert.equal(interpolate('дата: {{prolog.phoned.at}}', called.save), 'дата: 11.09.2026');
 });
 
+test('game.yaml — витрина: настройки эпизода живут только в episode.yaml', () => {
+  // Правило приоритета («при расхождении выигрывает эпизод») было худшим из
+  // вариантов: значение видно в двух местах, а работает одно. Теперь у каждого
+  // поля один владелец, и сборка падает на дубле.
+  const shop = readYaml(join(CONTENT, 'game.yaml'));
+  for (const entry of shop.episodes as Record<string, unknown>[]) {
+    assert.deepEqual(Object.keys(entry), ['id'], `в game.yaml у эпизода лишние поля`);
+  }
+
+  // А сам эпизод при этом собран целиком — значит, всё приехало из episode.yaml.
+  const episode = game.episodes[0]!;
+  assert.equal(episode.renderer, 'academic');
+  assert.ok(episode.entry.endsWith('#'));
+  assert.ok(episode.verbs.length > 0 && episode.characters.length > 0);
+  assert.ok(episode.title && episode.title !== episode.id);
+});
+
 test('у каждой сцены пролога есть внутриигровая дата', () => {
   const scenes = Object.values(game.docs).filter((d) => d.type === 'scene');
   assert.ok(scenes.length > 0);
@@ -231,11 +251,21 @@ test('демо-срез: сцены 00–02 открыты, 03 закрыта, �
 });
 
 test('слово, отданное прологом, становится белым', () => {
-  // Первое слово игрок добывает сам — долистав учебник до вклейки с разрезом.
-  const save = at('episodes/prolog/rooms/00-room#');
-  const r = enter(game, save, 'episodes/prolog/items/00-book#вклейка', false);
-  assert.equal(r.save.words['word-mark-i'], 'white');
-  assert.equal(r.save.itemStates['00-book'], 'вклейка');
+  // Ищем по графу, а не по имени: слова автор заводит и убирает каждый день,
+  // а проверять надо механику — выдал узел, значит слово в деле и его можно
+  // произносить.
+  const giver = Object.values(game.nodes).find((n) => n.attrs.give.some((id) => game.words[id]));
+  assert.ok(giver, 'в прологе ни один узел не отдаёт слова');
+
+  const word = giver.attrs.give.find((id) => game.words[id])!;
+  const r = enter(game, at('episodes/prolog/rooms/00-room#'), giver.addr, false);
+  assert.equal(r.save.words[word], 'white');
+
+  // Если слово отдаёт страница предмета, заодно запоминается и сама страница:
+  // закладка и выдача происходят одним входом.
+  if (giver.attrs.page != null) {
+    assert.equal(r.save.itemStates[sceneOf(giver.addr).split('/').pop()!], giver.id);
+  }
 });
 
 test('в прологе все слова белые: играя за себя, Марго получает всё легально', () => {
@@ -316,13 +346,14 @@ test('срок можно сдвинуть узлом и спросить о н�
 
 test('служебные команды берут аргумент: справочник и дело — сразу статью', () => {
   const save = at('episodes/prolog/rooms/00-room#');
-  const withWord: SaveState = { ...save, words: { 'word-mark-i': 'white' } };
+  const anyWord = Object.keys(game.words)[0]!;
+  const withWord: SaveState = { ...save, words: { [anyWord]: 'white' } };
   const all = labels(withWord);
 
   // Аргументы обязаны быть опциями: «не понимаю» в этой игре не бывает.
   const term = Object.keys(game.reference)[0]!;
   assert.ok(all.includes(`справочник ${term}`), `нет опции "справочник ${term}"`);
-  assert.ok(all.includes('дело MARK I'));
+  assert.ok(all.includes(`дело ${game.words[anyWord]!.label}`));
 
   // И открывают ровно одну статью, а не список.
   const one = overlayLines({ kind: 'справочник', arg: term }, game, withWord, 60);
@@ -381,7 +412,7 @@ test('выданное слово объявляется в потоке', () =>
   const grants = r.entries.filter((e) => e.kind === 'grant');
   assert.equal(grants.length, 1);
   // Первое за игру слово показывается с хоткеем: иначе игрок не узнает, что дело есть.
-  assert.match(grants[0]!.text, / — в деле, F2$/);
+  assert.match(grants[0]!.text, / — в деле, 2$/);
 
   // Второй раз то же слово не объявляется: оно уже в деле.
   assert.deepEqual(enter(game, r.save, giver.addr, false).entries.filter((e) => e.kind === 'grant'), []);

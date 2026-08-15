@@ -28,10 +28,13 @@ export function Menu({
   onClose,
   onManual,
   onRestart,
+  touch = false,
 }: {
   onClose: () => void;
   onManual: () => void;
   onRestart: () => void;
+  /** Мобильная версия: пункт выбирают касанием, стрелок и Enter там нет. */
+  touch?: boolean;
 }) {
   const [confirm, setConfirm] = useState(false);
   const [pick, setPick] = useState(0);
@@ -92,16 +95,26 @@ export function Menu({
           {items.map((item, i) => (
             <li
               key={item.label}
-              className={[i === pick ? 'pick' : '', item.danger ? 'danger' : ''].filter(Boolean).join(' ')}
+              className={[touch || i === pick ? 'pick' : '', item.danger ? 'danger' : ''].filter(Boolean).join(' ')}
             >
-              <span className="menu-mark">{i === pick ? PICK_MARK : ' '}</span>
-              {item.label}
+              {touch ?
+                <button className="tap" type="button" onClick={item.run}>
+                  <span className="menu-mark">{PICK_MARK}</span>
+                  {item.label}
+                </button>
+              : <>
+                  <span className="menu-mark">{i === pick ? PICK_MARK : ' '}</span>
+                  {item.label}
+                </>
+              }
             </li>
           ))}
         </ul>
 
         <p className="manual-go">
-          ↑ ↓ выбрать · Enter выполнить · Esc {confirm ? 'отменить' : 'закрыть'}
+          {touch ?
+            (confirm ? 'коснитесь ответа' : 'коснитесь пункта')
+          : `↑ ↓ выбрать · Enter выполнить · Esc ${confirm ? 'отменить' : 'закрыть'}`}
         </p>
       </div>
     </div>

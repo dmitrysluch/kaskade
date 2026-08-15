@@ -136,7 +136,24 @@ function parseEpisodes(gameFile: string, game: Record<string, unknown>): Episode
     const dir = join(CONTENT, 'episodes', id);
     const cfgFile = join(dir, 'episode.yaml');
 
-    // game.yaml — витрина, episode.yaml — правда: при расхождении выигрывает эпизод.
+    /*
+     * game.yaml — витрина: порядок эпизодов и общие рендереры (07-оболочка-тз,
+     * «game.yaml»). Настройки самого эпизода живут в его `episode.yaml` и только
+     * там, поэтому правила приоритета не нужно: у каждого поля один владелец.
+     *
+     * Раньше приоритет был («при расхождении выигрывает эпизод»), и это худший
+     * из вариантов: значение видно в двух местах, а работает одно, — правка
+     * в витрине молча не делает ничего.
+     */
+    const extra = Object.keys(entry).filter((k) => k !== 'id');
+    if (extra.length > 0) {
+      throw new ContentError(
+        gameFile,
+        `эпизод "${id}": ${extra.join(', ')} — не дело game.yaml; эти поля живут в episodes/${id}/episode.yaml`,
+        1,
+      );
+    }
+
     const cfg = existsSync(cfgFile) ? readYaml(cfgFile) : {};
     const merged = { ...entry, ...cfg };
     const file = existsSync(cfgFile) ? cfgFile : gameFile;

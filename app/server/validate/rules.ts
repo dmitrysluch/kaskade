@@ -220,7 +220,17 @@ const deadGenerators: Rule = {
   run(content) {
     const found: Finding[] = [];
     for (const doc of Object.values(content.docs)) {
-      if (doc.type === 'room' && doc.exits.length === 0 && doc.items.length === 0) {
+      /*
+       * Предметы и выходы объявляются там, где игрок стоит: во frontmatter то,
+       * что в комнате всегда, на узле — то, что принадлежит состоянию
+       * (07-оболочка-тз, «Комната — не одно место»). Блок `options` при этом
+       * один на комнату, поэтому пустой источник — это свойство заметки целиком,
+       * а не узла: на проходной развилке предметов нет и быть не должно.
+       */
+      const items = [...doc.items, ...doc.nodes.flatMap((n) => n.attrs.items)];
+      const exits = [...doc.exits, ...doc.nodes.flatMap((n) => n.attrs.exits)];
+
+      if (doc.type === 'room' && exits.length === 0 && items.length === 0) {
         found.push({
           rule: 'generators',
           severity: 'error',
@@ -229,20 +239,19 @@ const deadGenerators: Rule = {
         });
       }
 
-      for (const node of doc.nodes) {
-        for (const gen of node.generators) {
-          const empty =
-            (gen.source === 'exits' && doc.exits.length === 0) ||
-            (gen.source === 'items' && doc.items.length === 0);
-          if (!empty) continue;
-          found.push({
-            rule: 'generators',
-            severity: 'error',
-            file: doc.path,
-            line: node.line,
-            message: `генератор "${gen.phrase}: ${gen.source}" ссылается на пустой источник`,
-          });
-        }
+      // Генераторы после раскрытия одинаковы во всех узлах комнаты — жалуемся
+      // один раз на заметку, а не по разу на каждое её состояние.
+      const declared = new Map(doc.nodes.flatMap((n) => n.generators.map((g) => [`${g.phrase}: ${g.source}`, g])));
+      for (const [what, gen] of declared) {
+        const empty = (gen.source === 'exits' && exits.length === 0) || (gen.source === 'items' && items.length === 0);
+        if (!empty) continue;
+        found.push({
+          rule: 'generators',
+          severity: 'error',
+          file: doc.path,
+          line: doc.nodes[0]?.line ?? 1,
+          message: `генератор "${what}" ссылается на пустой источник`,
+        });
       }
       // Страницы сами значат «этот предмет можно осмотреть», глагол ему не нужен.
       if (doc.type === 'item' && doc.pages.length === 0 && doc.nodes.every((n) => n.id === '')) {
@@ -501,11 +510,28 @@ const routes: Rule = {
       const paths = own.filter((o) => o.label === '');
       const choices = own.filter((o) => o.label !== '');
 
+      /*
+       * Условие, которое этот же узел и выполняет, условием не является.
+       * `#записи` ставит `prolog.lecture-done` и тут же предлагает уйти в узел,
+       * который его требует: к моменту выбора флаг взведён, и «встанет намертво»
+       * тут неправда. Проверяем буквально: все термы — флаги из `set:` узла.
+       */
+      const met = (cond: string | null | undefined): boolean =>
+        cond != null &&
+        cond.trim() !== '' &&
+        cond
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .every((t) => node.attrs.set.includes(t));
+
       // Маршрут условен, если условие стоит на нём самом или на его цели:
       // скрыта цель — маршрут проваливается на следующий.
       const guarded = (o: Option): boolean => {
         const target = targetOf(o);
-        return Boolean(o.attrs.if ?? target?.attrs.if ?? target?.attrs.once);
+        if (target?.attrs.once) return true;
+        const cond = o.attrs.if ?? target?.attrs.if ?? null;
+        return cond != null && !met(cond);
       };
 
       paths.forEach((route, i) => {

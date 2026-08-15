@@ -21,6 +21,16 @@ body,
   height: 100%;
 }
 
+/* На телефоне «сто процентов» — это высота вместе с адресной строкой браузера,
+   которая то есть, то нет. `dvh` считает по видимой части, и нижняя полоса
+   перестаёт уезжать под чужой интерфейс. */
+@supports (height: 100dvh) {
+  html,
+  body {
+    height: 100dvh;
+  }
+}
+
 body {
   background: var(--bg, #0b0b0b);
   color: var(--fg, #d8d2c4);
@@ -388,4 +398,92 @@ body {
   line-height: 1.4;
   color: var(--dim);
   white-space: normal;
+}
+
+/*
+ * Мобильная версия (`/m`, см. ui/mode.ts и ui/Mobile.tsx).
+ *
+ * Терминал остаётся терминалом: тот же шрифт, та же сетка знакомест, те же
+ * цвета и та же линейка. Меняется ровно то, что вынуждает палец, — и меняется
+ * в одну сторону: строку ввода убрали, команды стали трогать.
+ */
+.screen > .mobile {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+}
+
+/*
+ * Поток прокручивается пальцем, а не окном в `rows` строк: высота на телефоне
+ * пляшет вместе с адресной строкой, и окно, посчитанное в знакоместах, всё
+ * равно разъезжалось бы. Строки при этом по-прежнему перенесены нами по сетке.
+ */
+/* Строки статуса и линейки сжиматься не должны: это знакоместа, а не резина. */
+.mobile > div {
+  flex: none;
+}
+
+.mobile > .mobile-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Список занимает столько, сколько нужно, но не больше трети экрана: поток
+   важнее — там происходит игра. Дальше прокручивается сам. */
+.mobile > .mobile-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 38%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.3em 0;
+}
+
+.mobile-bar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  /* Нижняя кромка телефона занята жестами системы — полосу туда пускать нельзя. */
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/*
+ * Строка команды выше знакоместа: в шестнадцать пикселей палец не попадает.
+ * Кнопкой она при этом не притворяется — ни фона, ни рамки, ни скруглений:
+ * это строка терминала, у которой увеличили межстрочный воздух.
+ */
+.tap {
+  display: block;
+  width: 100%;
+  padding: 0.5em 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Отклик на касание — той же подложкой, что у статуса: другого «нажатого»
+   состояния в этой палитре нет и заводить его незачем. */
+.tap:active {
+  background: var(--statusBg, var(--frame));
+}
+
+.mobile-bar .tap {
+  width: auto;
+  padding: 0.7em 1.2ch;
+}
+
+/* В меню и в управлении кнопка живёт внутри строки списка, а не вместо неё. */
+.menu-items .tap {
+  padding: 0.55em 0;
 }
