@@ -17,6 +17,17 @@ export function isMobilePath(pathname: string): boolean {
   return clean === MOBILE_PATH || clean.startsWith(`${MOBILE_PATH}/`);
 }
 
+/**
+ * Служебный просмотр графа. Тоже отдельный адрес и по той же причине: это не
+ * режим игры, а инструмент автора, и попасть в него случайно нельзя.
+ */
+export const ADM_PATH = '/adm';
+
+export function isAdmPath(pathname: string): boolean {
+  const clean = pathname.replace(/\/+$/, '');
+  return clean === ADM_PATH || clean.startsWith(`${ADM_PATH}/`);
+}
+
 /** Сколько колонок держим на телефоне: ширина строки важнее числа строк. */
 export const MOBILE_COLS = 40;
 

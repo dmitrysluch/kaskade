@@ -18,6 +18,17 @@ import { CONTENT, ROOT } from './content/paths.ts';
 const DEV = process.env.NODE_ENV !== 'production';
 const PORT = Number(process.env.PORT ?? 5178);
 
+/*
+ * Служебная карта графа (`/adm`) — инструмент автора, и на людях ей делать
+ * нечего: на ней виден весь сюжет главы. По умолчанию она есть в разработке
+ * и выключена в проде; `ADM=1` включает её где угодно, `ADM=0` гасит.
+ *
+ * Флаг честно прячет **экран, а не данные**: `/api/content` отдаёт тот же
+ * граф и нужен самой игре. Это защита от случайно найденного адреса, а не
+ * от того, кто откроет консоль.
+ */
+const ADM = process.env.ADM != null ? process.env.ADM === '1' : DEV;
+
 const app = express();
 const http = createServer(app);
 
@@ -26,6 +37,13 @@ report(bundle);
 
 app.get('/api/content', (_req, res) => {
   res.json(bundle);
+});
+
+// Стоит до раздачи клиента: иначе адрес отдаст оболочку игры, а та по пути
+// сама решит, что рисовать карту.
+app.use('/adm', (_req, res, next) => {
+  if (ADM) return next();
+  res.status(404).type('text/plain').send('нет такой страницы');
 });
 
 if (DEV) {

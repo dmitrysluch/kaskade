@@ -106,6 +106,15 @@ try {
   const mobileHtml = await mobile.text();
   check(mobile.ok && mobileHtml.includes('<div id="root">'), 'мобильный адрес /m отдаётся');
 
+  // Служебная карта живёт под флагом: в разработке она есть, в проде её нет.
+  // Проверяем ровно это, потому что забыть флаг легко, а спойлер дорогой.
+  const adm = await fetch(`http://localhost:${PORT}/adm`);
+  const admBody = await adm.text();
+  check(
+    PROD ? adm.status === 404 : adm.ok && admBody.includes('<div id="root">'),
+    PROD ? 'служебный адрес /adm закрыт в проде' : 'служебный адрес /adm отдаётся в разработке',
+  );
+
   // Главное обещание архитектуры: правишь заметку — вкладка узнаёт об этом сама.
   check(await notifiesOnEdit(), 'правка заметки прилетает по ws');
 } finally {

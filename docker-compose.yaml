@@ -20,6 +20,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: 8080
+      # Служебная карта графа (`/adm`) в проде закрыта: на ней виден весь сюжет.
+      # Включить на время — `ADM: "1"` и `docker compose up -d`.
+      ADM: "0"
     networks: [all-services]
 
 networks:
