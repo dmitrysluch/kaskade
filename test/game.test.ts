@@ -243,11 +243,15 @@ test('демо-срез: сцены 00–02 открыты, 03 закрыта, �
   };
   assert.ok(labels(corridor).includes('уйти'));
 
-  // А дальше срез: маршрут в день рождения есть в графе, но не срабатывает.
-  const street = at('episodes/prolog/scenes/02-neukoelln#улица');
-  const route = game.nodes[street.episodeState.at]!.options.find((o) => o.label === '');
-  assert.equal(route?.target, 'episodes/prolog/scenes/03-birthday#');
-  assert.equal(enter(game, street, street.episodeState.at).save.episodeState.at, street.episodeState.at);
+  // А дальше срез: маршруты в день рождения есть в графе, но не срабатывают.
+  // Ищем по графу: концовок у сцены несколько, и автор их переписывает.
+  const doors = Object.values(game.nodes).filter((n) =>
+    n.options.some((o) => o.label === '' && o.target?.startsWith('episodes/prolog/scenes/03-birthday#')),
+  );
+  assert.ok(doors.length > 0, 'в графе нет ни одного входа в день рождения');
+  for (const door of doors) {
+    assert.equal(enter(game, at(door.addr), door.addr).save.episodeState.at, door.addr, door.addr);
+  }
 });
 
 test('слово, отданное прологом, становится белым', () => {

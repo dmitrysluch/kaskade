@@ -18,5 +18,5 @@ items: [01-notice]
 осмотреть: items
 ```
 
-→ уйти [[scenes/02-titles]]
+→ уйти [[scenes/02-club]]
   - advance
