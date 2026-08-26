@@ -621,3 +621,53 @@ test('предмет со страницами не обязан иметь ни
   // И секцию-страницу не требует объявлять в itemVerbs.
   assert.deepEqual(run('verbs', game), []);
 });
+
+/** Сцена-стенд для меток говорящих: важен только текст реплик. */
+const SC = 'episodes/p/scenes/talk';
+function scene(text: string) {
+  return content({
+    episodes: [episode('p', { entry: `${SC}#` })],
+    docs: {
+      [SC]: doc(SC, {
+        type: 'scene',
+        nodes: [
+          node(`${SC}#`, { text, options: [option({ label: 'дальше', target: `${SC}#конец` })] }),
+          node(`${SC}#конец`, { text: 'Конец.' }),
+        ],
+      }),
+    },
+  });
+}
+
+test('метка говорящего: ремарка вместо имени — ошибка', () => {
+  // Ремарка, у которой съели перевод строки, встаёт именем.
+  const found = run('speakers', scene('> тоби — Норм.\n\n> спрашивает парень справа, не бармен. — Что это?'));
+  const errors = found.filter((f) => f.severity === 'error');
+
+  assert.equal(errors.length, 1);
+  assert.match(errors[0]!.message, /это ремарка, а не имя/);
+});
+
+test('метка говорящего: имена есть, а одна реплика без метки — предупреждение', () => {
+  const found = run(
+    'speakers',
+    scene('> тоби — Раз.\n\n> тоби — Два.\n\n> парень — Три.\n\n> парень — Четыре.\n\n> — А это кто?'),
+  );
+
+  assert.equal(found.length, 1);
+  assert.equal(found[0]!.severity, 'warn');
+  assert.match(found[0]!.message, /кто её говорит/);
+});
+
+test('метка говорящего: одиночный голос — предупреждение, а не ошибка', () => {
+  // Так выглядит и потерянная метка, и законный прохожий: решает автор.
+  const found = run('speakers', scene('> тоби — Раз.\n\n> тоби — Два.\n\n> девушка — Вот эти двое.'));
+
+  assert.equal(found.length, 1);
+  assert.equal(found[0]!.severity, 'warn');
+  assert.match(found[0]!.message, /девушка/);
+});
+
+test('метка говорящего: сцена с одним собеседником метки не требует', () => {
+  assert.deepEqual(run('speakers', scene('> — Знаю.\n\n> — Издание девяносто восьмого года.')), []);
+});

@@ -433,3 +433,31 @@ test('служебная полоса закреплена и не зависи�
   // Полоса не ломает сетку и на узком экране: лишнее режется, а не переносится.
   assert.equal(systemLine(SYSTEM_COMMANDS, 30).map((s) => s.text).join('').length, 30 + MARGIN.text);
 });
+
+test('названный собеседник: имя перед репликой и своим цветом', () => {
+  const lines = streamLines([{ kind: 'text', text: '> тоби — Маннитол.' }], 40);
+  const segs = lines[0]!;
+
+  // Имя пишут строчными, показывают с большой: это служебная метка, и
+  // капитализацию решает оболочка, а не автор.
+  assert.equal(segs.map((s) => s.text).join('').trim(), 'Тоби — Маннитол.');
+  assert.equal(segs.find((s) => s.text.startsWith('Тоби'))!.cls, 'remark');
+  assert.equal(segs.find((s) => s.text.includes('Маннитол'))!.cls, 'speech');
+});
+
+test('метка не повторяется на переносе и не съедает тире внутри фразы', () => {
+  const long = '> полицейский — Он тоже не будет. Драка без заявителей — дальше не идёт.';
+  const lines = streamLines([{ kind: 'text', text: long }], 30);
+  const text = lines.map((l) => l.map((s) => s.text).join('').trim());
+
+  assert.match(text[0]!, /^Полицейский —/);
+  // Вторая строка — продолжение реплики, а не второе имя.
+  assert.equal(text.slice(1).some((l) => l.startsWith('Полицейский')), false);
+  assert.ok(text.join(' ').includes('заявителей — дальше'), 'тире внутри фразы стало границей имени');
+});
+
+test('безымянная реплика остаётся безымянной', () => {
+  const segs = streamLines([{ kind: 'text', text: '> — Знаю.' }], 40)[0]!;
+  assert.equal(segs.map((s) => s.text).join('').trim(), '— Знаю.');
+  assert.equal(segs.filter((s) => s.cls === 'remark').length, 0);
+});

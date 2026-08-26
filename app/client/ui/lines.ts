@@ -16,7 +16,7 @@ import {
 import type { CatalogOption } from '../engine/catalog.ts';
 import type { OverlayCall, OverlayCommand, StreamEntry, Term } from '../engine/state.ts';
 import { days, daysBetween } from '../../shared/dates.ts';
-import { said, voiceOf } from '../../shared/speech.ts';
+import { speakerLabel, speakerOf } from '../../shared/speech.ts';
 import type { GameContent, Portrait, SaveState } from '../../shared/types.ts';
 
 /** Состояние → строки. Всё, что попадает на экран, сначала становится строками знаков. */
@@ -25,11 +25,11 @@ import type { GameContent, Portrait, SaveState } from '../../shared/types.ts';
  * Кто говорит (07-оболочка-тз, «Кто говорит»). Три слоя разведены цветом и
  * отступом, объяснять игроку ничего не надо; сам признак живёт в `shared/speech`,
  * потому что по нему же предпросмотр ищет реплику Марго.
+ *
+ * Названный собеседник (`> тоби — ...`) получает имя перед репликой цветом
+ * ремарки: отдельного цвета на каждого говорящего не заводится — их может быть
+ * сколько угодно, и различать их должно имя, а не оттенок, который надо помнить.
  */
-function speaker(line: string): { cls: string; body: string } {
-  return { cls: voiceOf(line), body: said(line) };
-}
-
 export function streamLines(entries: StreamEntry[], max: number, words: string[] = []): Seg[][] {
   const out: Seg[][] = [];
   // Слова дела подсвечиваются в любом тексте и без разметки в заметках: оболочка
@@ -42,16 +42,26 @@ export function streamLines(entries: StreamEntry[], max: number, words: string[]
     for (const source of entry.text.split('\n')) {
       // Эхо команды и карточки говорят не голосом персонажа — разметку к ним
       // не применяем: у них свой класс и свой цвет.
-      const { cls, body } = entry.kind === 'text' ? speaker(source) : { cls: entry.kind, body: source };
+      const said = entry.kind === 'text' ? speakerOf(source) : { voice: entry.kind, name: null, text: source };
+      const cls: string = said.voice;
+      // Имя печатается перед репликой и переносится вместе с ней: считать
+      // ширину надо по тому, что игрок увидит, а не по одной реплике.
+      const label = said.name == null ? '' : `${speakerLabel(said.name)} `;
+
       // Обратные кавычки снимаются до переноса: иначе они займут колонки.
-      const plain = codes(body);
+      const plain = codes(`${label}${said.text}`);
       const spans = entry.kind === 'text' ? [...plain.spans, ...known] : [];
 
       // Эхо печатается с висящим промптом, как это делает терминал: прокрутка
       // назад выглядит как одна колонка с торчащими приглашениями.
       wrap(plain.text, max).forEach((line, i) => {
         const lead = entry.kind === 'echo' && i === 0 ? hanging() : pad();
-        out.push([{ text: lead, cls: 'dim' }, ...mark(line, cls, spans)]);
+        // Метка живёт только в первой строке: перенос её не повторяет.
+        const named = i === 0 && label !== '' && line.startsWith(label);
+        const segs = named
+          ? [{ text: label, cls: 'remark' }, ...mark(line.slice(label.length), cls, spans)]
+          : mark(line, cls, spans);
+        out.push([{ text: lead, cls: 'dim' }, ...segs]);
       });
     }
   }

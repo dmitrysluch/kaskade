@@ -1,6 +1,7 @@
 import { verbOf } from '../content/options.ts';
 import { parseDate } from '../../shared/dates.ts';
 import { closeLabel, EXAMINE } from '../../shared/pages.ts';
+import { speakerOf } from '../../shared/speech.ts';
 import type { Doc, GameContent, Node, Option } from '../../shared/types.ts';
 
 /**
@@ -972,9 +973,85 @@ const targetForms: Rule = {
   },
 };
 
+/**
+ * Метки говорящих (07-оболочка-тз, «Когда собеседников больше одного»).
+ *
+ * Метка — служебное имя, а не реплика: пишется строчными, живёт между `> `
+ * и первым тире. Правило ловит ровно те три случая, которые руками не видно:
+ * потерянную метку, ремарку, притворившуюся меткой, и одиночный голос.
+ */
+const speakers: Rule = {
+  id: 'speakers',
+  title: 'метки говорящих',
+  run(content) {
+    const found: Finding[] = [];
+
+    for (const doc of Object.values(content.docs)) {
+      const names = new Map<string, { count: number; line: number }>();
+      let bare: number | null = null;
+
+      for (const node of doc.nodes) {
+        for (const line of node.text.split('\n')) {
+          const said = speakerOf(line);
+          if (said.voice !== 'speech') continue;
+
+          if (said.name == null) {
+            bare ??= node.line;
+            continue;
+          }
+
+          const seen = names.get(said.name);
+          if (seen) seen.count += 1;
+          else names.set(said.name, { count: 1, line: node.line });
+
+          // Ремарка, у которой съели перевод строки, выглядит ровно так:
+          // длинная фраза, точка на конце — и всё это встало именем.
+          const words = said.name.split(/\s+/).length;
+          if (words > 3 || said.name.endsWith('.')) {
+            found.push({
+              rule: 'speakers',
+              severity: 'error',
+              file: doc.path,
+              line: node.line,
+              message: `метка «${said.name}» — это ремарка, а не имя: метка до трёх слов и без точки`,
+            });
+          }
+        }
+      }
+
+      // Имён несколько, а где-то реплика без метки: скорее всего, её потеряли.
+      if (names.size > 1 && bare != null) {
+        found.push({
+          rule: 'speakers',
+          severity: 'warn',
+          file: doc.path,
+          line: bare,
+          message: `в сцене ${names.size} названных собеседника и реплика без метки — кто её говорит?`,
+        });
+      }
+
+      // Одна реплика на голос — это и потерянная метка, и законный прохожий.
+      // Решает автор, поэтому предупреждение, а не ошибка.
+      for (const [name, { count, line }] of names) {
+        if (count > 1 || names.size < 2) continue;
+        found.push({
+          rule: 'speakers',
+          severity: 'warn',
+          file: doc.path,
+          line,
+          message: `метка «${name}» встречается один раз — проходной голос или потерянная метка?`,
+        });
+      }
+    }
+
+    return found;
+  },
+};
+
 export const RULES: Rule[] = [
   brokenGraph,
   pages,
+  speakers,
   targetForms,
   routes,
   hubExit,
