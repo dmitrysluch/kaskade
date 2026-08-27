@@ -7,6 +7,7 @@ import {
   FRAMES,
   GameScreen,
   LIST_ROWS,
+  MontageScreen,
   LOWER_ROWS,
   OverlayScreen,
   RULES,
@@ -236,4 +237,31 @@ test('кадр говорит, что ждёт Enter, и подпись стои
   // Без подсказки — пусто: у финального кадра дальше ничего нет.
   const silent = screenText(<CardScreen cols={72} rows={12} text="08.06.2025" glyphs={FRAMES.heavy!} />);
   assert.equal(silent.some((l) => l.includes('Enter')), false);
+});
+
+test('монтажный кадр: пустой экран, цвета говорящих, подпись внизу', () => {
+  const lines = streamLines(
+    [
+      { kind: 'time', text: 'через час' },
+      { kind: 'text', text: '> ирокез — Ничего не работает.\n\n> тоби — Так и должно быть.' },
+    ],
+    40,
+  );
+  const markup = renderToStaticMarkup(<MontageScreen cols={60} rows={16} lines={lines} hint="Enter" />);
+  const text = screenText(<MontageScreen cols={60} rows={16} lines={lines} hint="Enter" />);
+
+  assertRectangular(text, 60);
+  assert.equal(text.length, 16);
+
+  // Ни рамки, ни линейки, ни списка команд: пустой полноэкранный слой.
+  for (const glyph of ['┏', '┃', '┗', '│', '━', '─']) {
+    assert.equal(text.some((l) => l.includes(glyph)), false, `на кадре остался ${glyph}`);
+  }
+
+  // Реплики сохраняют свои цвета, подпись времени — тусклая.
+  assert.match(markup, /class="speech"/);
+  assert.match(markup, /class="time"/);
+
+  // Подсказка стоит там же, где у титра, — в правом нижнем поле.
+  assert.equal(text[text.length - 2]!.trim(), 'Enter');
 });

@@ -7,8 +7,11 @@ import type { GameContent, Node, Option, SaveState } from '../../shared/types.ts
  */
 
 export interface StreamEntry {
-  /** `grant` — выданное слово: механика должна быть видна, иначе её как бы нет. */
-  kind: 'text' | 'echo' | 'card' | 'grant';
+  /**
+   * `grant` — выданное слово: механика должна быть видна, иначе её как бы нет.
+   * `time` — разрыв во времени перед кадром: подпись, а не строка прозы.
+   */
+  kind: 'text' | 'echo' | 'card' | 'grant' | 'time';
   text: string;
 }
 
@@ -330,10 +333,18 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
     state = applied.save;
     if (moves) state = { ...state, episodeState: { ...state.episodeState, at: node.addr } };
 
-    // Титульная карточка останавливает проход: ввод не принимается, дальше уводит
-    // Transition, когда доиграет. Её текст — карточка, а не реплика, поэтому
-    // в поток он не попадает.
-    if (node.attrs.tag.includes('titlecard')) break;
+    /*
+     * Полноэкранный кадр останавливает проход: ввод не принимается, дальше
+     * уводит компонент кадра, когда игрок нажмёт Enter. Текст такого узла
+     * в поток не попадает — он и есть кадр.
+     *
+     * Титр предъявляет запись, монтаж показывает событие; для прохода это одно
+     * и то же — дальше решает не движок, а нажатие.
+     */
+    if (node.attrs.tag.includes('titlecard') || node.attrs.tag.includes('montage')) break;
+    // Подпись идёт до текста и отдельной строкой: разрыв во времени предъявляют
+    // раньше, чем игрок начнёт читать, — иначе он съест первую строку кадра.
+    if (node.attrs.timeLabel) entries.push({ kind: 'time', text: node.attrs.timeLabel });
     if (node.text) entries.push({ kind: 'text', text: interpolate(node.text, state) });
     applied.granted.forEach((id, i) => {
       entries.push({ kind: 'grant', text: grantLine(content, id, first && i === 0) });

@@ -209,3 +209,15 @@ label: учебник
     return true;
   });
 });
+
+test('разрыв во времени — атрибут узла, а не первая строка прозы', () => {
+  const doc = parseMarkdown(
+    'club.md',
+    '---\nid: club\ntype: scene\n---\n## драка\n- tag: montage\n- timeLabel: через час\n\nТы чувствуешь руку на плече.\n',
+  );
+
+  const node = doc.nodes.find((n) => n.id === 'драка')!;
+  assert.equal(node.attrs.timeLabel, 'через час');
+  // Подпись из текста не съедается: она отдельная сущность.
+  assert.equal(node.text, 'Ты чувствуешь руку на плече.');
+});

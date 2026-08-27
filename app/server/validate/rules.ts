@@ -1048,10 +1048,59 @@ const speakers: Rule = {
   },
 };
 
+/**
+ * Монтажный кадр (07-оболочка-тз, «Монтажный кадр»).
+ *
+ * Короткое событие, где Марго действует, а руля игроку не дают. Отсюда оба
+ * ограничения: помеченная опция на таком узле — это команда, которой игрок
+ * не увидит, а соседство с титром или сплэшем значит, что автор просит от
+ * одного узла две несовместимые композиции.
+ */
+const montage: Rule = {
+  id: 'montage',
+  title: 'монтажный кадр',
+  run(content) {
+    const found: Finding[] = [];
+
+    for (const node of allNodes(content)) {
+      if (!node.attrs.tag.includes('montage')) continue;
+      const doc = docOfNode(content, node);
+      const where = { file: doc.path, line: node.line };
+
+      const labelled = node.options.filter((o) => o.label !== '');
+      if (labelled.length > 0) {
+        found.push({
+          rule: 'montage',
+          severity: 'error',
+          ...where,
+          message:
+            `у монтажного кадра помеченные опции (${labelled.map((o) => `"${o.label}"`).join(', ')}) — ` +
+            'кадр не принимает ввод, продолжает его только безымянный маршрут',
+        });
+      }
+
+      // Композиции разные: титр предъявляет запись, сплэш показывает лицо,
+      // монолог держит один голос. На одном узле они спорят за экран.
+      const clash = node.attrs.tag.filter((t) => t === 'titlecard' || t === 'monolog' || t.startsWith('splash:'));
+      if (clash.length > 0) {
+        found.push({
+          rule: 'montage',
+          severity: 'error',
+          ...where,
+          message: `montage несовместим с ${clash.join(', ')}: у этих режимов разные семантика и композиция`,
+        });
+      }
+    }
+
+    return found;
+  },
+};
+
 export const RULES: Rule[] = [
   brokenGraph,
   pages,
   speakers,
+  montage,
   targetForms,
   routes,
   hubExit,

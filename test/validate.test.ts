@@ -671,3 +671,57 @@ test('метка говорящего: одиночный голос — пре�
 test('метка говорящего: сцена с одним собеседником метки не требует', () => {
   assert.deepEqual(run('speakers', scene('> — Знаю.\n\n> — Издание девяносто восьмого года.')), []);
 });
+
+test('монтажный кадр не принимает команд', () => {
+  const M = 'episodes/p/scenes/club';
+  const found = run(
+    'montage',
+    content({
+      episodes: [episode('p', { entry: `${M}#` })],
+      docs: {
+        [M]: doc(M, {
+          type: 'scene',
+          nodes: [
+            node(`${M}#`, {
+              attrs: attrs({ tag: ['montage'] }),
+              text: 'Тоби тормозит у железной двери.',
+              // Помеченная опция здесь — команда, которой игрок не увидит.
+              options: [option({ label: 'войти', target: `${M}#конец` }), option({ label: '', target: `${M}#конец` })],
+            }),
+            node(`${M}#конец`, { text: 'Внутри.' }),
+          ],
+        }),
+      },
+    }),
+  );
+
+  assert.equal(found.length, 1);
+  assert.equal(found[0]!.severity, 'error');
+  assert.match(found[0]!.message, /безымянный маршрут/);
+});
+
+test('монтаж и титр на одном узле — две несовместимые композиции', () => {
+  const M = 'episodes/p/scenes/club';
+  const found = run(
+    'montage',
+    content({
+      episodes: [episode('p', { entry: `${M}#` })],
+      docs: {
+        [M]: doc(M, {
+          type: 'scene',
+          nodes: [
+            node(`${M}#`, {
+              attrs: attrs({ tag: ['montage', 'titlecard', 'splash:margo'] }),
+              text: 'Кадр.',
+              options: [option({ label: '', target: `${M}#конец` })],
+            }),
+            node(`${M}#конец`, { text: 'Дальше.' }),
+          ],
+        }),
+      },
+    }),
+  );
+
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.message, /titlecard, splash:margo/);
+});

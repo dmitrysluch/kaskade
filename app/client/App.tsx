@@ -24,6 +24,7 @@ import {
   GameScreen,
   LIST_ROWS,
   LOWER_ROWS,
+  MontageScreen,
   OverlayScreen,
   ruleGlyph,
   STATUS_ROWS,
@@ -44,7 +45,7 @@ import {
 import { Manual, Hint } from './ui/Manual.tsx';
 import { MobileScreen } from './ui/Mobile.tsx';
 import { isMobilePath, MOBILE_COLS, TAP_HINT } from './ui/mode.ts';
-import { useAdvance } from './ui/advance.ts';
+import { ADVANCE_HINT, useAdvance } from './ui/advance.ts';
 import { Menu } from './ui/Menu.tsx';
 import { Splash } from './ui/Splash.tsx';
 import { Transition } from './ui/Transition.tsx';
@@ -193,6 +194,13 @@ export function App() {
 
   const node = content && session ? content.nodes[session.save.episodeState.at] : undefined;
   const isCard = node?.attrs.tag.includes('titlecard') ?? false;
+  /**
+   * Монтажный кадр (07-оболочка-тз, «Монтажный кадр») — короткое событие, где
+   * Марго действует, а руля игроку намеренно не дают. От титра отличается тем,
+   * что показывает происходящее, а не предъявляет запись; поэтому текст идёт
+   * обычными цветами говорящих и без рамки.
+   */
+  const isMontage = node?.attrs.tag.includes('montage') ?? false;
 
   // Лицо показывается сплэшем во весь кадр и ровно один раз за игру: узел,
   // который его уже отыграл, второй раз не показывает ничего.
@@ -230,6 +238,19 @@ export function App() {
     () => (pick == null ? exact(catalog, input) : (shown[pick] ?? null)),
     [catalog, shown, pick, input],
   );
+
+  /**
+   * Строки монтажного кадра. Считаются тем же `streamLines`, что и поток:
+   * кадр — это сцена без руля, и цвета говорящих в нём те же самые.
+   */
+  const montage = useMemo(() => {
+    if (!isMontage || !node) return [];
+    const width = Math.max(1, cols - MARGIN.text - MARGIN.right);
+    const entries: StreamEntry[] = [];
+    if (node.attrs.timeLabel) entries.push({ kind: 'time', text: node.attrs.timeLabel });
+    if (node.text) entries.push({ kind: 'text', text: node.text });
+    return streamLines(entries, width);
+  }, [isMontage, node, cols]);
 
   const layout = useMemo(() => {
     // Текст идёт во всю сетку, от поля до поля: поля — это те самые два-четыре
@@ -366,6 +387,10 @@ export function App() {
     setScroll(0);
   }, []);
 
+  /**
+   * Кадр доиграл: уводит безымянный маршрут. Один и тот же ход у титра
+   * и у монтажа — они по-разному выглядят, но одинаково ждут нажатия.
+   */
   const cardDone = useCallback(() => {
     if (!content || !session || !node) return;
     const next = node.options.find((o) => o.label === '')?.target;
@@ -416,6 +441,13 @@ export function App() {
    */
   useAdvance(manual ? manualDone : null);
 
+  /*
+   * Монтажный кадр ждёт нового `Enter` тем же способом, что и титр: клавиша,
+   * которой игрок исполнил последнюю команду, кадр не закрывает, а удерживаемая
+   * не проматывает последовательность.
+   */
+  useAdvance(isMontage && !menu && !manual ? cardDone : null);
+
   // Управление из меню: тот же экран, что по `3`, — второй копии инструкции нет.
   const menuManual = useCallback(() => {
     setMenu(false);
@@ -441,7 +473,8 @@ export function App() {
 
   // Пока идёт сплэш или обучение, ввод не принимается: терминал в этот момент
   // не терминал.
-  const accepting = Boolean(session) && !isCard && !splash && !manual && !menu && !session?.overlay;
+  const accepting =
+    Boolean(session) && !isCard && !isMontage && !splash && !manual && !menu && !session?.overlay;
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -609,6 +642,14 @@ export function App() {
       return (
         <Splash lines={portraitLines(splash)} onDone={splashDone} touch={TOUCH} />
       );
+    }
+    // Монтаж уводит тот же безымянный маршрут, что и титр: для прохода это
+    // один и тот же кадр, разное у них — что на нём написано.
+    if (isMontage) {
+      const frame = (
+        <MontageScreen cols={cols} rows={rows} lines={montage} hint={TOUCH ? TAP_HINT : ADVANCE_HINT} />
+      );
+      return TOUCH ? <div onClick={cardDone}>{frame}</div> : frame;
     }
     if (session.overlay) {
       return (

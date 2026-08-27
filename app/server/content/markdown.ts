@@ -84,6 +84,8 @@ const ATTR_KEYS = new Set([
   'advance',
   // Номер страницы предмета: секция становится состоянием, а не глаголом.
   'page',
+  // Разрыв во времени перед кадром: подпись, а не строка прозы.
+  'timeLabel',
 ]);
 
 /** Ключи, которые можно писать несколько раз: `- set: a` двумя строками. */
@@ -162,6 +164,7 @@ function parseAttrs(file: string, lines: { text: string; line: number }[]): Attr
         if (key === 'if') attrs.if = s;
         else if (key === 'goto') attrs.goto = s;
         else if (key === 'label') attrs.label = s;
+        else if (key === 'timeLabel') attrs.timeLabel = s;
       }
     }
   });

@@ -208,8 +208,9 @@ test('пролог проходится до конца, и на каждом ш
     if (save.episodeState.at.endsWith('#конец')) return;
 
     const node = full.nodes[save.episodeState.at]!;
-    // Титульная карточка ввод не принимает — дальше уводит Transition.
-    if (node.attrs.tag.includes('titlecard')) {
+    // Полноэкранный кадр ввод не принимает: и титр, и монтаж уводит нажатие,
+    // а не команда. Для обхода это один и тот же безымянный маршрут.
+    if (node.attrs.tag.includes('titlecard') || node.attrs.tag.includes('montage')) {
       const next = node.options.find((o) => o.label === '')!.target!;
       save = enter(full, save, next).save;
       continue;
@@ -479,4 +480,24 @@ test('список идёт в одном порядке: окружение, с
   const order = kinds.map((k) => rank[k as keyof typeof rank]);
   assert.deepEqual(order, [...order].sort((a, b) => a - b), `порядок съехал: ${kinds.join(', ')}`);
   assert.ok(kinds.includes('advance') && kinds.includes('system'));
+});
+
+test('подпись времени — отдельная сущность, а не первая строка прозы', () => {
+  // Ищем по графу: подписи автор ставит и убирает вместе с монтажом.
+  const timed = Object.values(game.nodes).find((n) => n.attrs.timeLabel != null);
+  assert.ok(timed, 'в прологе нет ни одного узла с подписью времени');
+
+  // Подпись живёт атрибутом и из текста не съедена: первая строка кадра
+  // остаётся первой строкой кадра.
+  assert.ok(timed.attrs.timeLabel!.length > 0);
+  assert.equal(timed.text.startsWith(timed.attrs.timeLabel!), false);
+
+  // У обычного узла она приходит в поток отдельной записью и раньше текста.
+  const plain = enter(
+    game,
+    at('episodes/prolog/rooms/00-room#'),
+    'episodes/prolog/rooms/00-room#',
+    false,
+  );
+  assert.equal(plain.entries[0]!.kind, 'text');
 });
