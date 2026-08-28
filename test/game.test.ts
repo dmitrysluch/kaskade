@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { loadContent } from '../app/server/content/load.ts';
 import { validate } from '../app/server/validate/index.ts';
 import { buildCatalog } from '../app/client/engine/catalog.ts';
-import { begin, dateAt, enter, evalCondition, freshSave, interpolate, previewOf, sceneOf, terms } from '../app/client/engine/state.ts';
+import { begin, dateAt, enter, evalCondition, freshSave, interpolate, previewOf, sceneOf, terms, waitRoute } from '../app/client/engine/state.ts';
 import { overlayLines, statusText } from '../app/client/ui/lines.ts';
 import type { SaveState } from '../app/shared/types.ts';
 import type { StreamEntry } from '../app/client/engine/state.ts';
@@ -206,6 +206,22 @@ test('пролог проходится до конца, и на каждом ш
   for (let step = 0; step < 200; step++) {
     // `конец` — единственный законный тупик: дальше пролога пока ничего нет.
     if (save.episodeState.at.endsWith('#конец')) return;
+
+    /*
+     * Физическое ожидание само не идёт: время считает оболочка. Обход проживает
+     * его как игрок — заглядывает на часы, пока время не вышло, и уходит
+     * безымянным маршрутом, когда вышло. Половина срока за заход: так узел
+     * успевает показать оба состояния часов, а не одно.
+     */
+    const waiting = save.wait;
+    if (waiting && waiting.node === save.episodeState.at) {
+      save = { ...save, wait: { ...waiting, elapsed: Math.min(waiting.ms, waiting.elapsed + waiting.ms / 2) } };
+      const next = waitRoute(full, save);
+      if (next) {
+        save = enter(full, { ...save, wait: null }, next).save;
+        continue;
+      }
+    }
 
     const node = full.nodes[save.episodeState.at]!;
     // Полноэкранный кадр ввод не принимает: и титр, и монтаж уводит нажатие,
