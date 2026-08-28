@@ -1,5 +1,5 @@
 import { said, voiceOf } from '../../shared/speech.ts';
-import type { GameContent, Node, Option, SaveState } from '../../shared/types.ts';
+import type { GameContent, Node, NodeAddr, Option, SaveState } from '../../shared/types.ts';
 
 /**
  * Состояние и его изменение. Сохраняем состояние, а не сцену (07-оболочка-тз, «Сейв»):
@@ -64,6 +64,7 @@ export interface Session {
  *   `has:телефон`        предмет на руках
  *   `word:alers`         слово белое
  *   `date:blueCard`      срок назначен
+ *   `wait.lab-result >= 60s`  прожито активного времени ожидания
  */
 export function evalCondition(cond: string | null, save: SaveState): boolean {
   if (!cond) return true;
@@ -78,9 +79,27 @@ export function evalCondition(cond: string | null, save: SaveState): boolean {
       if (body.startsWith('has:')) value = save.inventory.includes(body.slice(4).trim());
       else if (body.startsWith('word:')) value = save.words[body.slice(5).trim()] === 'white';
       else if (body.startsWith('date:')) value = save.dates[body.slice(5).trim()] != null;
+      else if (body.startsWith('wait.')) value = waitTerm(body, save);
       else value = save.flags[body]?.value === true;
       return negated ? !value : value;
     });
+}
+
+/**
+ * Сравнение активного времени ожидания: `wait.<id> < 60s`, `wait.<id> >= 60s`.
+ *
+ * Больше сравнений нет намеренно (07-оболочка-тз): это два состояния часов на
+ * стене, а не общий планировщик. Ожидание с другим id — не «ещё не прожито»,
+ * а вопрос не о том ожидании, и любое сравнение с ним ложно.
+ */
+const WAIT_TERM = /^wait\.([a-z][a-z0-9-]*)\s*(<|>=)\s*(\d+)s$/i;
+
+function waitTerm(body: string, save: SaveState): boolean {
+  const m = WAIT_TERM.exec(body);
+  const state = save.wait;
+  if (!m || state == null || state.id !== m[1]) return false;
+  const bound = Number(m[3]) * 1000;
+  return m[2] === '<' ? state.elapsed < bound : state.elapsed >= bound;
 }
 
 /**
@@ -300,6 +319,10 @@ function grantLine(content: GameContent, id: string, first: boolean): string {
  * а без неё войти в неё в верном состоянии неоткуда.
  */
 function nextRoute(content: GameContent, save: SaveState, node: Node): Option | null {
+  // Физическое ожидание держит безымянный маршрут само — даже когда авторских
+  // опций не осталось. Иначе узел, чьи действия одноразовые, проскакивал бы
+  // насквозь, и ждать было бы нечего.
+  if (node.attrs.wait && !waitOver(save, node.addr)) return null;
   const own = node.options.filter((o) => o.verb === null && optionAvailable(content, save, o));
   if (own.some((o) => o.label !== '')) return null;
   return own.find((o) => o.label === '') ?? null;
@@ -344,6 +367,16 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
     if (node.attrs.tag.includes('titlecard') || node.attrs.tag.includes('montage')) break;
     // Подпись идёт до текста и отдельной строкой: разрыв во времени предъявляют
     // раньше, чем игрок начнёт читать, — иначе он съест первую строку кадра.
+    /*
+     * Ожидание заводится при входе и переживает возвраты: сходить «посмотреть
+     * на часы» и вернуться — не повод отсчитывать девяносто секунд заново.
+     * Начатое в другом узле ожидание этим и заканчивается: активное оно
+     * ровно одно (валидатор следит, чтобы второго и не написали).
+     */
+    if (node.attrs.wait && !(state.wait?.node === node.addr && state.wait.id === node.attrs.wait.id)) {
+      const { id, ms } = node.attrs.wait;
+      state = { ...state, wait: { node: node.addr, id, ms, elapsed: 0 } };
+    }
     if (node.attrs.timeLabel) entries.push({ kind: 'time', text: node.attrs.timeLabel });
     if (node.text) entries.push({ kind: 'text', text: interpolate(node.text, state) });
     applied.granted.forEach((id, i) => {
@@ -390,6 +423,39 @@ export function freshSave(content: GameContent): SaveState {
       Object.entries(episode.dates).flatMap(([name, def]) => (def.at ? [[name, def.at] as const] : [])),
     ),
     started: false,
+    wait: null,
     episodeState: { episode: episode.id, at: episode.entry, used: [] },
   };
+}
+
+/**
+ * Физическое ожидание (07-оболочка-тз, «Физическое ожидание»).
+ *
+ * Время считает оболочка (App.tsx): прибавляется только активное — при видимой
+ * вкладке, в фокусе и с закрытыми оверлеями. Здесь живёт то, что от времени
+ * зависит: прожито ли оно и куда после этого идти.
+ */
+
+/** Прожито ли ожидание этого узла. Чужое или отсутствующее — не прожито. */
+export function waitOver(save: SaveState, addr: NodeAddr): boolean {
+  return save.wait != null && save.wait.node === addr && save.wait.elapsed >= save.wait.ms;
+}
+
+/**
+ * Маршрут, которым ожидание заканчивается, — если пора и если игрок на месте.
+ *
+ * На месте — обязательное условие: из дочернего узла действия («посмотреть на
+ * часы») время выходит так же, но перебивать его текст автоматическим переходом
+ * нельзя. Маршрут дождётся возвращения; секунды за это время не начисляются
+ * повторно, потому что начисляются они не здесь.
+ */
+export function waitRoute(content: GameContent, save: SaveState): NodeAddr | null {
+  const at = save.episodeState.at;
+  if (!waitOver(save, at)) return null;
+  const node = content.nodes[at];
+  if (!node) return null;
+  const route = node.options.find(
+    (o) => o.verb === null && o.label === '' && optionAvailable(content, save, o),
+  );
+  return route?.target ?? null;
 }

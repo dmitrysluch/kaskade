@@ -52,6 +52,11 @@ export const MIGRATIONS: Record<number, (save: SaveState) => SaveState> = {
   // старый сейв не знает, и выдумывать страницу нельзя: записи просто нет,
   // при первом осмотре предмет откроется с начала.
   6: (save) => ({ ...save, itemStates: save.itemStates ?? {} }),
+
+  // 7 → 8: появилось физическое ожидание. Незаконченного у старого сейва быть
+  // не может — механики не существовало, — и `null` здесь не потеря данных,
+  // а честное «никто ничего не ждёт».
+  7: (save) => ({ ...save, wait: save.wait ?? null }),
 };
 
 export function migrate(save: SaveState, target: number): SaveState | null {

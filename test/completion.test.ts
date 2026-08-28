@@ -69,6 +69,7 @@ test('серое слово видно в каталоге и помечено �
     taught: true,
     hinted: true,
     started: true,
+    wait: null,
     episodeState: { episode: 'p', at: 'episodes/p/scenes/s#', used: [] },
   };
 
@@ -94,6 +95,7 @@ test('условия читаются так, как их пишет автор'
     taught: true,
     hinted: true,
     started: true,
+    wait: null,
     episodeState: { episode: 'p', at: 'x#', used: [] },
   };
 

@@ -1096,11 +1096,93 @@ const montage: Rule = {
   },
 };
 
+/**
+ * Физическое ожидание (07-оболочка-тз, «Физическое ожидание»).
+ *
+ * Механика редкая и хрупкая: узел на полторы минуты удерживает игрока, и всё,
+ * что в ней может быть написано не так, читается одинаково — «игра зависла».
+ * Поэтому проверяем не стиль, а работоспособность: есть ли чем занять руки,
+ * есть ли куда выйти, и там ли вообще стоит ожидание.
+ */
+const waits: Rule = {
+  id: 'wait',
+  title: 'физическое ожидание',
+  run(content) {
+    const found: Finding[] = [];
+    const waiting = allNodes(content).filter((n) => n.attrs.wait != null);
+
+    for (const node of waiting) {
+      const doc = docOfNode(content, node);
+      const where = { file: doc.path, line: node.line };
+      const say = (message: string) => found.push({ rule: 'wait', severity: 'error' as const, ...where, message });
+
+      // Ждут в сцене. В комнате стоят, предмет отвечает, слово объясняет —
+      // удерживать игрока им нечем и незачем.
+      if (doc.type !== 'scene') {
+        say(`ожидание в заметке типа "${doc.type}": оно бывает только в сцене`);
+      }
+
+      const full = node.attrs.tag.filter((t) => t === 'titlecard' || t === 'montage' || t.startsWith('splash:'));
+      if (full.length > 0) {
+        say(`ожидание на полноэкранном узле (${full.join(', ')}): ввод там не принимается, а ждать без действий нечем`);
+      }
+
+      // Полторы минуты без единой команды — это зависшая игра, а не ожидание.
+      // Занятие рук («посмотреть на часы») и есть содержание механики.
+      if (!node.options.some((o) => o.label !== '')) {
+        say('ожидание без единой опции: игроку полторы минуты нечего делать, и он решит, что игра сломалась');
+      }
+
+      const routes = node.options.filter((o) => o.verb === null && o.label === '');
+      if (routes.length !== 1) {
+        say(
+          routes.length === 0
+            ? 'ожидание без безымянного маршрута: время выйдет, а вести игрока некуда'
+            : `у ожидания ${routes.length} безымянных маршрута, а завершает его ровно один`,
+        );
+      }
+
+      // Второе незавершённое ожидание — ошибка: активное всегда одно, и вход
+      // в соседнее молча стёр бы первое вместе с прожитым временем.
+      for (const option of node.options) {
+        const target = option.target ? content.nodes[option.target] : undefined;
+        if (target && target.attrs.wait != null && target.addr !== node.addr) {
+          say(`из ожидания "${node.attrs.wait!.id}" ведёт "${option.label || 'маршрут'}" в другое ожидание — активное бывает одно`);
+        }
+      }
+    }
+
+    // Условия читают ожидание по имени. Опечатка в нём не ломает сборку и не
+    // видна в тексте: вариант просто никогда не выпадает.
+    const declared = new Set(waiting.map((n) => n.attrs.wait!.id));
+    const term = /\bwait\.([a-z0-9-]+)/gi;
+    for (const node of allNodes(content)) {
+      const conditions = [node.attrs.if, ...node.options.map((o) => o.attrs.if)].filter(Boolean) as string[];
+      for (const cond of conditions) {
+        for (const m of cond.matchAll(term)) {
+          if (!declared.has(m[1]!)) {
+            found.push({
+              rule: 'wait',
+              severity: 'error',
+              file: docOfNode(content, node).path,
+              line: node.line,
+              message: `условие ссылается на ожидание "${m[1]!}", а такого ожидания нет ни в одной сцене`,
+            });
+          }
+        }
+      }
+    }
+
+    return found;
+  },
+};
+
 export const RULES: Rule[] = [
   brokenGraph,
   pages,
   speakers,
   montage,
+  waits,
   targetForms,
   routes,
   hubExit,

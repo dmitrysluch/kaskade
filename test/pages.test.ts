@@ -29,6 +29,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     taught: true,
     hinted: true,
     started: true,
+    wait: null,
     episodeState: { episode: 'p', at: `${R}#`, used: [] },
     ...patch,
   };

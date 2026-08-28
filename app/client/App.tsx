@@ -10,6 +10,7 @@ import {
   previewOf,
   sceneOf,
   terms,
+  waitRoute,
   type Session,
   type StreamEntry,
   type SystemCommand,
@@ -46,6 +47,7 @@ import { Manual, Hint } from './ui/Manual.tsx';
 import { MobileScreen } from './ui/Mobile.tsx';
 import { isMobilePath, MOBILE_COLS, TAP_HINT } from './ui/mode.ts';
 import { ADVANCE_HINT, useAdvance } from './ui/advance.ts';
+import { useWaitClock } from './ui/wait.ts';
 import { Menu } from './ui/Menu.tsx';
 import { Splash } from './ui/Splash.tsx';
 import { Transition } from './ui/Transition.tsx';
@@ -475,6 +477,51 @@ export function App() {
   // не терминал.
   const accepting =
     Boolean(session) && !isCard && !isMontage && !splash && !manual && !menu && !session?.overlay;
+
+  /*
+   * Физическое ожидание (07-оболочка-тз, «Физическое ожидание»): узел держит
+   * свой маршрут, пока не пройдёт девяносто секунд, и всё это время игрок ждёт
+   * вместе с Марго.
+   *
+   * Считается только активное время; часы живут в `ui/wait.ts`. Здесь решают
+   * единственное, чего они знать не могут: идёт ли сейчас игра. `accepting`
+   * это и есть — оверлей, меню, обучение и полноэкранный кадр её останавливают.
+   */
+  const waiting = session?.save.wait ?? null;
+  const counting = accepting && waiting != null && waiting.elapsed < waiting.ms;
+
+  const liveWait = useCallback((passed: number) => {
+    setSession((prev) => {
+      const w = prev?.save.wait;
+      if (!prev || !w || w.elapsed >= w.ms) return prev;
+      return { ...prev, save: { ...prev.save, wait: { ...w, elapsed: Math.min(w.ms, w.elapsed + passed) } } };
+    });
+  }, []);
+
+  useWaitClock(counting, liveWait);
+
+  /*
+   * Время вышло — уводит безымянный маршрут.
+   *
+   * Ввод при этом не отнимают: набранную команду игрок дописывает и исполняет,
+   * маршрут ждёт пустой строки. Из дочернего узла действия («посмотреть на
+   * часы») он тоже не перебивает печать — `waitRoute` отдаёт маршрут только
+   * тому, кто стоит в самом узле ожидания.
+   */
+  useEffect(() => {
+    if (!content || !session || !accepting || input !== '') return;
+    const next = waitRoute(content, session.save);
+    if (!next) return;
+    // Ожидание закончено и из сейва уходит: его условия за пределами этого
+    // узла не читаются, а второго активного ожидания быть не должно.
+    const r = enter(content, { ...session.save, wait: null }, next);
+    const moved = sceneOf(r.save.episodeState.at) !== sceneOf(session.save.episodeState.at);
+    setSession({
+      ...session,
+      save: r.save,
+      stream: moved ? r.entries : [...session.stream, ...r.entries],
+    });
+  }, [content, session, accepting, input]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {

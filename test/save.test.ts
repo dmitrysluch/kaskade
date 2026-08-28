@@ -22,6 +22,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     taught: true,
     hinted: true,
     started: true,
+    wait: null,
     episodeState: { episode: 'prolog', at: 'episodes/prolog/rooms/деканат#', used: [] },
     ...patch,
   };

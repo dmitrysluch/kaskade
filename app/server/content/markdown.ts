@@ -86,7 +86,12 @@ const ATTR_KEYS = new Set([
   'page',
   // Разрыв во времени перед кадром: подпись, а не строка прозы.
   'timeLabel',
+  // Физическое ожидание: `- wait: lab-result 90s`.
+  'wait',
 ]);
+
+/** `lab-result 90s` — устойчивый локальный id и целое положительное число секунд. */
+const WAIT = /^([a-z][a-z0-9-]*)\s+(\d+)s$/i;
 
 /** Ключи, которые можно писать несколько раз: `- set: a` двумя строками. */
 const MULTI_KEYS = new Set(['set', 'unset', 'give', 'take', 'tag', 'items', 'exits']);
@@ -154,6 +159,14 @@ function parseAttrs(file: string, lines: { text: string; line: number }[]): Attr
         attrs.once = value !== false;
       } else if (key === 'advance') {
         attrs.advance = value !== false;
+      } else if (key === 'wait') {
+        const m = WAIT.exec(String(value).trim());
+        if (!m) {
+          throw new ContentError(file, `wait пишется как «имя 90s», а не "${String(value)}"`, line);
+        }
+        const seconds = Number(m[2]);
+        if (seconds <= 0) throw new ContentError(file, 'ожидание длиной ноль секунд — не ожидание', line);
+        attrs.wait = { id: m[1]!, ms: seconds * 1000 };
       } else if (key === 'cost' || key === 'page') {
         const n = Number(value);
         if (!Number.isFinite(n)) throw new ContentError(file, `${key} должен быть числом, а не "${value}"`, line);
