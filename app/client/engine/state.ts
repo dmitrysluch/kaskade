@@ -354,7 +354,19 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
     const first = Object.keys(state.words).length === 0;
     const applied = applyAttrs(content, state, node, stamp);
     state = applied.save;
-    if (moves) state = { ...state, episodeState: { ...state.episodeState, at: node.addr } };
+    /*
+     * Куда игрок встанет. `moves` — свойство опции: предмет отвечает, а игрок
+     * остаётся, где был. Но если ответ предмета ведёт маршрутом в сцену или
+     * комнату, игрок оказывается там — иначе он читал бы новое место, стоя
+     * в старом, и список команд остался бы от прежнего узла.
+     *
+     * Так протокол в отделении и возвращают: бумага — предмет, а «вы свободны»
+     * говорят уже в сцене.
+     */
+    const place = content.docs[sceneOf(node.addr)]?.type;
+    if (moves || place === 'scene' || place === 'room') {
+      state = { ...state, episodeState: { ...state.episodeState, at: node.addr } };
+    }
 
     /*
      * Полноэкранный кадр останавливает проход: ввод не принимается, дальше

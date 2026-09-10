@@ -185,9 +185,16 @@ export function docGenerators(doc: RawDoc, exits: string[], items: string[]): Ra
     if (items.length > 0) generators.push({ phrase: 'осмотреть', source: 'items', line: 1 });
   }
 
-  // Вещи на руках ездят с игроком: в комнате их глаголы доступны всегда,
-  // объявлять это в заметке незачем.
-  if (doc.type === 'room') generators.push({ phrase: '*', source: 'inventory', line: 1 });
+  /*
+   * Вещи на руках ездят с игроком: их глаголы доступны везде, где игрок стоит, —
+   * и в комнате, и в сцене. Объявлять это в заметке незачем.
+   *
+   * Раньше руки работали только в комнате, и это была не осторожность, а недосмотр:
+   * протокол в отделении выдают посреди допроса, и прочитать бумагу, которую тебе
+   * сунули в руки, оказывалось нельзя. `inHand` означает «на руках», а не
+   * «на руках, если рядом мебель».
+   */
+  if (PLACES.includes(doc.type)) generators.push({ phrase: '*', source: 'inventory', line: 1 });
 
   return generators;
 }

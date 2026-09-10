@@ -2,12 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadContent } from '../app/server/content/load.ts';
 import { validate } from '../app/server/validate/index.ts';
-import { buildCatalog } from '../app/client/engine/catalog.ts';
-import { begin, dateAt, enter, evalCondition, freshSave, interpolate, previewOf, sceneOf, terms, waitRoute } from '../app/client/engine/state.ts';
+import { buildCatalog, type CatalogOption } from '../app/client/engine/catalog.ts';
+import { begin, dateAt, enter, evalCondition, freshSave, interpolate, previewOf, pagesOf, sceneOf, terms, waitRoute } from '../app/client/engine/state.ts';
 import { overlayLines, statusText } from '../app/client/ui/lines.ts';
 import type { SaveState } from '../app/shared/types.ts';
 import type { StreamEntry } from '../app/client/engine/state.ts';
 import { option } from './helpers.ts';
+import { CLOSE, EXAMINE } from '../app/shared/pages.ts';
 import { join } from 'node:path';
 import { readYaml } from '../app/server/content/yaml.ts';
 import { CONTENT } from '../app/server/content/paths.ts';
@@ -202,6 +203,8 @@ test('пролог проходится до конца, и на каждом ш
   let result = enter(full, save, save.episodeState.at);
   save = result.save;
   const tried = new Map<string, Set<string>>();
+  /** Открытая книга: пока она открыта, список принадлежит ей одной. */
+  let reading: string | null = null;
 
   for (let step = 0; step < 200; step++) {
     // `конец` — единственный законный тупик: дальше пролога пока ничего нет.
@@ -232,17 +235,38 @@ test('пролог проходится до конца, и на каждом ш
       continue;
     }
 
-    const options = buildCatalog(full, save).filter((o) => o.system === null && !o.locked);
+    const options = buildCatalog(full, save, reading).filter((o) => o.system === null && !o.locked);
     assert.ok(options.length > 0, `тупик в узле ${save.episodeState.at}`);
 
-    // Ходим как игрок: сначала то, что здесь ещё не пробовали, и только когда
-    // всё исчерпано — команда, закрывающая место (`advance`). Она стоит в каталоге
-    // последней, и без этого правила обход крутился бы в комнате вечно.
-    const seen = tried.get(save.episodeState.at) ?? new Set<string>();
-    tried.set(save.episodeState.at, seen);
-    const chosen = options.find((o) => !seen.has(o.label)) ?? options[options.length - 1]!;
-    seen.add(chosen.label);
-    save = enter(full, save, chosen.target!, chosen.moves).save;
+    /*
+     * Открытую книгу читают до конца и закрывают. Правило «пробуй непробованное»
+     * тут не годится: метки страниц одинаковы на всех страницах, и по ним обход
+     * решил бы, что уже всё видел, — а именно на последней странице предмет
+     * обычно и делает то, ради чего его дали.
+     */
+    let chosen: CatalogOption;
+    if (reading != null) {
+      chosen = options.find((o) => o.label === 'вперёд') ?? options[options.length - 1]!;
+    } else {
+      // Ходим как игрок: сначала то, что здесь ещё не пробовали, и только когда
+      // всё исчерпано — команда, закрывающая место (`advance`). Она стоит в каталоге
+      // последней, и без этого правила обход крутился бы в комнате вечно.
+      const seen = tried.get(save.episodeState.at) ?? new Set<string>();
+      tried.set(save.episodeState.at, seen);
+      chosen = options.find((o) => !seen.has(o.label)) ?? options[options.length - 1]!;
+      seen.add(chosen.label);
+    }
+
+    // Тот же переключатель режима, что в оболочке: осмотр многостраничной вещи
+    // открывает её, `закрыть` возвращает в место.
+    reading =
+      chosen.verb === CLOSE ? null
+      : chosen.verb === EXAMINE && chosen.object && pagesOf(full, chosen.object).length > 1 ?
+        chosen.object
+      : reading;
+
+    // У `закрыть` цели нет: она ничего не отыгрывает, только гасит режим.
+    if (chosen.target) save = enter(full, save, chosen.target, chosen.moves).save;
   }
 
   assert.fail(`пролог не сошёлся за 200 шагов, застрял на ${save.episodeState.at}`);
