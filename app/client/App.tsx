@@ -305,7 +305,7 @@ export function App() {
        * команда «закрыть», не стоит того, чтобы из него выходить.
        */
       const opens =
-        option.verb === EXAMINE && option.object && pagesOf(content, option.object).length > 1;
+        option.verb === EXAMINE && option.object && pagesOf(content, option.object, session.save).length > 1;
       const reading =
         option.verb === CLOSE ? null
         : opens ? option.object

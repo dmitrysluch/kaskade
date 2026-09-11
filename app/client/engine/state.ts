@@ -134,13 +134,26 @@ export function dateAt(content: GameContent, save: SaveState): string | null {
   return content.nodes[save.episodeState.at]?.date ?? null;
 }
 
-/** Страницы предмета: узлы-секции в порядке `page`. У обычной заметки пусто. */
-export function pagesOf(content: GameContent, docId: string): Node[] {
+/**
+ * Страницы предмета: узлы-секции в порядке `page`. У обычной заметки пусто.
+ *
+ * Страница с `if` — это состояние бумаги, а не развилка: протокол печатают
+ * из того, что человек сказал, и графа «цель раздачи» выглядит по-разному
+ * в зависимости от сказанного (07-оболочка-тз, «Страницы предмета»). Поэтому
+ * страницы с ложным условием не прячутся «серым», а не существуют вовсе:
+ * листание идёт по видимым, и игрок не считает пропущенные номера.
+ *
+ * `save` необязателен только для мест, где условие заведомо ни на что не влияет
+ * (сборка каталога до входа в предмет). Везде, где страницу показывают, он есть.
+ */
+export function pagesOf(content: GameContent, docId: string, save?: SaveState): Node[] {
   const doc = content.docs[docId];
   if (!doc) return [];
   return doc.pages.flatMap((id) => {
     const node = content.nodes[`${docId}#${id}`];
-    return node ? [node] : [];
+    if (!node) return [];
+    if (save && !evalCondition(node.attrs.if, save)) return [];
+    return [node];
   });
 }
 
@@ -153,7 +166,7 @@ export function pagesOf(content: GameContent, docId: string): Node[] {
  * из-за правки заметки хуже, чем показать книгу с начала.
  */
 export function pageAt(content: GameContent, save: SaveState, docId: string): Node | null {
-  const pages = pagesOf(content, docId);
+  const pages = pagesOf(content, docId, save);
   if (pages.length === 0) return null;
 
   const saved = save.itemStates[content.docs[docId]?.id ?? ''];

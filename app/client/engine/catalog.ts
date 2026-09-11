@@ -71,7 +71,7 @@ function retarget(content: GameContent, save: SaveState, option: Option): Option
  * На первой странице нет «назад», на последней — «вперёд».
  */
 function readingOptions(content: GameContent, save: SaveState, doc: Doc): CatalogOption[] {
-  const pages = pagesOf(content, doc.docId);
+  const pages = pagesOf(content, doc.docId, save);
   const at = pages.findIndex((n) => n.id === pageAt(content, save, doc.docId)?.id);
 
   const out: CatalogOption[] = [];

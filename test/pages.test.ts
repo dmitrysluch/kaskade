@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildCatalog } from '../app/client/engine/catalog.ts';
-import { enter, pageAt } from '../app/client/engine/state.ts';
+import { enter, pageAt, pagesOf } from '../app/client/engine/state.ts';
 import { attrs, content, doc, episode, node, option } from './helpers.ts';
 import type { SaveState } from '../app/shared/types.ts';
 
@@ -203,4 +203,58 @@ test('состояние переживает переход в другую з�
   const back = { ...elsewhere, episodeState: { ...elsewhere.episodeState, at: `${R}#` } };
 
   assert.equal(buildCatalog(g, back).find((o) => o.verb === 'осмотреть')!.target, `${BOOK}#вклейка`);
+});
+
+/**
+ * Страница с `if` — состояние бумаги, а не развилка (07-оболочка-тз, «Страницы
+ * предмета — состояния»). Протокол в `02-neukoelln` печатают из того, что
+ * человек сказал: графа «цель раздачи» выглядит по-разному, и лишних граф
+ * в бумаге не бывает. Поэтому невидимая страница не существует вовсе —
+ * листание идёт по видимым, и игрок не считает пропущенные номера.
+ */
+function paper() {
+  const P = 'episodes/p/items/paper';
+  const doc_ = doc(P, {
+    type: 'item',
+    label: 'протокол',
+    pages: ['шапка', 'цель-а', 'цель-б'],
+    nodes: [
+      node(`${P}#`, { text: 'Листы из принтера.' }),
+      node(`${P}#шапка`, { text: 'Участок 55.', attrs: attrs({ page: 1 }) }),
+      node(`${P}#цель-а`, { text: 'Цель — эксперимент.', attrs: attrs({ page: 2, if: 'p.frame' }) }),
+      node(`${P}#цель-б`, { text: 'Цель не указана.', attrs: attrs({ page: 3, if: '!p.frame' }) }),
+    ],
+  });
+  const g = content({
+    episodes: [episode('p', { entry: `${R}#`, verbs: ['осмотреть'] })],
+    docs: {
+      [P]: doc_,
+      [R]: doc(R, { type: 'room', items: ['paper'], nodes: [node(`${R}#`, { text: 'комната' })] }),
+    },
+  });
+  return { g, P };
+}
+
+test('страница с ложным условием не существует: листание идёт по видимым', () => {
+  const { g, P } = paper();
+  const withFlag = save({ flags: { 'p.frame': { value: true, at: null } } });
+  const without = save();
+
+  assert.equal(pagesOf(g, P, withFlag).map((n) => n.id).join(','), 'шапка,цель-а');
+  assert.equal(pagesOf(g, P, without).map((n) => n.id).join(','), 'шапка,цель-б');
+});
+
+test('вперёд со страницы перед скрытой ведёт на следующую видимую', () => {
+  const { g, P } = paper();
+  const s = save({ itemStates: { paper: 'шапка' } });
+  const forward = buildCatalog(g, s, P).find((o) => o.label === 'вперёд')!;
+
+  assert.equal(forward.target, `${P}#цель-б`);
+});
+
+test('сохранённая страница, ставшая невидимой, откатывается на первую видимую', () => {
+  const { g, P } = paper();
+  const s = save({ itemStates: { paper: 'цель-а' } });
+
+  assert.equal(pageAt(g, s, P)?.id, 'шапка');
 });
