@@ -46,6 +46,22 @@ function hasExit(node: Node): boolean {
   return node.options.length > 0 || node.pending.length > 0 || node.attrs.goto != null;
 }
 
+/**
+ * Вспомогательная заметка: её узлы не место, куда переходят, а фрагменты,
+ * которые выдаёт кто-то другой. Так написано застолье в `03-talk`: комната
+ * отдаёт по куску беседы после каждого действия игрока, и разговор идёт мимо
+ * Марго — в этом и механика.
+ *
+ * Механики выдачи в движке пока нет, и правила графа о таких узлах судить
+ * не могут: у фрагмента нет ни входа, ни выхода **по замыслу**. Пока помета
+ * значит для валидатора одно — «не суди», а для автора остаётся напоминанием
+ * в виде предупреждения.
+ */
+function auxiliary(doc: Doc): boolean {
+  const tag = doc.fm.tag;
+  return tag === 'auxiliary' || (Array.isArray(tag) && tag.includes('auxiliary'));
+}
+
 const brokenGraph: Rule = {
   id: 'graph',
   title: 'узлы без входа и без выхода',
@@ -62,6 +78,7 @@ const brokenGraph: Rule = {
       // Вступление слова, документа и предмета — не узел графа, а карточка:
       // на него никто не «переходит», его показывают.
       if (doc.type !== 'scene' && doc.type !== 'room') continue;
+      if (auxiliary(doc)) continue;
 
       if (!reached.has(node.addr)) {
         found.push({
@@ -82,6 +99,18 @@ const brokenGraph: Rule = {
         });
       }
     }
+    for (const doc of Object.values(content.docs)) {
+      if (!auxiliary(doc)) continue;
+      found.push({
+        rule: 'graph',
+        severity: 'warn',
+        file: doc.path,
+        message:
+          'заметка помечена `tag: auxiliary`: её узлы правилами графа не проверяются, ' +
+          'а механики выдачи фрагментов в движке пока нет — сцена в игре не звучит',
+      });
+    }
+
     return found;
   },
 };

@@ -40,7 +40,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
 function game(text = ''): GameContent {
   return content({
     words: { alers: { id: 'alers', label: 'Алерс', category: 'имена', text: 'физик' } },
-    reference: { KKW: 'Kernkraftwerk, АЭС' },
+    reference: { 'ref-kkw': { id: 'ref-kkw', label: 'KKW', category: 'физика', text: 'Kernkraftwerk, АЭС' } },
     docs: {
       [ROOM]: doc(ROOM, { type: 'room', items: ['00-book'], nodes: [node(`${ROOM}#`, { text })] }),
       'episodes/p/items/00-book': doc('episodes/p/items/00-book', { type: 'item', label: 'учебник' }),
@@ -50,7 +50,7 @@ function game(text = ''): GameContent {
 }
 
 test('разбор: ссылка с формой и без, и счёт одинаковых форм', () => {
-  const r = parseEntities('Берёшь [[00-book|учебник]]. Второй [[00-book|учебник]] лежит рядом. [[KKW]].');
+  const r = parseEntities('Берёшь [[00-book|учебник]]. Второй [[00-book|учебник]] лежит рядом. [[ref-kkw|KKW]].');
 
   // Игрок видит текст без разметки — ни скобок, ни идентификаторов.
   assert.equal(r.text, 'Берёшь учебник. Второй учебник лежит рядом. KKW.');
@@ -59,7 +59,7 @@ test('разбор: ссылка с формой и без, и счёт один
     [
       ['00-book', 'учебник', 0],
       ['00-book', 'учебник', 1],
-      ['KKW', 'KKW', 0],
+      ['ref-kkw', 'KKW', 0],
     ],
   );
 });
@@ -67,14 +67,14 @@ test('разбор: ссылка с формой и без, и счёт один
 test('тип следует из id, а не из префикса в разметке', () => {
   const g = game();
   assert.equal(kindOf(g, 'alers'), 'word');
-  assert.equal(kindOf(g, 'KKW'), 'reference');
+  assert.equal(kindOf(g, 'ref-kkw'), 'reference');
   assert.equal(kindOf(g, '00-book'), 'item');
   assert.equal(kindOf(g, 'неведомое'), null);
 });
 
 test('доступность: термин всегда, слово — с карточкой, предмет — пока рядом', () => {
   const here = new Set(['00-book']);
-  assert.equal(available('reference', 'KKW', save(), new Set()), true);
+  assert.equal(available('reference', 'ref-kkw', save(), new Set()), true);
 
   assert.equal(available('word', 'alers', save(), here), false);
   assert.equal(available('word', 'alers', save({ words: { alers: 'grey' } }), here), true);
@@ -122,12 +122,12 @@ test('текст узла приходит в поток без разметки
 test('сессионная история: уникальные сущности в порядке последних упоминаний', () => {
   const g = game();
   const stream = [
-    textEntry(g, save(), 'Про [[KKW]] и [[00-book|учебник]].'),
-    textEntry(g, save(), 'Снова [[KKW]].'),
+    textEntry(g, save(), 'Про [[ref-kkw|KKW]] и [[00-book|учебник]].'),
+    textEntry(g, save(), 'Снова [[ref-kkw|KKW]].'),
   ];
 
   const terms = sessionEntities(stream, 'reference');
-  assert.deepEqual(terms.map((e) => e.id), ['KKW']);
+  assert.deepEqual(terms.map((e) => e.id), ['ref-kkw']);
   // Повтор не заводит вторую запись, а переносит место: теперь оно во второй записи.
   assert.equal(terms[0]!.at, 1);
 
@@ -143,10 +143,26 @@ test('история — про выведенное, а не про напис�
 });
 
 test('валидатор: ссылка в никуда — ошибка', () => {
-  const g = game('Про [[неведомое|это]] и [[KKW]].');
+  const g = game('Про [[неведомое|это]] и [[ref-kkw|KKW]].');
   const found = RULES.find((r) => r.id === 'mentions')!.run(g);
 
   assert.equal(found.length, 1);
   assert.equal(found[0]!.severity, 'error');
   assert.match(found[0]!.message, /неведомое/);
+});
+
+test('справочник — заметки: статья приходит с названием и категорией', () => {
+  // `reference/<id>.md` вместо строки в общем файле (07-оболочка-тз,
+  // «Справочник»): у статьи есть id, чтобы на неё ссылались из текста.
+  const g = content({
+    reference: {
+      'ref-ines': { id: 'ref-ines', label: 'шкала ИНЕС', category: 'физика', text: 'От нуля до семи.' },
+    },
+  });
+
+  assert.equal(kindOf(g, 'ref-ines'), 'reference');
+  // Ссылаются по id, а печатается форма из предложения.
+  const r = resolveEntities(g, save(), new Set(), 'Глава про [[ref-ines|шкалу событий]].');
+  assert.equal(r.text, 'Глава про шкалу событий.');
+  assert.deepEqual(r.mentions.map((m) => [m.kind, m.id]), [['reference', 'ref-ines']]);
 });

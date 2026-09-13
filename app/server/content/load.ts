@@ -11,6 +11,7 @@ import type {
   EpisodeDef,
   GameContent,
   Node,
+  ReferenceDef,
   RendererDef,
   WordDef,
 } from '../../shared/types.ts';
@@ -224,6 +225,13 @@ export function loadContent(): GameContent {
   const docs: Record<string, Doc> = {};
   const nodes: Record<string, Node> = {};
   const words: Record<string, WordDef> = {};
+  /*
+   * Справочник статичен, доступен с первой минуты и общий на всю игру
+   * (07-оболочка-тз, «Справочник»). Раньше это был плоский yaml «термин: строка»;
+   * заметки пришли вместе с разметкой в тексте — упоминание `[[ref-ines|шкала]]`
+   * должно во что-то разрешаться, а у строки в словаре нет ни id, ни категории.
+   */
+  const reference: Record<string, ReferenceDef> = {};
   const documents: Record<string, DocumentDef> = {};
 
   for (const p of parsed.values()) {
@@ -291,6 +299,14 @@ export function loadContent(): GameContent {
         text: intro,
       };
     }
+    if (p.raw.type === 'reference') {
+      reference[id] = {
+        id,
+        label: p.info.label,
+        category: String(p.raw.fm.category ?? 'прочее'),
+        text: intro,
+      };
+    }
     if (p.raw.type === 'doc') {
       documents[id] = {
         id,
@@ -308,11 +324,6 @@ export function loadContent(): GameContent {
   }
 
   const characters = loadCharacters(join(CONTENT, 'characters'), episodes.map((e) => e.id));
-
-  // Справочник статичен и доступен с первой минуты, поэтому это просто плоский
-  // список, а не заметки: одна строка на термин, никакой механики.
-  const referenceFile = join(CONTENT, 'reference.yaml');
-  const reference = existsSync(referenceFile) ? strMap(readYaml(referenceFile)) : {};
 
   return {
     title: String(game.title ?? 'Без названия'),

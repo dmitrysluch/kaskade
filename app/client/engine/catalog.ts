@@ -238,7 +238,8 @@ export function buildCatalog(
   // список, `справочник контейнмент` — сразу статью. Аргументы обязаны быть
   // опциями, иначе игрок наберёт команду, которой не существует, — а «не понимаю»
   // в этой игре не бывает.
-  for (const term of Object.keys(content.reference)) out.push(systemOption('справочник', term));
+  // Аргумент — то, что игрок видит в тексте и в списке: название статьи, а не id.
+  for (const term of Object.values(content.reference)) out.push(systemOption('справочник', term.label));
   for (const id of Object.keys(save.words)) {
     out.push(systemOption('дело', content.words[id]?.label ?? id));
   }

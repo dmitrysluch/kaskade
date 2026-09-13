@@ -42,7 +42,10 @@ function save(patch: Partial<SaveState> = {}): SaveState {
 function game(): GameContent {
   return content({
     words: { alers: { id: 'alers', label: 'Алерс', category: 'имена', text: 'физик, читал лекцию' } },
-    reference: { KKW: 'Kernkraftwerk — атомная электростанция', OPV: 'Общая противоаварийная вентиляция' },
+    reference: {
+      'ref-kkw': { id: 'ref-kkw', label: 'KKW', category: 'физика', text: 'Kernkraftwerk — атомная электростанция' },
+      'ref-opv': { id: 'ref-opv', label: 'OPV', category: 'порядок', text: 'Общая противоаварийная вентиляция' },
+    },
     docs: {
       [ROOM]: doc(ROOM, { type: 'room', items: ['00-book'], nodes: [node(`${ROOM}#`)] }),
       'episodes/p/items/00-book': doc('episodes/p/items/00-book', {
@@ -62,7 +65,7 @@ test('панель занимает ровно отведённые строки
   assert.equal(empty.length, ROWS);
 
   const g = game();
-  const stream = [textEntry(g, save(), 'Про [[KKW]].')];
+  const stream = [textEntry(g, save(), 'Про [[ref-kkw|KKW]].')];
   const full = contextLines('reference', sessionEntities(stream, 'reference'), 0, g, save(), COLS, ROWS);
   assert.equal(full.length, ROWS);
   // Каждая строка не шире сетки: панель рисуется в те же знакоместа.
@@ -79,7 +82,7 @@ test('пустая история говорит, где лежит полный
 
 test('справочник показывает статью, «Дело» — карточку с происхождением', () => {
   const g = game();
-  const stream = [textEntry(g, save(), 'Речь про [[KKW]] и про [[alers|Алерса]].')];
+  const stream = [textEntry(g, save(), 'Речь про [[ref-kkw|KKW]] и про [[alers|Алерса]].')];
 
   const term = text(contextLines('reference', sessionEntities(stream, 'reference'), 0, g, save(), COLS, ROWS));
   assert.match(term, /Kernkraftwerk/);
@@ -104,11 +107,11 @@ test('карточка предмета — вступление, без стр�
 
 test('счётчик и подсказка про стрелки появляются, только когда есть что листать', () => {
   const g = game();
-  const one = [textEntry(g, save(), 'Про [[KKW]].')];
+  const one = [textEntry(g, save(), 'Про [[ref-kkw|KKW]].')];
   const single = text(contextLines('reference', sessionEntities(one, 'reference'), 0, g, save(), COLS, ROWS));
   assert.equal(/←|→|1\/1/.test(single), false);
 
-  const two = [textEntry(g, save(), 'Про [[KKW]] и [[OPV]].')];
+  const two = [textEntry(g, save(), 'Про [[ref-kkw|KKW]] и [[ref-opv|OPV]].')];
   const pair = text(contextLines('reference', sessionEntities(two, 'reference'), 1, g, save(), COLS, ROWS));
   assert.match(pair, /2\/2/);
   assert.match(pair, /← → другие/);
@@ -126,7 +129,7 @@ test('служебная полоса подписывает панели циф
 
 test('панель заменяет нижнюю область, а не ложится поверх неё', () => {
   const g = game();
-  const stream = [textEntry(g, save(), 'Про [[KKW]].')];
+  const stream = [textEntry(g, save(), 'Про [[ref-kkw|KKW]].')];
   const lines = contextLines('reference', sessionEntities(stream, 'reference'), 0, g, save(), COLS, LOWER_ROWS - 1);
 
   const screen = (panel: ReturnType<typeof contextLines> | null) =>

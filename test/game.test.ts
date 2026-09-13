@@ -396,14 +396,15 @@ test('служебные команды берут аргумент: справ�
   const all = labels(withWord);
 
   // Аргументы обязаны быть опциями: «не понимаю» в этой игре не бывает.
-  const term = Object.keys(game.reference)[0]!;
+  // Аргумент — название статьи, которое игрок видел в тексте, а не её id.
+  const term = Object.values(game.reference)[0]!.label;
   assert.ok(all.includes(`справочник ${term}`), `нет опции "справочник ${term}"`);
   assert.ok(all.includes(`дело ${game.words[anyWord]!.label}`));
 
   // И открывают ровно одну статью, а не список.
   const one = overlayLines({ kind: 'справочник', arg: term }, game, withWord, 60);
   const list = overlayLines({ kind: 'справочник', arg: null }, game, withWord, 60);
-  assert.equal(one.length, 1);
+  assert.ok(one.some((line) => line.some((seg) => seg.text.includes(term))));
   assert.ok(list.length > one.length);
 });
 

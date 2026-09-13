@@ -10,7 +10,7 @@
  */
 export type NodeAddr = string;
 
-export type DocType = 'scene' | 'room' | 'item' | 'word' | 'doc' | 'person';
+export type DocType = 'scene' | 'room' | 'item' | 'word' | 'doc' | 'person' | 'reference';
 
 /** Зарезервированные ключи атрибутов узла (07-оболочка-тз, «Узлы, атрибуты, переходы»). */
 export interface Attrs {
@@ -283,6 +283,24 @@ export interface WordDef {
   text: string;
 }
 
+/**
+ * Статья справочника (07-оболочка-тз, «Справочник»). Заметка `reference/<id>.md`,
+ * а не строка в общем файле: у статьи есть название, категория и текст, который
+ * автор правит там же, где пишет всё остальное.
+ *
+ * Справочник **глобальный**: термин, заведённый в прологе, нужен и в главе 2,
+ * а раскладывать статьи по эпизодам значило бы либо дублировать их, либо решать,
+ * чей он.
+ */
+export interface ReferenceDef {
+  id: string;
+  /** Название термина: `шкала ИНЕС`. Его же игрок печатает после `справочник`. */
+  label: string;
+  /** Только для сортировки на экране: `физика`, `места`, `порядок`, `быт`. */
+  category: string;
+  text: string;
+}
+
 export interface DocumentDef {
   id: string;
   label: string;
@@ -300,10 +318,11 @@ export interface GameContent {
   words: Record<string, WordDef>;
   documents: Record<string, DocumentDef>;
   /**
-   * Справочник: термин → строка. Живёт отдельно от «Дела» намеренно — двадцать
-   * аббревиатур в списке улик, и список перестаёт читаться как расследование.
+   * Справочник: id статьи → статья. Живёт отдельно от «Дела» намеренно —
+   * двадцать аббревиатур в списке улик, и список перестаёт читаться как
+   * расследование.
    */
-  reference: Record<string, string>;
+  reference: Record<string, ReferenceDef>;
   /** Все узлы игры по адресу — движку больше ничего не нужно. */
   nodes: Record<NodeAddr, Node>;
   docs: Record<string, Doc>;

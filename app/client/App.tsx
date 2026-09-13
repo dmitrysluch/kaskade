@@ -264,7 +264,7 @@ export function App() {
     if (!content || !session) return null;
     const text = session.stream.map((e) => e.text).join('\n').toLowerCase();
     let found: { term: string; at: number } | null = null;
-    for (const term of Object.keys(content.reference)) {
+    for (const term of Object.values(content.reference).map((t) => t.label)) {
       const at = text.lastIndexOf(term.toLowerCase());
       if (at !== -1 && (!found || at > found.at)) found = { term, at };
     }

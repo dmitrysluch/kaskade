@@ -381,7 +381,12 @@ const SWITCH_HINT = '← → другие';
 function entityCard(kind: EntityKind, id: string, content: GameContent, save: SaveState): Seg[][] {
   const out: Seg[][] = [];
   if (kind === 'reference') {
-    return [[{ text: content.reference[id] ?? '', cls: 'dim' }]];
+    const term = content.reference[id];
+    if (!term) return [[]];
+    out.push([{ text: term.label }, { text: '  ' }, { text: term.category, cls: 'dim' }]);
+    out.push([]);
+    out.push([{ text: term.text, cls: 'dim' }]);
+    return out;
   }
   if (kind === 'word') {
     const word = content.words[id];
@@ -574,11 +579,35 @@ export function overlayLines(
     return storageLines(content, save, max, storage);
   }
 
-  const terms = Object.entries(content.reference).filter(([term]) => picked(arg, term));
+  /*
+   * Справочник — список статей, отсортированный по категориям: двадцать
+   * аббревиатур подряд читаются хуже, чем те же двадцать, разложенные
+   * на «физика», «места», «порядок». Сортировка — единственное, ради чего
+   * категория существует.
+   */
+  const terms = Object.values(content.reference)
+    .filter((term) => picked(arg, term.label))
+    .sort((a, b) => a.category.localeCompare(b.category) || a.label.localeCompare(b.label));
   if (terms.length === 0) return [[{ text: 'Справочник пуст.', cls: 'dim' }]];
-  const pad = Math.max(...terms.map(([term]) => term.length));
-  for (const [term, line] of terms) {
-    out.push([{ text: term.padEnd(pad) }, { text: '  ' }, { text: line, cls: 'dim' }]);
+
+  const width = Math.max(...terms.map((term) => term.label.length));
+  let category: string | null = null;
+  for (const term of terms) {
+    if (term.category !== category) {
+      if (category != null) out.push([]);
+      category = term.category;
+      out.push([{ text: category, cls: 'dim' }]);
+    }
+    // Статья длиннее строки переносится с отступом под название: список должен
+    // читаться колонкой, а не сползать в абзац.
+    const lines = wrap(term.text, Math.max(1, max - width - 2));
+    lines.forEach((line, i) => {
+      out.push([
+        { text: (i === 0 ? term.label : '').padEnd(width) },
+        { text: '  ' },
+        { text: line, cls: 'dim' },
+      ]);
+    });
   }
   return out;
 }

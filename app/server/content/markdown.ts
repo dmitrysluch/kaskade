@@ -61,7 +61,7 @@ export interface RawDoc {
   nodes: RawNode[];
 }
 
-const DOC_TYPES: DocType[] = ['scene', 'room', 'item', 'word', 'doc', 'person'];
+const DOC_TYPES: DocType[] = ['scene', 'room', 'item', 'word', 'doc', 'person', 'reference'];
 
 const ATTR_KEYS = new Set([
   'if',

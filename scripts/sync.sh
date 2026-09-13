@@ -6,6 +6,7 @@
 #   пролог/rooms   →  content/episodes/prolog/rooms
 #   пролог/items   →  content/episodes/prolog/items
 #   пролог/words   →  content/words          общие на всю игру
+#   reference      →  content/reference      справочник, общий на всю игру
 #   пролог/docs    →  content/docs           общие на всю игру
 #   game/*.md      →  docs/game              ТЗ и замысел, чтобы код и ТЗ не разъехались
 #
@@ -37,6 +38,7 @@ PAIRS=(
   "$GAME/пролог/rooms|$REPO/content/episodes/prolog/rooms"
   "$GAME/пролог/items|$REPO/content/episodes/prolog/items"
   "$GAME/пролог/words|$REPO/content/words"
+  "$GAME/reference|$REPO/content/reference"
   "$GAME/пролог/docs|$REPO/content/docs"
   "$GAME|$REPO/docs/game"
 )
