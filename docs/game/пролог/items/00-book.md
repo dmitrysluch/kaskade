@@ -4,16 +4,16 @@ type: item
 label: учебник
 ---
 
-Учебник по защитным оболочкам ядерных реакторов, библиотечный.
+Учебник по защитным [[ref-containment|оболочкам]] ядерных реакторов, библиотечный.
 
 ## обложка
 - page: 1
 
-«Sicherheitsbehälter: Auslegung und Nachweis».
+«[[ref-containment|Sicherheitsbehälter]]: Auslegung und Nachweis».
 
-Авторы: `K. Schmidt, F. Ahlers`.
+Авторы: K. Schmidt, [[word-alers|F. Ahlers]].
 
 ## оглавление
 - page: 2
 
-Глава первая — шкала событий, от нуля до семи. Глава вторая — определения.
+Глава первая — [[ref-ines|шкала событий]], от нуля до семи. Глава вторая — определения.
