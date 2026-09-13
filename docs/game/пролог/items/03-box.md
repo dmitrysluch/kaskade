@@ -2,6 +2,7 @@
 id: 03-box
 type: item
 label: коробка
+portable: true
 # Выдаётся в `03-invite#с-коробкой` при `prolog.box-line-heard`. Отдаётся
 # авторской опцией в `rooms/03-flat`, там же снимается из инвентаря.
 # Schachtel — коробка из-под обуви. Она имела в виду другое слово.
