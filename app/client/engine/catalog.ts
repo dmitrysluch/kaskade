@@ -105,33 +105,65 @@ function readingOptions(content: GameContent, save: SaveState, doc: Doc): Catalo
   return out;
 }
 
-/** Глаголы вещей на руках: предмет приносит их с собой, комната ни при чём. */
-function fromInventory(content: GameContent, save: SaveState): CatalogOption[] {
+/**
+ * Действия предмета — те, что показываются **внутри экрана `предметы`**
+ * ([[99-открытые-вопросы]], «Глаголы и состояния предметов»).
+ *
+ * В основной список они больше не попадают. Раньше попадали: каждая вещь
+ * на руках добавляла туда свои глаголы, и с ростом инвентаря они вытеснили бы
+ * действия текущей сцены — разговор о высылке вперемешку с «позвонить телефон».
+ * Предмет открывают, когда о нём вспомнили, и это отдельный жест.
+ *
+ * Что считается действием: именованная секция предмета, которая не страница.
+ * Отдельного `inHand` для этого не нужно — он говорил то же самое вторым
+ * голосом и умел расходиться с содержимым файла.
+ */
+/**
+ * Явный генератор по вещам на руках: `показать: inventory`. Один глагол, тот,
+ * который назвал автор, — и только для тех вещей, у которых на него есть ответ.
+ */
+function fromItems(content: GameContent, save: SaveState, verb: string): CatalogOption[] {
   const out: CatalogOption[] = [];
   for (const id of save.inventory) {
     const doc = docById(content, id);
     if (!doc || doc.type !== 'item') continue;
-    for (const verb of doc.inHand) {
-      // Осмотр многостраничной вещи отвечает страницей, узла с таким именем
-      // у неё нет и быть не должно.
-      const node =
-        verb === EXAMINE && doc.pages.length > 0
-          ? pageAt(content, save, doc.docId)
-          : doc.nodes.find((n) => n.id === verb);
-      if (!node) continue;
-      const option: Option = {
-        // Вещь на руках — то же окружение, только оно ездит с игроком. После
-        // глагола идёт готовая форма из заметки, как и у опций комнаты.
-        label: node.attrs.label ?? `${verb} ${doc.targets[verb] ?? doc.target}`,
-        kind: 'environment',
-        target: node.addr,
-        attrs: node.attrs,
-        verb,
-        object: doc.docId,
-        moves: false,
-      };
-      if (optionAvailable(content, save, option)) out.push(plain(option));
-    }
+    const found = itemActions(content, save, doc.docId).filter((o) => o.verb === verb);
+    out.push(...found);
+  }
+  return out;
+}
+
+export function itemActions(content: GameContent, save: SaveState, docId: string): CatalogOption[] {
+  const doc = content.docs[docId];
+  if (!doc || doc.type !== 'item') return [];
+
+  const out: CatalogOption[] = [];
+  // Многостраничная вещь отвечает на осмотр страницей, а узла `осмотреть`
+  // у неё нет и быть не должно.
+  const verbs = doc.pages.length > 0 ? [EXAMINE] : [];
+  for (const node of doc.nodes) {
+    if (node.id === '' || node.attrs.page != null) continue;
+    verbs.push(node.id);
+  }
+
+  for (const verb of verbs) {
+    const node =
+      verb === EXAMINE && doc.pages.length > 0
+        ? pageAt(content, save, doc.docId)
+        : doc.nodes.find((n) => n.id === verb);
+    if (!node) continue;
+    const option: Option = {
+      // Предмет — то же окружение, только оно ездит с игроком. После глагола
+      // идёт готовая форма из заметки, как и у опций комнаты.
+      label: node.attrs.label ?? `${verb} ${doc.targets[verb] ?? doc.target}`,
+      kind: 'environment',
+      target: node.addr,
+      attrs: node.attrs,
+      verb,
+      object: doc.docId,
+      moves: false,
+    };
+    if (optionAvailable(content, save, option)) out.push(plain(option));
   }
   return out;
 }
@@ -188,7 +220,13 @@ export function buildCatalog(
     }
 
     for (const pending of node.pending) {
-      if (pending.from === 'inventory') out.push(...fromInventory(content, save));
+      /*
+       * Генератор по инвентарю остался только явным, и раскрывается он одним
+       * глаголом: `показать: inventory` в комнате — это авторское решение,
+       * что здесь и сейчас показывать есть кому. Всё остальное, что предмет
+       * умеет, живёт внутри экрана `предметы` ([[99-открытые-вопросы]]).
+       */
+      if (pending.from === 'inventory') out.push(...fromItems(content, save, pending.verb));
       else out.push(...fromWords(content, save, pending.verb));
     }
   }

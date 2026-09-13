@@ -13,7 +13,7 @@ import {
   type Seg,
   type Span,
 } from './text.ts';
-import type { CatalogOption } from '../engine/catalog.ts';
+import { itemActions, type CatalogOption } from '../engine/catalog.ts';
 import type { OverlayCall, OverlayCommand, SessionEntity, StreamEntry, Term } from '../engine/state.ts';
 import { days, daysBetween } from '../../shared/dates.ts';
 import { speakerLabel, speakerOf } from '../../shared/speech.ts';
@@ -468,11 +468,83 @@ function picked(arg: string | null, label: string): boolean {
   return arg == null || label.toLowerCase().startsWith(arg.toLowerCase());
 }
 
+/**
+ * Что сейчас выбрано в хранилище вещей: сама вещь и, если её открыли, её действие.
+ * Живёт в оболочке, а не в сессии: это положение курсора, а не состояние мира.
+ */
+export interface StoragePick {
+  pick: number;
+  open: string | null;
+  act: number;
+}
+
+/**
+ * Экран `предметы` ([[99-открытые-вопросы]], «Глаголы и состояния предметов»).
+ *
+ * Сначала вещи, потом — действия выбранной. Собственные действия предмета живут
+ * здесь, а не в списке команд: иначе с ростом инвентаря они вытеснят из него то,
+ * ради чего сцена написана. Предмет достают, когда о нём вспомнили, и это
+ * отдельный жест — ровно как в жизни лезут в карман.
+ */
+function storageLines(
+  content: GameContent,
+  save: SaveState,
+  max: number,
+  storage: StoragePick | null,
+): Seg[][] {
+  const out: Seg[][] = [];
+  const wrapped = (text: string, cls?: string) => {
+    for (const line of wrap(text, max - MARGIN.text)) out.push([{ text: pad() }, { text: line, cls }]);
+  };
+
+  if (save.inventory.length === 0) return [[{ text: 'На руках ничего нет.', cls: 'dim' }]];
+
+  const items = save.inventory.map((id) => ({ id, doc: Object.values(content.docs).find((d) => d.id === id) }));
+  const at = Math.min(Math.max(storage?.pick ?? 0, 0), items.length - 1);
+  const opened = storage?.open ?? null;
+
+  if (opened == null) {
+    items.forEach((item, i) => {
+      const picked = i === at;
+      out.push([
+        { text: picked ? hanging(PICK_MARK) : pad(), cls: picked ? 'accent' : undefined },
+        { text: item.doc?.label ?? item.id, cls: picked ? undefined : 'dim' },
+      ]);
+    });
+    out.push([]);
+    // Описание — только у выбранной вещи: список должен читаться списком.
+    wrapped(items[at]?.doc?.nodes[0]?.text ?? '', 'dim');
+    return out;
+  }
+
+  const doc = content.docs[opened];
+  out.push([{ text: pad() }, { text: doc?.label ?? opened }]);
+  out.push([]);
+  wrapped(doc?.nodes[0]?.text ?? '', 'dim');
+  out.push([]);
+
+  const actions = itemActions(content, save, opened);
+  if (actions.length === 0) {
+    wrapped('С ней сейчас ничего не сделать.', 'dim');
+    return out;
+  }
+  const act = Math.min(Math.max(storage?.act ?? 0, 0), actions.length - 1);
+  actions.forEach((action, i) => {
+    const picked = i === act;
+    out.push([
+      { text: picked ? hanging(PICK_MARK) : pad(), cls: picked ? 'accent' : undefined },
+      { text: action.label, cls: picked ? 'environment' : 'dim' },
+    ]);
+  });
+  return out;
+}
+
 export function overlayLines(
   call: OverlayCall,
   content: GameContent,
   save: SaveState,
   max: number,
+  storage: StoragePick | null = null,
 ): Seg[][] {
   const { kind, arg } = call;
   const out: Seg[][] = [];
@@ -499,15 +571,7 @@ export function overlayLines(
   }
 
   if (kind === 'предметы') {
-    if (save.inventory.length === 0) return [[{ text: 'На руках ничего нет.', cls: 'dim' }]];
-    for (const id of save.inventory) {
-      const doc = Object.values(content.docs).find((d) => d.id === id);
-      out.push([{ text: doc?.label ?? id }]);
-      // Карточка показывает описание и не показывает список действий.
-      push(doc?.nodes[0]?.text ?? '', 'dim');
-      out.push([]);
-    }
-    return out;
+    return storageLines(content, save, max, storage);
   }
 
   const terms = Object.entries(content.reference).filter(([term]) => picked(arg, term));

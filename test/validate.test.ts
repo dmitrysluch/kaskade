@@ -67,20 +67,23 @@ test('глагол из генератора должен быть объявл�
   assert.match(found[0]!.message, /"осмотреть" не объявлен в verbs/);
 });
 
-test('глагол предмета должен быть объявлен в itemVerbs', () => {
+test('незаявленный глагол предмета — предупреждение, а не запрет', () => {
+  // Реестр глаголов остался подсказкой автору ([[99-открытые-вопросы]], «Глаголы
+  // и состояния предметов»): доступность команды решает секция предмета, а не
+  // список инфинитивов в episode.yaml — он всё равно не склоняет цель.
   const item = doc('episodes/p/items/телефон', {
     type: 'item',
     nodes: [node('episodes/p/items/телефон#'), node('episodes/p/items/телефон#позвонить')],
-    inHand: ['позвонить'],
   });
   const game = content({ episodes: [episode('p', { verbs: [], itemVerbs: [] })], docs: { [item.docId]: item } });
 
   const found = run('verbs', game);
   assert.equal(found.length, 1);
+  assert.equal(found[0]!.severity, 'warn');
   assert.match(found[0]!.message, /ни в verbs, ни в itemVerbs/);
 });
 
-test('inHand не может ссылаться на несуществующий узел', () => {
+test('inHand больше не читается, и валидатор предлагает его убрать', () => {
   const item = doc('episodes/p/items/телефон', {
     type: 'item',
     nodes: [node('episodes/p/items/телефон#'), node('episodes/p/items/телефон#позвонить')],
@@ -90,7 +93,8 @@ test('inHand не может ссылаться на несуществующи�
 
   const found = run('verbs', game);
   assert.equal(found.length, 1);
-  assert.match(found[0]!.message, /в inHand указан "разбить"/);
+  assert.equal(found[0]!.severity, 'warn');
+  assert.match(found[0]!.message, /inHand больше не читается/);
 });
 
 test('предмет без единого глагола находится', () => {

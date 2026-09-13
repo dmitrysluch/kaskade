@@ -122,7 +122,7 @@ test('форма не написана — берётся название: па
   assert.deepEqual(options.map((o) => o.label), ['осмотреть телефон']);
 });
 
-test('глагол из inHand комната не отдаёт: сначала возьми', () => {
+test('комната отдаёт предмету только то, на что он отвечает', () => {
   const doc = room('\n```options\nосмотреть: items\nпозвонить: items\n```\n');
   const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], ['телефон']);
 
@@ -132,10 +132,18 @@ test('глагол из inHand комната не отдаёт: сначала 
   );
 });
 
-test('вещи на руках ездят с игроком — генератор inventory заводится сам', () => {
+test('глаголы вещей на руках сами в список места не лезут', () => {
+  // ([[99-открытые-вопросы]], «Глаголы и состояния предметов»): с ростом
+  // инвентаря они вытеснили бы действия текущей сцены.
   const doc = room('\nОписание.\n');
   const { pending } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, ['коридор'], []);
-  assert.deepEqual(pending, [{ verb: '*', from: 'inventory' }]);
+  assert.deepEqual(pending, []);
+});
+
+test('явный генератор по инвентарю остаётся: его пишет автор', () => {
+  const doc = room('\n```options\nпоказать: inventory\n```\n');
+  const { pending } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], []);
+  assert.deepEqual(pending, [{ verb: 'показать', from: 'inventory' }]);
 });
 
 test('неизвестный источник — ошибка с именем файла', () => {

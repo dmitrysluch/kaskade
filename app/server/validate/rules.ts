@@ -160,7 +160,7 @@ const verbsDeclared: Rule = {
           if (verb === '*' || episode.verbs.includes(verb)) continue;
           found.push({
             rule: 'verbs',
-            severity: 'error',
+            severity: 'warn',
             file: doc.path,
             line: node.line,
             message: `глагол "${verb}" не объявлен в verbs эпизода "${episode.id}"`,
@@ -190,25 +190,26 @@ const verbsDeclared: Rule = {
           if (!declared) {
             found.push({
               rule: 'verbs',
-              severity: 'error',
+              severity: 'warn',
               file: doc.path,
               line: node.line,
               message: `глагол предмета "${node.id}" не объявлен ни в verbs, ни в itemVerbs эпизода "${episode.id}"`,
             });
           }
         }
-        for (const verb of doc.inHand) {
-          // Осмотр многостраничной вещи отвечают страницы: узла с таким именем
-          // у неё нет и быть не должно.
-          if (verb === EXAMINE && doc.pages.length > 0) continue;
-          if (!doc.nodes.some((n) => n.id === verb)) {
-            found.push({
-              rule: 'verbs',
-              severity: 'error',
-              file: doc.path,
-              message: `в inHand указан "${verb}", но узла с таким именем в предмете нет`,
-            });
-          }
+        /*
+         * `inHand` больше ни на что не влияет ([[99-открытые-вопросы]], «Глаголы
+         * и состояния предметов»). Действия предмета — это его именованные
+         * секции, и список во frontmatter говорил то же самое вторым голосом:
+         * он умел молча разойтись с содержимым файла и ничего при этом не решал.
+         */
+        if (doc.inHand.length > 0) {
+          found.push({
+            rule: 'verbs',
+            severity: 'warn',
+            file: doc.path,
+            message: `inHand больше не читается: действиями предмета стали его секции (${doc.inHand.join(', ')} — можно удалить)`,
+          });
         }
       }
     }
@@ -941,8 +942,8 @@ const targetForms: Rule = {
     const byEpisode = new Map(content.episodes.map((e) => [e.id, e]));
 
     for (const doc of Object.values(content.docs)) {
-      const complain = (message: string) =>
-        found.push({ rule: 'targets', severity: 'error', file: doc.path, message });
+      const complain = (message: string, severity: 'error' | 'warn' = 'error') =>
+        found.push({ rule: 'targets', severity, file: doc.path, message });
 
       const target = doc.fm.target;
       if (target != null && (typeof target !== 'string' || target.trim() === '')) {
@@ -965,7 +966,9 @@ const targetForms: Rule = {
         }
         // Глагол, которого нет, — опечатка: форма не сработает никогда.
         if (episode && !episode.verbs.includes(verb) && !episode.itemVerbs.includes(verb)) {
-          complain(`targets.${verb}: глагол "${verb}" не объявлен ни в verbs, ни в itemVerbs эпизода "${episode.id}"`);
+          // Реестр глаголов — подсказка автору, а не источник доступности:
+          // команду создаёт переход, комната или секция предмета.
+          complain(`targets.${verb}: глагол "${verb}" не объявлен ни в verbs, ни в itemVerbs эпизода "${episode.id}"`, 'warn');
         }
       }
     }
@@ -1138,6 +1141,41 @@ const mentions: Rule = {
   },
 };
 
+/**
+ * `portable: true` — утверждение автора, а не механика ([[99-открытые-вопросы]],
+ * «Глаголы и состояния предметов»). Движок на него не смотрит: вещь оказывается
+ * на руках потому, что узел сказал `give`, и никакой второй разрешающей системы
+ * заводить не нужно.
+ *
+ * Смысл атрибута ровно один — поймать `give` доски или окна: предмет, который
+ * автор не собирался делать переносимым, попадает в инвентарь и остаётся там
+ * навсегда. Поэтому это предупреждение, а не ошибка: пока в контенте нет ни
+ * одного `portable`, требовать его значило бы остановить игру ради разметки.
+ */
+const portable: Rule = {
+  id: 'portable',
+  title: 'переносимые предметы',
+  run(content) {
+    const found: Finding[] = [];
+
+    for (const node of allNodes(content)) {
+      for (const id of node.attrs.give) {
+        const item = Object.values(content.docs).find((d) => d.id === id);
+        if (!item || item.type !== 'item' || item.fm.portable === true) continue;
+        found.push({
+          rule: 'portable',
+          severity: 'warn',
+          file: docOfNode(content, node).path,
+          line: node.line,
+          message: `"${id}" выдаётся в руки, но не объявлен переносимым: добавьте \`portable: true\` в его frontmatter`,
+        });
+      }
+    }
+
+    return found;
+  },
+};
+
 const waits: Rule = {
   id: 'wait',
   title: 'физическое ожидание',
@@ -1214,6 +1252,7 @@ const waits: Rule = {
 export const RULES: Rule[] = [
   brokenGraph,
   mentions,
+  portable,
   pages,
   speakers,
   montage,

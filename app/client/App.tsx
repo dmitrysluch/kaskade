@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { buildCatalog, SYSTEM_COMMANDS, type CatalogOption } from './engine/catalog.ts';
+import { buildCatalog, itemActions, SYSTEM_COMMANDS, type CatalogOption } from './engine/catalog.ts';
 import { commonPrefix, exact, matches } from './engine/completion.ts';
 import {
   begin,
@@ -45,6 +45,7 @@ import {
   streamLines,
   systemLine,
   viewport,
+  type StoragePick,
 } from './ui/lines.ts';
 import { Manual, Hint } from './ui/Manual.tsx';
 import { MobileScreen } from './ui/Mobile.tsx';
@@ -156,6 +157,11 @@ export function App() {
    * вкладки, и переживать не должна.
    */
   const [panel, setPanel] = useState<{ kind: EntityKind; index: number; scroll: number } | null>(null);
+  /**
+   * Положение курсора в хранилище вещей: какая вещь выбрана, какая открыта
+   * и какое её действие подсвечено. Не в сессии: это курсор, а не состояние мира.
+   */
+  const [storage, setStorage] = useState<StoragePick>({ pick: 0, open: null, act: 0 });
   /**
    * Упоминание, подсвеченное в потоке поверх обычной подсветки. Живёт недолго
    * и само: это указание пальцем «вот оно», а не второе постоянное состояние
@@ -343,6 +349,9 @@ export function App() {
 
       if (option.system) {
         const call = option.system;
+        // Хранилище открывается с начала: курсор — состояние этого открытия,
+        // а не память о прошлом.
+        if (call.kind === 'предметы') setStorage({ pick: 0, open: null, act: 0 });
         // Меню — экран оболочки, а не оверлей содержимого. Командой оно при этом
         // остаётся полноправной: эхо в потоке и запись в истории у него такие же.
         if (call.kind === 'меню') setMenu(true);
@@ -483,6 +492,57 @@ export function App() {
     const id = setTimeout(() => setFocus(null), 2000);
     return () => clearTimeout(id);
   }, [focus]);
+
+  /**
+   * Клавиши хранилища вещей. Возвращает `true`, если клавиша здесь и осталась.
+   *
+   * Два уровня: список вещей и действия открытой. `Esc` на верхнем уровне
+   * закрывает хранилище общим путём — отдельного «выхода из выхода» тут не надо.
+   */
+  const runStorage = useCallback(
+    (key: string): boolean => {
+      if (!content || !session || session.overlay?.kind !== 'предметы') return false;
+      const items = session.save.inventory;
+      if (items.length === 0) return false;
+
+      if (storage.open == null) {
+        if (key === 'ArrowUp' || key === 'ArrowDown') {
+          const step = key === 'ArrowDown' ? 1 : items.length - 1;
+          setStorage((s) => ({ ...s, pick: (s.pick + step) % items.length }));
+          return true;
+        }
+        if (key === 'Enter') {
+          const id = items[Math.min(storage.pick, items.length - 1)]!;
+          const doc = Object.values(content.docs).find((d) => d.id === id);
+          if (doc) setStorage((s) => ({ ...s, open: doc.docId, act: 0 }));
+          return true;
+        }
+        return false;
+      }
+
+      const actions = itemActions(content, session.save, storage.open);
+      if (key === 'Escape') {
+        setStorage((s) => ({ ...s, open: null, act: 0 }));
+        return true;
+      }
+      if (actions.length === 0) return false;
+      if (key === 'ArrowUp' || key === 'ArrowDown') {
+        const step = key === 'ArrowDown' ? 1 : actions.length - 1;
+        setStorage((s) => ({ ...s, act: (s.act + step) % actions.length }));
+        return true;
+      }
+      if (key === 'Enter') {
+        // Действие исполняется обычным путём: эхо в потоке, атрибуты, режим
+        // чтения — всё как у команды, набранной руками. Хранилище при этом
+        // закрывается само, потому что игрок уже не в нём.
+        const action = actions[Math.min(storage.act, actions.length - 1)]!;
+        run(action);
+        return true;
+      }
+      return false;
+    },
+    [content, session, storage, run],
+  );
 
   /** Закрыть оверлей: `Esc` на большом экране, касание на телефоне. */
   const closeOverlay = useCallback(() => {
@@ -678,6 +738,13 @@ export function App() {
 
       if (session.overlay) {
         event.preventDefault();
+        /*
+         * Хранилище вещей — единственный оверлей, в котором что-то делают,
+         * а не только читают: собственные действия предмета живут здесь
+         * ([[99-открытые-вопросы]]). Клавиши те же, что в списке команд,
+         * — новых связок ради второго списка не заводим.
+         */
+        if (runStorage(key)) return;
         if (key === 'Escape') {
           setSession({ ...session, overlay: null });
           setScroll(0);
@@ -823,10 +890,18 @@ export function App() {
           cols={cols}
           rows={rows}
           title={overlayTitle(session.overlay)}
-          lines={overlayLines(session.overlay, bundle.content, session.save, cols - 3)}
+          lines={overlayLines(session.overlay, bundle.content, session.save, cols - 3, storage)}
           scroll={scroll}
           glyphs={frameGlyphs(renderer.frame)}
-          {...(TOUCH ? { close: `${TAP_HINT} — закрыть`, onClose: closeOverlay } : {})}
+          {...(TOUCH ? { close: `${TAP_HINT} — закрыть`, onClose: closeOverlay }
+          : session.overlay.kind === 'предметы' && session.save.inventory.length > 0 ?
+            {
+              close:
+                storage.open == null ?
+                  '↑ ↓ — выбрать · Enter — открыть · Esc — закрыть'
+                : '↑ ↓ — выбрать · Enter — выполнить · Esc — назад',
+            }
+          : {})}
         />
       );
     }
