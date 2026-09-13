@@ -1,3 +1,4 @@
+import { resolveEntities, type EntityKind, type EntityMention } from '../../shared/entities.ts';
 import { said, voiceOf } from '../../shared/speech.ts';
 import type { GameContent, Node, NodeAddr, Option, SaveState } from '../../shared/types.ts';
 
@@ -12,7 +13,17 @@ export interface StreamEntry {
    * `time` — разрыв во времени перед кадром: подпись, а не строка прозы.
    */
   kind: 'text' | 'echo' | 'card' | 'grant' | 'time';
+  /** Текст без разметки — ровно то, что увидит игрок. */
   text: string;
+  /**
+   * Размеченные сущности, доступные **в момент вывода** (07-оболочка-тз, «Явно
+   * размеченные сущности»). Считаются один раз, здесь, а не при каждой отрисовке:
+   * «слово подсвечено, если карточка уже есть» — про тот момент, когда текст
+   * показали. Иначе абзац из начала игры загорался бы задним числом, стоит
+   * игроку получить слово через два часа, и подсветка перестала бы значить
+   * «это можно набрать прямо сейчас».
+   */
+  mentions?: EntityMention[];
 }
 
 /** Служебные команды, которые открывают оверлей с содержимым игры. */
@@ -235,6 +246,21 @@ export function sceneOf(addr: string): string {
   return hash === -1 ? addr : addr.slice(0, hash);
 }
 
+/**
+ * Предметы, которые сейчас рядом: те, что лежат в этом месте, плюс те, что
+ * на руках. Нужны подсветке — предмет подсвечивается, только пока он доступен
+ * (07-оболочка-тз, «Явно размеченные сущности»).
+ *
+ * Место — заметка, в которой игрок стоит, вместе с состоянием её узла: комната
+ * объявляет постоянные предметы во frontmatter, а временные — на узле, и «Тоби
+ * ушёл за сигаретами» означает ровно то, что упоминание Тоби больше не горит.
+ */
+export function itemsHere(content: GameContent, save: SaveState, addr = save.episodeState.at): Set<string> {
+  const node = content.nodes[addr];
+  const doc = content.docs[sceneOf(addr)];
+  return new Set([...(doc?.items ?? []), ...(node?.attrs.items ?? []), ...save.inventory]);
+}
+
 /** Опция отпадает, если её условие не выполнено или её узел уже отыгран по `once`. */
 export function optionAvailable(content: GameContent, save: SaveState, option: Option): boolean {
   if (!evalCondition(option.attrs.if, save)) return false;
@@ -341,6 +367,50 @@ function nextRoute(content: GameContent, save: SaveState, node: Node): Option | 
   return own.find((o) => o.label === '') ?? null;
 }
 
+/**
+ * Сессионная история сущностей (07-оболочка-тз, «Сессионная история сущностей»).
+ *
+ * Не состояние мира, а навигация: что уже мелькало в этой сессии и где именно.
+ * Поэтому она не в сейве и не считается отдельным полем сессии — она **выводится
+ * из потока**. Поток и есть то, что игроку вывели; хранить рядом второй список
+ * тех же фактов значило бы завести два источника правды и однажды их разойтись.
+ *
+ * Хранятся уникальные сущности, а не все употребления: повторное упоминание
+ * не заводит вторую запись, а переносит существующую в конец и обновляет место.
+ */
+export interface SessionEntity {
+  kind: EntityKind;
+  id: string;
+  /** Последнее показанное упоминание: по нему панель находит место в потоке. */
+  mention: EntityMention;
+  /** Номер записи потока, в которой оно встретилось. */
+  at: number;
+}
+
+export function sessionEntities(stream: StreamEntry[], kind: EntityKind): SessionEntity[] {
+  const out = new Map<string, SessionEntity>();
+  stream.forEach((entry, at) => {
+    for (const mention of entry.mentions ?? []) {
+      if (mention.kind !== kind) continue;
+      // Удаляем перед вставкой: Map держит порядок вставки, и это ровно
+      // «последнее упоминание — последним в списке».
+      out.delete(mention.id);
+      out.set(mention.id, { kind, id: mention.id, mention, at });
+    }
+  });
+  return [...out.values()];
+}
+
+/**
+ * Строка потока с разобранной разметкой. Разметка снимается один раз, при выводе:
+ * дальше в потоке лежит то, что игрок прочитал, и ни одна перерисовка этого
+ * не меняет.
+ */
+export function textEntry(content: GameContent, save: SaveState, raw: string): StreamEntry {
+  const { text, mentions } = resolveEntities(content, save, itemsHere(content, save), raw);
+  return mentions.length === 0 ? { kind: 'text', text } : { kind: 'text', text, mentions };
+}
+
 export interface EnterResult {
   save: SaveState;
   entries: StreamEntry[];
@@ -403,7 +473,7 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
       state = { ...state, wait: { node: node.addr, id, ms, elapsed: 0 } };
     }
     if (node.attrs.timeLabel) entries.push({ kind: 'time', text: node.attrs.timeLabel });
-    if (node.text) entries.push({ kind: 'text', text: interpolate(node.text, state) });
+    if (node.text) entries.push(textEntry(content, state, interpolate(node.text, state)));
     applied.granted.forEach((id, i) => {
       entries.push({ kind: 'grant', text: grantLine(content, id, first && i === 0) });
     });

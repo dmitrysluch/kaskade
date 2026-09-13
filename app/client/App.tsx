@@ -9,7 +9,9 @@ import {
   pagesOf,
   previewOf,
   sceneOf,
+  sessionEntities,
   terms,
+  textEntry,
   waitRoute,
   type Session,
   type StreamEntry,
@@ -32,6 +34,7 @@ import {
 } from './ui/Screen.tsx';
 import {
   commandLines,
+  contextLines,
   detailLines,
   inputLine,
   overlayLines,
@@ -53,6 +56,7 @@ import { Splash } from './ui/Splash.tsx';
 import { Transition } from './ui/Transition.tsx';
 import { Ambience, keystroke } from './audio/index.ts';
 import { CLOSE, EXAMINE } from '../shared/pages.ts';
+import type { EntityKind, EntityMention } from '../shared/entities.ts';
 import { MARGIN } from './ui/text.ts';
 import type { GameContent } from '../shared/types.ts';
 
@@ -72,14 +76,24 @@ type Bundle = { ok: true; content: GameContent } | { ok: false; errors: string[]
  * не бывало.
  */
 
-/** Хоткей — быстрый путь к той же команде, отдельной ветки поведения у него нет. */
-const HOTKEYS: Record<string, SystemCommand> = {
-  '1': 'справочник',
-  '2': 'дело',
+/**
+ * Цифра открывает **контекстную панель**, а не одноимённую команду
+ * (07-оболочка-тз, «Контекстная панель по `1`, `2`, `3`»).
+ *
+ * Разница содержательная. Команда отвечает на вопрос «что вообще бывает»,
+ * и хранилище для этого и нужно. Клавишу же жмут с другим вопросом — «что это
+ * было сейчас», — и вываливать в ответ двадцать аббревиатур значит отвечать
+ * не на тот вопрос. Панель показывает одну сущность и возвращает в то место
+ * потока, где она встретилась.
+ */
+const PANEL_KEYS: Record<string, EntityKind> = {
+  '1': 'reference',
+  '2': 'word',
+  '3': 'item',
 };
 
 /*
- * Клавиши слоёв оболочки. Отдельно от `HOTKEYS`, потому что работают они шире:
+ * Клавиши слоёв оболочки. Отдельно от `PANEL_KEYS`, потому что работают они шире:
  * экран, который клавиша открывает, обязан показываться в любой момент, в том
  * числе поверх полноэкранного кадра. Иначе игрок жмёт `0` на сплэше и не видит
  * ничего.
@@ -87,7 +101,12 @@ const HOTKEYS: Record<string, SystemCommand> = {
  * Справочник и дело так не умеют и не должны: терминал в этот момент не терминал.
  */
 const MENU_KEY = '0';
-const MANUAL_KEY = '3';
+/*
+ * Экран управления — не команда и не сущность мира, поэтому и клавиша у него
+ * не из цифрового ряда: цифры заняты панелями, а `?` читается как «объясни»
+ * на любой раскладке и ни с чем в игре не спорит.
+ */
+const MANUAL_KEY = '?';
 
 /**
  * Прокрутка потока. `PgUp`/`PgDn` по ТЗ, но на ноутбуке без цифрового блока это
@@ -130,6 +149,19 @@ export function App() {
    * ему незачем.
    */
   const [menu, setMenu] = useState(false);
+  /**
+   * Открытая контекстная панель: какого типа, какая по счёту сущность в истории
+   * и куда вернуть поток при закрытии. В сессии её нет и в сейве тем более —
+   * это навигация по уже прочитанному, она не переживает даже перезагрузку
+   * вкладки, и переживать не должна.
+   */
+  const [panel, setPanel] = useState<{ kind: EntityKind; index: number; scroll: number } | null>(null);
+  /**
+   * Упоминание, подсвеченное в потоке поверх обычной подсветки. Живёт недолго
+   * и само: это указание пальцем «вот оно», а не второе постоянное состояние
+   * текста.
+   */
+  const [focus, setFocus] = useState<EntityMention | null>(null);
   const screenRef = useRef<HTMLDivElement | null>(null);
 
   const content = bundle?.ok ? bundle.content : null;
@@ -167,7 +199,7 @@ export function App() {
       // Продолжение: узел уже отыгран, его атрибуты применять второй раз нельзя —
       // просто показываем, где игрок стоит.
       const node = content.nodes[save.episodeState.at];
-      const stream: StreamEntry[] = node?.text ? [{ kind: 'text', text: node.text }] : [];
+      const stream: StreamEntry[] = node?.text ? [textEntry(content, save, node.text)] : [];
       return { save, stream, overlay: null, reading: null, history: [] };
     });
   }, [content]);
@@ -250,9 +282,9 @@ export function App() {
     const width = Math.max(1, cols - MARGIN.text - MARGIN.right);
     const entries: StreamEntry[] = [];
     if (node.attrs.timeLabel) entries.push({ kind: 'time', text: node.attrs.timeLabel });
-    if (node.text) entries.push({ kind: 'text', text: node.text });
+    if (node.text && content && session) entries.push(textEntry(content, session.save, node.text));
     return streamLines(entries, width);
-  }, [isMontage, node, cols]);
+  }, [isMontage, node, cols, content, session]);
 
   const layout = useMemo(() => {
     // Текст идёт во всю сетку, от поля до поля: поля — это те самые два-четыре
@@ -262,11 +294,9 @@ export function App() {
     // На телефоне поток прокручивается пальцем и окна в строках не имеет:
     // высота там пляшет вместе с адресной строкой браузера.
     const streamRows = Math.max(3, rows - STATUS_ROWS - LOWER_ROWS);
-    // Слова дела подсвечиваются в любом тексте: прогресс виден и в старом.
-    const words = session && content ? Object.keys(session.save.words).map((id) => content.words[id]?.label ?? id) : [];
-    const stream = session ? streamLines(session.stream, text, words) : [];
+    const stream = session ? streamLines(session.stream, text, focus) : [];
     return { text, streamRows, stream, maxScroll: Math.max(0, stream.length - streamRows) };
-  }, [cols, rows, session, content]);
+  }, [cols, rows, session, content, focus]);
 
   // Новый текст всегда возвращает к низу: игрок читает то, что только что произошло.
   useEffect(() => setScroll(0), [session?.stream]);
@@ -382,6 +412,77 @@ export function App() {
     ],
     [runSystem],
   );
+
+  /**
+   * Поток к месту, где сущность встретилась. Прокрутка считается от низа,
+   * поэтому нужное место переводится в её единицы здесь же: снаружи об этом
+   * знать незачем.
+   */
+  const scrollTo = useCallback(
+    (at: number) => {
+      if (!session) return;
+      // Между записями поток ставит пустую строку — первая строка записи идёт
+      // сразу за ней.
+      const before = streamLines(session.stream.slice(0, at), layout.text).length;
+      const top = before === 0 ? 0 : before + 1;
+      setScroll(Math.max(0, Math.min(layout.maxScroll, layout.stream.length - layout.streamRows - top)));
+    },
+    [session, layout],
+  );
+
+  /**
+   * Открыть панель. Показывается последняя сущность этого типа: игрок жмёт
+   * клавишу сразу после того, как что-то прочитал, и спрашивает именно про это.
+   */
+  const openPanel = useCallback(
+    (kind: EntityKind) => {
+      if (!session) return;
+      const list = sessionEntities(session.stream, kind);
+      const index = Math.max(0, list.length - 1);
+      // Место, куда вернуть поток, запоминается один раз: переключение типа
+      // панели не должно терять исходное положение.
+      setPanel((prev) => ({ kind, index, scroll: prev?.scroll ?? scroll }));
+      const current = list[index];
+      if (current) {
+        scrollTo(current.at);
+        setFocus(current.mention);
+      }
+    },
+    [session, scroll, scrollTo],
+  );
+
+  /** Соседняя сущность в истории. Порядок — по последним упоминаниям. */
+  const movePanel = useCallback(
+    (step: number) => {
+      if (!panel || !session) return;
+      const list = sessionEntities(session.stream, panel.kind);
+      if (list.length === 0) return;
+      const index = (panel.index + step + list.length) % list.length;
+      setPanel({ ...panel, index });
+      const current = list[index]!;
+      scrollTo(current.at);
+      setFocus(current.mention);
+    },
+    [panel, session, scrollTo],
+  );
+
+  /** Закрыть панель: поток возвращается туда, где игрок его оставил. */
+  const closePanel = useCallback(() => {
+    if (!panel) return;
+    setScroll(panel.scroll);
+    setPanel(null);
+    setFocus(null);
+  }, [panel]);
+
+  /*
+   * Фокус гаснет сам. Он показывает место, а не помечает его навсегда: висящая
+   * подложка через минуту начнёт читаться как свойство текста.
+   */
+  useEffect(() => {
+    if (!focus) return;
+    const id = setTimeout(() => setFocus(null), 2000);
+    return () => clearTimeout(id);
+  }, [focus]);
 
   /** Закрыть оверлей: `Esc` на большом экране, касание на телефоне. */
   const closeOverlay = useCallback(() => {
@@ -557,6 +658,24 @@ export function App() {
         return;
       }
 
+      /*
+       * Пока панель открыта, стрелки и `Esc` принадлежат ей (07-оболочка-тз).
+       * Остальные клавиши в этот момент не делают ничего: строка ввода никуда
+       * не делась и восстановится ровно такой, какой была, — а набирать вслепую
+       * под чужой панелью нечестно.
+       */
+      if (panel) {
+        event.preventDefault();
+        const other = PANEL_KEYS[key];
+        if (key === 'Escape') closePanel();
+        else if (key === 'ArrowLeft') movePanel(-1);
+        else if (key === 'ArrowRight') movePanel(1);
+        // Цифра переключает тип панели, не закрывая её: три ящика рядом,
+        // а не три отдельных захода.
+        else if (other) openPanel(other);
+        return;
+      }
+
       if (session.overlay) {
         event.preventDefault();
         if (key === 'Escape') {
@@ -570,10 +689,10 @@ export function App() {
       }
       if (!accepting) return;
 
-      const hotkey = meta ? HOTKEYS[key] : undefined;
-      if (hotkey) {
+      const panelKey = meta ? PANEL_KEYS[key] : undefined;
+      if (panelKey) {
         event.preventDefault();
-        runSystem(hotkey);
+        openPanel(panelKey);
         return;
       }
 
@@ -750,6 +869,19 @@ export function App() {
           DETAIL_ROWS,
         )}
         system={systemLine(SYSTEM_COMMANDS, layout.text)}
+        panel={
+          panel && session
+            ? contextLines(
+                panel.kind,
+                sessionEntities(session.stream, panel.kind),
+                panel.index,
+                bundle.content,
+                session.save,
+                cols,
+                LOWER_ROWS - 1,
+              )
+            : null
+        }
         more={{
           up: Math.min(scroll, layout.maxScroll) < layout.maxScroll,
           down: Math.min(scroll, layout.maxScroll) > 0,

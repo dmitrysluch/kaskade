@@ -57,6 +57,15 @@ export function hanging(glyph = '>'): string {
 export interface Span {
   text: string;
   cls: string;
+  /**
+   * Какие по счёту вхождения этой формы подсвечивать. Без этого поля — все,
+   * как у кодов в обратных кавычках.
+   *
+   * Нужно размеченным сущностям: подсвечено ровно то, что автор пометил, а не
+   * каждое совпадение слова в абзаце. Счёт идёт по блоку текста, а не по строке,
+   * — перенос не должен менять смысл разметки.
+   */
+  nth?: Set<number>;
 }
 
 const WORD_CHAR = /[\p{L}\p{N}_-]/u;
@@ -68,7 +77,13 @@ function whole(line: string, at: number, len: number): boolean {
   return !(before && WORD_CHAR.test(before)) && !(after && WORD_CHAR.test(after));
 }
 
-export function mark(line: string, base: string | undefined, spans: Span[]): Seg[] {
+export function mark(
+  line: string,
+  base: string | undefined,
+  spans: Span[],
+  /** Счётчик вхождений на весь блок: строки одного абзаца считают вместе. */
+  seen: Map<string, number> = new Map(),
+): Seg[] {
   const lower = line.toLowerCase();
   const hits: { at: number; len: number; cls: string }[] = [];
 
@@ -76,7 +91,13 @@ export function mark(line: string, base: string | undefined, spans: Span[]): Seg
     const needle = span.text.toLowerCase();
     if (needle === '') continue;
     for (let at = lower.indexOf(needle); at !== -1; at = lower.indexOf(needle, at + 1)) {
-      if (whole(line, at, needle.length)) hits.push({ at, len: needle.length, cls: span.cls });
+      if (!whole(line, at, needle.length)) continue;
+      if (span.nth) {
+        const index = seen.get(needle) ?? 0;
+        seen.set(needle, index + 1);
+        if (!span.nth.has(index)) continue;
+      }
+      hits.push({ at, len: needle.length, cls: span.cls });
     }
   }
 

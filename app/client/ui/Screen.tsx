@@ -186,6 +186,12 @@ export interface GameScreenProps {
   more: { up: boolean; down: boolean };
   /** Символ линейки из конфига рендерера. */
   rule: string;
+  /**
+   * Контекстная панель вместо нижней области (07-оболочка-тз, «Контекстная
+   * панель»). Строки те же самые, что у ввода со списком: панель их **заменяет**,
+   * а не наслаивается, — поэтому поток на месте, а сетка не шевелится.
+   */
+  panel?: Seg[][] | null;
 }
 
 /** Строка без рамки: поля уже внутри сегментов, здесь только обрезка по сетке. */
@@ -213,6 +219,7 @@ export function GameScreen({
   system,
   more,
   rule,
+  panel = null,
 }: GameScreenProps) {
   // Линейка идёт во всю сетку, сквозь поля: подрезанная по ширине текста, она
   // читалась бы как разрыв внутри документа, а нужна как деление поверхности.
@@ -237,6 +244,33 @@ export function GameScreen({
         <Line key={i} segs={stream[i] ?? []} cols={cols} />
       ))}
       <Line segs={ruleLine} cols={cols} />
+      {panel ? (
+        panel.map((line, i) => <Line key={i} segs={line} cols={cols} />)
+      ) : (
+        <LowerArea
+          cols={cols}
+          input={input}
+          details={details}
+          list={list}
+          system={system}
+          rule={rule}
+        />
+      )}
+    </>
+  );
+}
+
+/** Ввод, реплика, список команд и служебная полоса: всё, что панель заменяет. */
+function LowerArea({
+  cols,
+  input,
+  details,
+  list,
+  system,
+  rule,
+}: Pick<GameScreenProps, 'cols' | 'input' | 'details' | 'list' | 'system' | 'rule'>) {
+  return (
+    <>
       <Line segs={input} cols={cols} />
       {details.map((line, i) => (
         <Line key={i} segs={line} cols={cols} />

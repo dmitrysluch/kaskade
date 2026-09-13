@@ -14,9 +14,10 @@ import {
   type Span,
 } from './text.ts';
 import type { CatalogOption } from '../engine/catalog.ts';
-import type { OverlayCall, OverlayCommand, StreamEntry, Term } from '../engine/state.ts';
+import type { OverlayCall, OverlayCommand, SessionEntity, StreamEntry, Term } from '../engine/state.ts';
 import { days, daysBetween } from '../../shared/dates.ts';
 import { speakerLabel, speakerOf } from '../../shared/speech.ts';
+import { entityClass, type EntityKind, type EntityMention } from '../../shared/entities.ts';
 import type { GameContent, Portrait, SaveState } from '../../shared/types.ts';
 
 /** Состояние → строки. Всё, что попадает на экран, сначала становится строками знаков. */
@@ -30,14 +31,18 @@ import type { GameContent, Portrait, SaveState } from '../../shared/types.ts';
  * ремарки: отдельного цвета на каждого говорящего не заводится — их может быть
  * сколько угодно, и различать их должно имя, а не оттенок, который надо помнить.
  */
-export function streamLines(entries: StreamEntry[], max: number, words: string[] = []): Seg[][] {
+export function streamLines(entries: StreamEntry[], max: number, focus: EntityMention | null = null): Seg[][] {
   const out: Seg[][] = [];
-  // Слова дела подсвечиваются в любом тексте и без разметки в заметках: оболочка
-  // знает, какие слова у игрока есть (07-оболочка-тз, «Разметка»).
-  const known: Span[] = words.map((text) => ({ text, cls: 'word' }));
 
   for (const entry of entries) {
     if (out.length > 0) out.push([]);
+    /*
+     * Подсвечивается только размеченное автором (07-оболочка-тз, «Явно
+     * размеченные сущности»), и ровно те вхождения, которые он разметил:
+     * счётчик общий на всю запись, поэтому перенос строки не сбивает счёт.
+     */
+    const spans = entitySpans(entry, focus);
+    const seen = new Map<string, number>();
 
     for (const source of entry.text.split('\n')) {
       // Эхо команды и карточки говорят не голосом персонажа — разметку к ним
@@ -50,7 +55,7 @@ export function streamLines(entries: StreamEntry[], max: number, words: string[]
 
       // Обратные кавычки снимаются до переноса: иначе они займут колонки.
       const plain = codes(`${label}${said.text}`);
-      const spans = entry.kind === 'text' ? [...plain.spans, ...known] : [];
+      const marks = entry.kind === 'text' ? [...plain.spans, ...spans] : [];
 
       // Эхо печатается с висящим промптом, как это делает терминал: прокрутка
       // назад выглядит как одна колонка с торчащими приглашениями.
@@ -59,13 +64,43 @@ export function streamLines(entries: StreamEntry[], max: number, words: string[]
         // Метка живёт только в первой строке: перенос её не повторяет.
         const named = i === 0 && label !== '' && line.startsWith(label);
         const segs = named
-          ? [{ text: label, cls: 'remark' }, ...mark(line.slice(label.length), cls, spans)]
-          : mark(line, cls, spans);
+          ? [{ text: label, cls: 'remark' }, ...mark(line.slice(label.length), cls, marks, seen)]
+          : mark(line, cls, marks, seen);
         out.push([{ text: lead, cls: 'dim' }, ...segs]);
       });
     }
   }
   return out;
+}
+
+/**
+ * Упоминания записи → подсветка. Одинаковые формы сливаются в один span:
+ * искать одно и то же по строке дважды незачем, а номера вхождений при этом
+ * складываются.
+ *
+ * `focus` — сущность, открытая в контекстной панели: её последнее упоминание
+ * получает дополнительную пометку поверх обычной подсветки, чтобы глаз нашёл
+ * в потоке именно то место, о котором сейчас читают.
+ */
+function entitySpans(entry: StreamEntry, focus: EntityMention | null): Span[] {
+  const byText = new Map<string, Span>();
+  for (const mention of entry.mentions ?? []) {
+    const focused =
+      focus != null &&
+      focus.kind === mention.kind &&
+      focus.id === mention.id &&
+      focus.label === mention.label &&
+      focus.nth === mention.nth;
+    const key = `${mention.label}\u0000${focused ? 'focus' : ''}`;
+    const span = byText.get(key) ?? {
+      text: mention.label,
+      cls: focused ? `${entityClass(mention.kind)} focus` : entityClass(mention.kind),
+      nth: new Set<number>(),
+    };
+    span.nth!.add(mention.nth);
+    byText.set(key, span);
+  }
+  return [...byText.values()];
 }
 
 /**
@@ -166,11 +201,23 @@ export const ADVANCE_LEGEND = 'продолжает историю; к теку�
 export const PICK_MARK = '›';
 
 /** Хоткеи: показаны прямо в полосе, отдельной строки под них нет. */
+/*
+ * Клавиша рядом с командой в служебной полосе (07-оболочка-тз, «Клавиши»).
+ *
+ * У `1`, `2` и `3` смысл с командой не совпадает: команда открывает полное
+ * хранилище, а клавиша — контекстную панель по одной сущности. Подписаны они
+ * всё равно рядом, потому что ищут их вместе и об одном и том же; разницу
+ * игрок видит в первую же секунду после нажатия.
+ */
 const HOTKEY: Partial<Record<string, string>> = {
   справочник: '1',
   дело: '2',
+  предметы: '3',
   меню: '0',
 };
+
+/** Экран управления командой не является и живёт на своей клавише. */
+const MANUAL_HINT = '?';
 
 /** Категория опции → класс. Цвет — из палитры рендерера, здесь только связь. */
 function kindClass(option: CatalogOption): string {
@@ -285,7 +332,7 @@ export function systemLine(commands: string[], max: number): Seg[] {
   const segs: Seg[] = [{ text: pad() }];
   for (const command of [...commands, 'управление']) {
     if (segs.length > 1) segs.push({ text: ' · ', cls: 'dim' });
-    const key = command === 'управление' ? '3' : HOTKEY[command];
+    const key = command === 'управление' ? MANUAL_HINT : HOTKEY[command];
     if (key) segs.push({ text: `${key} `, cls: 'dim' });
     segs.push({ text: command, cls: 'system' });
   }
@@ -308,6 +355,112 @@ const TITLES: Record<OverlayCommand, string> = {
 
 export function overlayTitle(call: OverlayCall): string {
   return call.arg ? `${TITLES[call.kind]} · ${call.arg.toUpperCase()}` : TITLES[call.kind];
+}
+
+/**
+ * Контекстная панель по `1`, `2`, `3` (07-оболочка-тз, «Контекстная панель»).
+ *
+ * Хоткей не исполняет одноимённую команду и не открывает хранилище: он показывает
+ * **одну** сущность — ту, о которой игрок сейчас читает. Полный список нужен
+ * редко и по делу, а «что это было только что» — постоянно, и ради этого
+ * вываливать на человека двадцать аббревиатур значит отвечать не на тот вопрос.
+ *
+ * Панель занимает нижнюю область целиком и ровно те же строки, что список команд:
+ * сетка от неё не должна шевелиться.
+ */
+const PANEL: Record<EntityKind, { title: string; empty: string; command: string }> = {
+  reference: { title: 'справочник', empty: 'термины справочника', command: 'справочник' },
+  word: { title: 'дело', empty: 'слова дела', command: 'дело' },
+  item: { title: 'предметы', empty: 'предметы', command: 'предметы' },
+};
+
+const CLOSE_HINT = 'Esc закрыть';
+const SWITCH_HINT = '← → другие';
+
+/** Что показывает панель: статья, карточка слова с происхождением, вступление предмета. */
+function entityCard(kind: EntityKind, id: string, content: GameContent, save: SaveState): Seg[][] {
+  const out: Seg[][] = [];
+  if (kind === 'reference') {
+    return [[{ text: content.reference[id] ?? '', cls: 'dim' }]];
+  }
+  if (kind === 'word') {
+    const word = content.words[id];
+    const state = save.words[id];
+    out.push([
+      { text: word?.label ?? id },
+      { text: '  ' },
+      { text: word?.category ?? '', cls: 'dim' },
+      { text: '  ' },
+      { text: state === 'white' ? '[белое]' : '[серое]', cls: state === 'white' ? 'dim' : 'locked' },
+    ]);
+    out.push([]);
+    out.push([{ text: word?.text ?? '', cls: 'dim' }]);
+    return out;
+  }
+  const doc = Object.values(content.docs).find((d) => d.id === id);
+  out.push([{ text: doc?.label ?? id }]);
+  out.push([]);
+  // Вступительная карточка — и только она: страницы и действия остаются игрой.
+  out.push([{ text: doc?.nodes[0]?.text ?? '', cls: 'dim' }]);
+  return out;
+}
+
+export function contextLines(
+  kind: EntityKind,
+  entities: SessionEntity[],
+  index: number,
+  content: GameContent,
+  save: SaveState,
+  cols: number,
+  rows: number,
+): Seg[][] {
+  const max = Math.max(1, cols - MARGIN.text - MARGIN.right);
+  const body: Seg[][] = [];
+  const names = PANEL[kind];
+
+  if (entities.length === 0) {
+    // Пустая история — не пустая панель: игроку говорят, где искать полный список.
+    for (const line of wrap(`В этой сессии ещё не встречались ${names.empty}.`, max)) {
+      body.push([{ text: line, cls: 'dim' }]);
+    }
+    body.push([]);
+    body.push(spread([{ text: `Полный список: «${names.command}».`, cls: 'dim' }], [{ text: CLOSE_HINT, cls: 'dim' }], max));
+  } else {
+    const current = entities[Math.min(Math.max(index, 0), entities.length - 1)]!;
+    body.push(
+      spread(
+        [{ text: names.title, cls: 'dim' }],
+        entities.length > 1 ? [{ text: `${index + 1}/${entities.length}`, cls: 'dim' }] : [],
+        max,
+      ),
+    );
+    body.push([]);
+    // Карточка приходит сегментами, но длинный текст всё равно надо переносить.
+    for (const line of entityCard(kind, current.id, content, save)) {
+      const plain = line.map((seg) => seg.text).join('');
+      if (line.length === 1 && plain.length > max) {
+        for (const wrapped of wrap(plain, max)) body.push([{ text: wrapped, cls: line[0]!.cls }]);
+      } else {
+        body.push(line);
+      }
+    }
+  }
+
+  const hints = spread(
+    entities.length > 1 ? [{ text: SWITCH_HINT, cls: 'dim' }] : [],
+    entities.length === 0 ? [] : [{ text: CLOSE_HINT, cls: 'dim' }],
+    max,
+  );
+
+  // Панель занимает ровно отведённые строки: подсказка прижата к низу, между
+  // ней и текстом — воздух, а не прыгающая на полэкрана карточка.
+  const shown = body.slice(0, Math.max(0, rows - 2));
+  const filler = Math.max(0, rows - 1 - shown.length);
+  return [
+    ...shown.map((line) => [{ text: pad() }, ...line]),
+    ...Array.from({ length: filler }, () => [] as Seg[]),
+    [{ text: pad() }, ...hints],
+  ];
 }
 
 /** Аргумент команды сопоставляется свободно: игрок печатает строчными. */

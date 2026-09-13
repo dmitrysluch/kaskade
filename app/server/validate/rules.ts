@@ -1,4 +1,5 @@
 import { verbOf } from '../content/options.ts';
+import { kindOf, parseEntities } from '../../shared/entities.ts';
 import { parseDate } from '../../shared/dates.ts';
 import { closeLabel, EXAMINE } from '../../shared/pages.ts';
 import { speakerOf } from '../../shared/speech.ts';
@@ -1104,6 +1105,39 @@ const montage: Rule = {
  * Поэтому проверяем не стиль, а работоспособность: есть ли чем занять руки,
  * есть ли куда выйти, и там ли вообще стоит ожидание.
  */
+/**
+ * Размеченные сущности (07-оболочка-тз, «Явно размеченные сущности»).
+ *
+ * Ссылка, которая никуда не ведёт, — ошибка, а не пустяк: подсветки у неё
+ * не будет, но текст всё равно напечатается формой из разметки, и автор
+ * увидит ровно то, что хотел. То есть молча сломанной она выглядит как
+ * работающая, и заметит это не он, а игрок, который зря попробует набрать
+ * неподсвеченное слово.
+ */
+const mentions: Rule = {
+  id: 'mentions',
+  title: 'размеченные сущности',
+  run(content) {
+    const found: Finding[] = [];
+
+    for (const node of allNodes(content)) {
+      const doc = docOfNode(content, node);
+      for (const mention of parseEntities(node.text).mentions) {
+        if (kindOf(content, mention.id) != null) continue;
+        found.push({
+          rule: 'mentions',
+          severity: 'error',
+          file: doc.path,
+          line: node.line,
+          message: `упоминание [[${mention.id}]] не разрешается ни в слово «Дела», ни в предмет, ни в термин справочника`,
+        });
+      }
+    }
+
+    return found;
+  },
+};
+
 const waits: Rule = {
   id: 'wait',
   title: 'физическое ожидание',
@@ -1179,6 +1213,7 @@ const waits: Rule = {
 
 export const RULES: Rule[] = [
   brokenGraph,
+  mentions,
   pages,
   speakers,
   montage,

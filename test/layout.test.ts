@@ -273,11 +273,16 @@ test('статус: дата, потом сроки, и ни слова, есл�
   assert.equal(statusText('12.05.2026', [{ name: 'x', label: 'X', at: 'скоро', expired: 'истёк' }]), '12.05.2026');
 });
 
-test('разметка означает механику: слова дела и коды, и ничего сверх', () => {
+test('разметка означает механику: размеченное автором и коды, и ничего сверх', () => {
   const lines = streamLines(
-    [{ kind: 'text', text: 'Он читает `H 1012` и говорит про контейнмент вслух.' }],
+    [
+      {
+        kind: 'text',
+        text: 'Он читает `H 1012` и говорит про контейнмент вслух.',
+        mentions: [{ kind: 'word', id: 'containment', label: 'контейнмент', nth: 0 }],
+      },
+    ],
     60,
-    ['КОНТЕЙНМЕНТ'],
   );
   const segs = lines[0]!;
   const text = segs.map((s) => s.text).join('');
@@ -288,13 +293,26 @@ test('разметка означает механику: слова дела и
   assert.equal(segs.find((s) => s.cls === 'word')?.text, 'контейнмент');
 });
 
-test('подсвечивается только целое слово и только известное', () => {
-  const [line] = streamLines([{ kind: 'text', text: 'Дело о делопроизводстве.' }], 60, ['дело']);
+test('подсвечено ровно то вхождение, которое размечено', () => {
+  // Разметка стоит на втором «дело»; первое — обычное слово в предложении.
+  const [line] = streamLines(
+    [
+      {
+        kind: 'text',
+        text: 'Дело житейское. Дело о делопроизводстве.',
+        mentions: [{ kind: 'word', id: 'delo', label: 'Дело', nth: 1 }],
+      },
+    ],
+    60,
+  );
   const marked = line!.filter((s) => s.cls === 'word');
-
   assert.deepEqual(marked.map((s) => s.text), ['Дело']);
-  // Слова, которого у игрока нет, оболочка не трогает.
-  const [none] = streamLines([{ kind: 'text', text: 'Дело о делопроизводстве.' }], 60, []);
+  // Именно второе: до него в строке уже прошло одно неразмеченное.
+  const before = line!.slice(0, line!.indexOf(marked[0]!)).map((s) => s.text).join('');
+  assert.equal(before.includes('житейское'), true);
+
+  // Без разметки не подсвечивается ничего: совпадение текста ничего не значит.
+  const [none] = streamLines([{ kind: 'text', text: 'Дело о делопроизводстве.' }], 60);
   assert.equal(none!.some((s) => s.cls === 'word'), false);
 });
 
@@ -426,7 +444,7 @@ test('служебная полоса закреплена и не зависи�
   const line = systemLine(SYSTEM_COMMANDS, 80);
   const text = line.map((s) => s.text).join('').trim();
 
-  assert.equal(text, '1 справочник · 2 дело · предметы · 0 меню · 3 управление');
+  assert.equal(text, '1 справочник · 2 дело · 3 предметы · 0 меню · ? управление');
   // Все служебные — своим цветом.
   assert.equal(line.filter((s) => s.cls === 'system').length, 5);
 
