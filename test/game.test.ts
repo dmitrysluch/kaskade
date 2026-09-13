@@ -541,3 +541,64 @@ test('подпись времени — отдельная сущность, а 
   );
   assert.equal(plain.entries[0]!.kind, 'text');
 });
+
+/**
+ * Аудитория после лекции — единственное место, где выход из комнаты перекрыт
+ * авторской опцией. Проверяем обе стороны правила: пока Алерс здесь, `идти
+ * в коридор` заходит в разговор у двери; когда он ушёл, выход обычный.
+ */
+test('пока Алерс в аудитории, выход в коридор перекрыт разговором', () => {
+  const после = 'episodes/prolog/rooms/01-hall#после';
+  const пусто = 'episodes/prolog/rooms/01-hall#пусто';
+  const идти = (addr: string) => game.nodes[addr]!.options.filter((o) => o.label === 'идти в коридор');
+
+  // Команда ровно одна: сгенерированный выход перекрыт, а не добавлен рядом.
+  assert.equal(идти(после).length, 1);
+  assert.equal(идти(после)[0]!.target, 'episodes/prolog/scenes/01-after-lecture#к-двери');
+
+  assert.equal(идти(пусто).length, 1);
+  assert.equal(идти(пусто)[0]!.target, 'episodes/prolog/rooms/01-corridor#');
+});
+
+test('оклик у двери звучит только до разговора, потом дверь просто дверь', () => {
+  const сцена = 'episodes/prolog/scenes/01-after-lecture#';
+  const кДвери = 'episodes/prolog/scenes/01-after-lecture#к-двери';
+
+  // Разговора не было: маршрут доводит до оклика.
+  assert.equal(enter(game, at(кДвери), кДвери).save.episodeState.at, `${сцена}оклик`);
+
+  // Вступление ставит флаг; теперь тот же узел проваливается прямо в коридор.
+  const started = enter(game, at(сцена), сцена).save;
+  assert.equal(enter(game, started, кДвери).save.episodeState.at, 'episodes/prolog/rooms/01-corridor#');
+});
+
+/**
+ * Вернуться в уже начатый разговор. Команда в комнате одна, а куда она ведёт —
+ * решает вступление сцены: первый раз в знакомство, потом сразу в хаб.
+ * Проверяем поведение, а не разметку: важно, где игрок окажется.
+ */
+function поговорить(room: string, label: string) {
+  const found = game.nodes[room]!.options.filter((o) => o.label === label);
+  assert.equal(found.length, 1, `в ${room} должна быть одна команда «${label}»`);
+  return found[0]!.target!;
+}
+
+test('к Алерсу можно вернуться, и второй раз он не начинает сначала', () => {
+  const target = поговорить('episodes/prolog/rooms/01-hall#после', 'поговорить с Алерсом');
+
+  const first = enter(game, at(target), target);
+  assert.equal(first.save.episodeState.at, 'episodes/prolog/scenes/01-after-lecture#знакомство');
+
+  const again = enter(game, first.save, target);
+  assert.equal(again.save.episodeState.at, 'episodes/prolog/scenes/01-after-lecture#хаб');
+});
+
+test('к Тоби можно вернуться, и находка второй раз не играет', () => {
+  const target = поговорить('episodes/prolog/rooms/00-room#', 'поговорить с Тоби');
+
+  const first = enter(game, at(target), target);
+  assert.equal(first.save.episodeState.at, 'episodes/prolog/scenes/00-talk#находка');
+
+  const again = enter(game, first.save, target);
+  assert.equal(again.save.episodeState.at, 'episodes/prolog/scenes/00-talk#хаб');
+});

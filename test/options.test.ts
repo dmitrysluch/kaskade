@@ -31,6 +31,16 @@ const TARGETS: Record<string, TargetInfo> = {
     inHand: ['позвонить'],
     pages: [],
   },
+  'scenes/оклик': {
+    docId: 'scenes/оклик',
+    type: 'scene',
+    label: 'оклик',
+    target: 'оклик',
+    targets: {},
+    nodeIds: new Set(['', 'у-двери']),
+    inHand: [],
+    pages: [],
+  },
   'items/доска': {
     docId: 'items/доска',
     type: 'item',
@@ -140,4 +150,26 @@ test('источник пуст — генератор молча не отда�
   const doc = room('\n```options\nосмотреть: items\n```\n');
   const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], []);
   assert.deepEqual(options, []);
+});
+
+test('авторская опция перекрывает сгенерированную с тем же текстом', () => {
+  const doc = room('\nОписание.\n\n→ идти в коридор [[оклик#у-двери]]\n');
+  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, ['коридор'], []);
+
+  // Команда одна, и ведёт она в разговор, а не в комнату из `exits`.
+  assert.deepEqual(
+    options.map((o) => o.label),
+    ['идти в коридор'],
+  );
+  assert.equal(options[0]!.target, 'scenes/оклик#у-двери');
+});
+
+test('перекрытие считается по тексту: другая команда генератору не мешает', () => {
+  const doc = room('\nОписание.\n\n→ догнать его [[оклик#у-двери]]\n');
+  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, ['коридор'], []);
+
+  assert.deepEqual(
+    options.map((o) => o.label),
+    ['догнать его', 'идти в коридор'],
+  );
 });
