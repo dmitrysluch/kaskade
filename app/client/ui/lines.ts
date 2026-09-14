@@ -212,7 +212,7 @@ export const PICK_MARK = '›';
 const HOTKEY: Partial<Record<string, string>> = {
   справочник: '1',
   дело: '2',
-  предметы: '3',
+  инвентарь: '3',
   меню: '0',
 };
 
@@ -350,11 +350,11 @@ export function inputLine(input: string): Seg[] {
 const TITLES: Record<OverlayCommand, string> = {
   справочник: 'СПРАВОЧНИК',
   дело: 'ДЕЛО',
-  предметы: 'ПРЕДМЕТЫ',
+  инвентарь: 'ИНВЕНТАРЬ',
 };
 
 export function overlayTitle(call: OverlayCall): string {
-  return call.arg ? `${TITLES[call.kind]} · ${call.arg.toUpperCase()}` : TITLES[call.kind];
+  return TITLES[call.kind];
 }
 
 /**
@@ -371,7 +371,6 @@ export function overlayTitle(call: OverlayCall): string {
 const PANEL: Record<EntityKind, { title: string; empty: string; command: string }> = {
   reference: { title: 'справочник', empty: 'термины справочника', command: 'справочник' },
   word: { title: 'дело', empty: 'слова дела', command: 'дело' },
-  item: { title: 'предметы', empty: 'предметы', command: 'предметы' },
 };
 
 const CLOSE_HINT = 'Esc закрыть';
@@ -402,12 +401,81 @@ function entityCard(kind: EntityKind, id: string, content: GameContent, save: Sa
     out.push([{ text: word?.text ?? '', cls: 'dim' }]);
     return out;
   }
-  const doc = Object.values(content.docs).find((d) => d.id === id);
-  out.push([{ text: doc?.label ?? id }]);
-  out.push([]);
-  // Вступительная карточка — и только она: страницы и действия остаются игрой.
-  out.push([{ text: doc?.nodes[0]?.text ?? '', cls: 'dim' }]);
   return out;
+}
+
+/**
+ * Компактный инвентарь по `3` (07-оболочка-тз, «Компактный инвентарь по `3`»).
+ *
+ * Предметы не знание: они не размечаются в тексте, не попадают в сессионную
+ * историю и поток не прокручивают. Поэтому и панель у них своя — не «где я это
+ * встречал», а «что у меня сейчас с собой».
+ *
+ * Показывает одну вещь: карточку и то, что вещь умеет. Умения показаны, но
+ * отсюда не исполняются — сделать ими что-то можно на полном экране `инвентарь`
+ * или командой, которую объявила сцена. Панель отвечает на вопрос «что у меня
+ * есть», а не заменяет собой список действий.
+ */
+export function inventoryLines(
+  content: GameContent,
+  save: SaveState,
+  index: number,
+  cols: number,
+  rows: number,
+): Seg[][] {
+  const max = Math.max(1, cols - MARGIN.text - MARGIN.right);
+  const body: Seg[][] = [];
+  const items = save.inventory;
+
+  if (items.length === 0) {
+    for (const line of wrap('На руках сейчас ничего нет.', max)) body.push([{ text: line, cls: 'dim' }]);
+    body.push([]);
+    body.push(
+      spread([{ text: 'Полный список: «инвентарь».', cls: 'dim' }], [{ text: CLOSE_HINT, cls: 'dim' }], max),
+    );
+    return frame(body, [], rows);
+  }
+
+  const at = Math.min(Math.max(index, 0), items.length - 1);
+  const id = items[at]!;
+  const doc = Object.values(content.docs).find((d) => d.id === id);
+
+  body.push(
+    spread(
+      [{ text: doc?.label ?? id }],
+      items.length > 1 ? [{ text: `${at + 1}/${items.length}`, cls: 'dim' }] : [],
+      max,
+    ),
+  );
+  body.push([]);
+  for (const line of wrap(doc?.nodes[0]?.text ?? '', max)) body.push([{ text: line, cls: 'dim' }]);
+
+  const actions = doc ? itemActions(content, save, doc.docId) : [];
+  if (actions.length > 0) {
+    body.push([]);
+    for (const action of actions) body.push([{ text: action.label, cls: 'environment' }]);
+  }
+
+  const hints = spread(
+    items.length > 1 ? [{ text: SWITCH_HINT, cls: 'dim' }] : [],
+    [{ text: CLOSE_HINT, cls: 'dim' }],
+    max,
+  );
+  return frame(body, hints, rows);
+}
+
+/**
+ * Панель занимает ровно отведённые строки: подсказка прижата к низу, между ней
+ * и текстом — воздух. Сетка от открытия панели шевелиться не должна.
+ */
+function frame(body: Seg[][], hints: Seg[], rows: number): Seg[][] {
+  const shown = body.slice(0, Math.max(0, rows - 2));
+  const filler = Math.max(0, rows - 1 - shown.length);
+  return [
+    ...shown.map((line) => [{ text: pad() }, ...line]),
+    ...Array.from({ length: filler }, () => [] as Seg[]),
+    [{ text: pad() }, ...hints],
+  ];
 }
 
 export function contextLines(
@@ -456,21 +524,7 @@ export function contextLines(
     entities.length === 0 ? [] : [{ text: CLOSE_HINT, cls: 'dim' }],
     max,
   );
-
-  // Панель занимает ровно отведённые строки: подсказка прижата к низу, между
-  // ней и текстом — воздух, а не прыгающая на полэкрана карточка.
-  const shown = body.slice(0, Math.max(0, rows - 2));
-  const filler = Math.max(0, rows - 1 - shown.length);
-  return [
-    ...shown.map((line) => [{ text: pad() }, ...line]),
-    ...Array.from({ length: filler }, () => [] as Seg[]),
-    [{ text: pad() }, ...hints],
-  ];
-}
-
-/** Аргумент команды сопоставляется свободно: игрок печатает строчными. */
-function picked(arg: string | null, label: string): boolean {
-  return arg == null || label.toLowerCase().startsWith(arg.toLowerCase());
+  return frame(body, hints, rows);
 }
 
 /**
@@ -551,14 +605,14 @@ export function overlayLines(
   max: number,
   storage: StoragePick | null = null,
 ): Seg[][] {
-  const { kind, arg } = call;
+  const { kind } = call;
   const out: Seg[][] = [];
   const push = (text: string, cls?: string) => {
     for (const line of wrap(text, max)) out.push([{ text: line, cls }]);
   };
 
   if (kind === 'дело') {
-    const words = Object.entries(save.words).filter(([id]) => picked(arg, content.words[id]?.label ?? id));
+    const words = Object.entries(save.words);
     if (words.length === 0) return [[{ text: 'Дело пустое.', cls: 'dim' }]];
     for (const [id, state] of words) {
       const word = content.words[id];
@@ -575,7 +629,7 @@ export function overlayLines(
     return out;
   }
 
-  if (kind === 'предметы') {
+  if (kind === 'инвентарь') {
     return storageLines(content, save, max, storage);
   }
 
@@ -586,7 +640,6 @@ export function overlayLines(
    * категория существует.
    */
   const terms = Object.values(content.reference)
-    .filter((term) => picked(arg, term.label))
     .sort((a, b) => a.category.localeCompare(b.category) || a.label.localeCompare(b.label));
   if (terms.length === 0) return [[{ text: 'Справочник пуст.', cls: 'dim' }]];
 

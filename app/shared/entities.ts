@@ -7,20 +7,25 @@
  * термин. Догадки читаются игроком как обещание — подсвеченное он пробует
  * набрать, — и каждая ложная подсветка стоит доверия ко всем остальным.
  *
- * Синтаксис — ссылка Obsidian: `[[00-book]]` или `[[00-book|учебник]]`, где
- * после черты стоит форма, напечатанная в предложении. Выбрана она не от
+ * Синтаксис — ссылка Obsidian: `[[ref-ines]]` или `[[ref-ines|шкалу событий]]`,
+ * где после черты стоит форма, напечатанная в предложении. Выбрана она не от
  * бедности: автор пишет в Obsidian, ссылка там кликается и подсвечивается сама,
  * а несуществующая видна как битая ещё до того, как о ней скажет валидатор.
  * Отдельного синтаксиса ради отдельного синтаксиса заводить незачем.
  *
- * Тип сущности не пишется: он **следует из id**. Слово «Дела», предмет
- * и термин справочника живут в разных реестрах, и одно и то же имя в двух
- * из них — уже ошибка контента, а не повод писать префикс в каждом упоминании.
+ * Тип сущности не пишется: он **следует из id**. Слово «Дела» и термин
+ * справочника живут в разных реестрах, и одно и то же имя в обоих — уже ошибка
+ * контента, а не повод писать префикс в каждом упоминании.
  */
 
 import type { GameContent, SaveState } from './types.ts';
 
-export type EntityKind = 'reference' | 'word' | 'item';
+/**
+ * Размечают только знание — то, что Марго знает и может назвать. Предметы
+ * в тексте не размечаются: они доступны как вещи комнаты или её собственность,
+ * а не как справочная ссылка, и ссылка на вещь обещала бы игроку не то.
+ */
+export type EntityKind = 'reference' | 'word';
 
 export interface EntityMention {
   kind: EntityKind;
@@ -68,8 +73,7 @@ export function parseEntities(raw: string): { text: string; mentions: Omit<Entit
 export function kindOf(content: GameContent, id: string): EntityKind | null {
   if (content.words[id]) return 'word';
   if (content.reference[id]) return 'reference';
-  const doc = Object.values(content.docs).find((d) => d.id === id);
-  return doc?.type === 'item' ? 'item' : null;
+  return null;
 }
 
 /**
@@ -78,24 +82,15 @@ export function kindOf(content: GameContent, id: string): EntityKind | null {
  * Правила разные, и различие содержательное. Термин справочника объясняет мир
  * и доступен всегда. Слово «Дела» — инструмент, и подсветить его раньше, чем
  * игрок его получил, значит показать команду, которой у него нет; само
- * упоминание карточку при этом не выдаёт. Предмет подсвечен, только пока он
- * рядом: упоминание отсутствующего предмета не даёт к нему доступ и не должно
- * выглядеть как доступ.
+ * упоминание карточку при этом не выдаёт.
  */
-export function available(
-  kind: EntityKind,
-  id: string,
-  save: SaveState,
-  here: ReadonlySet<string>,
-): boolean {
-  if (kind === 'reference') return true;
-  if (kind === 'word') return save.words[id] != null;
-  return here.has(id) || save.inventory.includes(id);
+export function available(kind: EntityKind, id: string, save: SaveState): boolean {
+  return kind === 'reference' || save.words[id] != null;
 }
 
 /** Класс подсветки: он же определяет цвет. Термин и слово различаются в палитре. */
 export function entityClass(kind: EntityKind): string {
-  return kind === 'word' ? 'word' : kind === 'item' ? 'item' : 'term';
+  return kind === 'word' ? 'word' : 'term';
 }
 
 /**
@@ -103,20 +98,19 @@ export function entityClass(kind: EntityKind): string {
  *
  * Недоступное упоминание не исчезает из текста и не становится ошибкой: форма
  * печатается как обычная проза. Это и есть смысл правила «упоминание не даёт
- * доступ» — про предмет, которого нет рядом, можно написать, не обещая игроку
- * команду.
+ * доступ» — про слово, которого у Марго ещё нет, можно написать, не обещая
+ * игроку команду.
  */
 export function resolveEntities(
   content: GameContent,
   save: SaveState,
-  here: ReadonlySet<string>,
   raw: string,
 ): { text: string; mentions: EntityMention[] } {
   const parsed = parseEntities(raw);
   const mentions: EntityMention[] = [];
   for (const mention of parsed.mentions) {
     const kind = kindOf(content, mention.id);
-    if (kind && available(kind, mention.id, save, here)) mentions.push({ ...mention, kind });
+    if (kind && available(kind, mention.id, save)) mentions.push({ ...mention, kind });
   }
   return { text: parsed.text, mentions };
 }

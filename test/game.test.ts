@@ -190,7 +190,7 @@ test('блок options один на комнату, а предметы у ка
 
 test('служебные команды есть в каталоге всегда', () => {
   const inRoom = labels(at('episodes/prolog/rooms/05-room#'));
-  for (const command of ['справочник', 'дело', 'предметы']) assert.ok(inRoom.includes(command));
+  for (const command of ['справочник', 'дело', 'инвентарь']) assert.ok(inRoom.includes(command));
 });
 
 test('пролог проходится до конца, и на каждом шаге есть что ввести', () => {
@@ -389,30 +389,30 @@ test('срок можно сдвинуть узлом и спросить о н�
   assert.equal(statusText(dateAt(game, moved), terms(game, moved)), '12.10.2024 · BLUE CARD 1541 день');
 });
 
-test('служебные команды берут аргумент: справочник и дело — сразу статью', () => {
+test('адресных форм у служебных команд нет: хранилище открывается целиком', () => {
+  // 07-оболочка-тз, «Служебные команды»: `справочник контейнмент` больше
+  // не существует. Быстрый путь к одной записи — панель по цифре, и она
+  // отвечает на другой вопрос: «что это было сейчас», а не «что вообще бывает».
   const save = at('episodes/prolog/rooms/00-room#');
   const anyWord = Object.keys(game.words)[0]!;
   const withWord: SaveState = { ...save, words: { [anyWord]: 'white' } };
   const all = labels(withWord);
 
-  // Аргументы обязаны быть опциями: «не понимаю» в этой игре не бывает.
-  // Аргумент — название статьи, которое игрок видел в тексте, а не её id.
-  const term = Object.values(game.reference)[0]!.label;
-  assert.ok(all.includes(`справочник ${term}`), `нет опции "справочник ${term}"`);
-  assert.ok(all.includes(`дело ${game.words[anyWord]!.label}`));
+  assert.ok(all.includes('справочник'));
+  assert.equal(all.some((l) => l.startsWith('справочник ')), false);
+  assert.equal(all.some((l) => l.startsWith('дело ')), false);
+  assert.equal(all.some((l) => l.startsWith('инвентарь ')), false);
 
-  // И открывают ровно одну статью, а не список.
-  const one = overlayLines({ kind: 'справочник', arg: term }, game, withWord, 60);
-  const list = overlayLines({ kind: 'справочник', arg: null }, game, withWord, 60);
-  assert.ok(one.some((line) => line.some((seg) => seg.text.includes(term))));
-  assert.ok(list.length > one.length);
+  // Хранилище показывает всё: статей в справочнике больше одной.
+  const list = overlayLines({ kind: 'справочник' }, game, withWord, 60);
+  assert.ok(list.length > Object.keys(game.reference).length);
 });
 
 test('управление — действие оболочки, а не команда терминала', () => {
   // Метаинструкция не притворяется действием: её нет ни в каталоге, ни в истории.
   const all = labels(at('episodes/prolog/rooms/00-room#'));
   assert.equal(all.includes('управление'), false);
-  assert.ok(all.includes('справочник') && all.includes('дело') && all.includes('предметы'));
+  assert.ok(all.includes('справочник') && all.includes('дело') && all.includes('инвентарь'));
 });
 
 test('меню — команда: сброс обязан находиться набором, а не только клавишей', () => {

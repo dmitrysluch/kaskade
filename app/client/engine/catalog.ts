@@ -27,15 +27,15 @@ export interface CatalogOption extends Option {
  * набором. Экран управления при этом остаётся в меню пунктом, и `3` продолжает
  * открывать его напрямую.
  */
-export const SYSTEM_COMMANDS: SystemCommand[] = ['справочник', 'дело', 'предметы', 'меню'];
+export const SYSTEM_COMMANDS: SystemCommand[] = ['справочник', 'дело', 'инвентарь', 'меню'];
 
 function plain(option: Option): CatalogOption {
   return { ...option, locked: false, system: null };
 }
 
-function systemOption(kind: SystemCommand, arg: string | null): CatalogOption {
+function systemOption(kind: SystemCommand): CatalogOption {
   return {
-    label: arg ? `${kind} ${arg}` : kind,
+    label: kind,
     kind: 'system',
     target: null,
     attrs: emptyAttrs(),
@@ -43,7 +43,7 @@ function systemOption(kind: SystemCommand, arg: string | null): CatalogOption {
     object: null,
     moves: false,
     locked: false,
-    system: { kind, arg },
+    system: { kind },
   };
 }
 
@@ -232,17 +232,10 @@ export function buildCatalog(
   }
 
   // Служебные команды — такие же опции. Хоткеи отправляют ровно их.
-  for (const command of SYSTEM_COMMANDS) out.push(systemOption(command, null));
-
-  // У справочника и дела есть необязательный аргумент: `справочник` открывает
-  // список, `справочник контейнмент` — сразу статью. Аргументы обязаны быть
-  // опциями, иначе игрок наберёт команду, которой не существует, — а «не понимаю»
-  // в этой игре не бывает.
-  // Аргумент — то, что игрок видит в тексте и в списке: название статьи, а не id.
-  for (const term of Object.values(content.reference)) out.push(systemOption('справочник', term.label));
-  for (const id of Object.keys(save.words)) {
-    out.push(systemOption('дело', content.words[id]?.label ?? id));
-  }
+  // Служебные команды открывают хранилища целиком: адресных форм у них нет
+  // (07-оболочка-тз, «Служебные команды»). Быстрый путь к одной записи — панель
+  // по цифре, и она отвечает на другой вопрос, чем полный список.
+  for (const command of SYSTEM_COMMANDS) out.push(systemOption(command));
 
   /*
    * Порядок списка (07-оболочка-тз, «Список всегда показывает, что можно»):

@@ -127,10 +127,10 @@ test('сцена может объявить действие с предмет�
   assert.deepEqual(labels(save({ inventory: [] })), []);
 });
 
-test('хранилище показывает вещи, а по выбору — её действия', () => {
+test('полный экран показывает вещи, а по выбору — её действия', () => {
   const g = game();
   const text = (storage: Parameters<typeof overlayLines>[4]) =>
-    overlayLines({ kind: 'предметы', arg: null }, g, save(), 60, storage)
+    overlayLines({ kind: 'инвентарь' }, g, save(), 60, storage)
       .map((line) => line.map((s) => s.text).join(''))
       .join('\n');
 
@@ -145,7 +145,7 @@ test('хранилище показывает вещи, а по выбору —
 });
 
 test('пустые руки говорят об этом прямо', () => {
-  const out = overlayLines({ kind: 'предметы', arg: null }, game(), save({ inventory: [] }), 60, null)
+  const out = overlayLines({ kind: 'инвентарь' }, game(), save({ inventory: [] }), 60, null)
     .map((line) => line.map((s) => s.text).join(''))
     .join('\n');
 

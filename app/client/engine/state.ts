@@ -27,7 +27,7 @@ export interface StreamEntry {
 }
 
 /** Служебные команды, которые открывают оверлей с содержимым игры. */
-export type OverlayCommand = 'справочник' | 'дело' | 'предметы';
+export type OverlayCommand = 'справочник' | 'дело' | 'инвентарь';
 
 /**
  * Все служебные команды. `меню` стоит особняком: остальные показывают то, что
@@ -37,13 +37,17 @@ export type OverlayCommand = 'справочник' | 'дело' | 'предме
 export type SystemCommand = OverlayCommand | 'меню';
 
 /**
- * Служебная команда с необязательным аргументом: `справочник` открывает список,
- * `справочник контейнмент` — сразу статью. Отдельной команды «что такое» нет
- * намеренно: имя команды говорит, откуда взято определение.
+ * Служебная команда. Адресных форм у неё нет (07-оболочка-тз, «Служебные
+ * команды»): `справочник` открывает хранилище целиком, и `справочник
+ * контейнмент` больше не существует.
+ *
+ * Причина не в экономии: быстрый доступ к одному термину даёт панель по `1`,
+ * и она отвечает на другой вопрос — «что это было сейчас». Команда с адресом
+ * дублировала панель, но хуже: её надо было вспомнить и набрать целиком, а имя
+ * термина игрок к этому моменту как раз и не знает.
  */
 export interface SystemCall {
   kind: SystemCommand;
-  arg: string | null;
 }
 
 /** То же, но заведомо про содержимое: такой вызов умеет нарисовать оверлей. */
@@ -246,21 +250,6 @@ export function sceneOf(addr: string): string {
   return hash === -1 ? addr : addr.slice(0, hash);
 }
 
-/**
- * Предметы, которые сейчас рядом: те, что лежат в этом месте, плюс те, что
- * на руках. Нужны подсветке — предмет подсвечивается, только пока он доступен
- * (07-оболочка-тз, «Явно размеченные сущности»).
- *
- * Место — заметка, в которой игрок стоит, вместе с состоянием её узла: комната
- * объявляет постоянные предметы во frontmatter, а временные — на узле, и «Тоби
- * ушёл за сигаретами» означает ровно то, что упоминание Тоби больше не горит.
- */
-export function itemsHere(content: GameContent, save: SaveState, addr = save.episodeState.at): Set<string> {
-  const node = content.nodes[addr];
-  const doc = content.docs[sceneOf(addr)];
-  return new Set([...(doc?.items ?? []), ...(node?.attrs.items ?? []), ...save.inventory]);
-}
-
 /** Опция отпадает, если её условие не выполнено или её узел уже отыгран по `once`. */
 export function optionAvailable(content: GameContent, save: SaveState, option: Option): boolean {
   if (!evalCondition(option.attrs.if, save)) return false;
@@ -407,7 +396,7 @@ export function sessionEntities(stream: StreamEntry[], kind: EntityKind): Sessio
  * не меняет.
  */
 export function textEntry(content: GameContent, save: SaveState, raw: string): StreamEntry {
-  const { text, mentions } = resolveEntities(content, save, itemsHere(content, save), raw);
+  const { text, mentions } = resolveEntities(content, save, raw);
   return mentions.length === 0 ? { kind: 'text', text } : { kind: 'text', text, mentions };
 }
 

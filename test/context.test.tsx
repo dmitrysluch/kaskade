@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { GameScreen, LOWER_ROWS } from '../app/client/ui/Screen.tsx';
-import { contextLines, inputLine, systemLine } from '../app/client/ui/lines.ts';
+import { contextLines, inputLine, inventoryLines, systemLine } from '../app/client/ui/lines.ts';
 import { sessionEntities, textEntry } from '../app/client/engine/state.ts';
 import { content, doc, node } from './helpers.ts';
 import type { GameContent, SaveState } from '../app/shared/types.ts';
@@ -94,15 +94,26 @@ test('справочник показывает статью, «Дело» — �
   assert.match(word, /\[белое\]/);
 });
 
-test('карточка предмета — вступление, без страниц и без действий', () => {
+test('инвентарь по `3`: карточка вещи и то, что она умеет', () => {
   const g = game();
-  const stream = [textEntry(g, save(), 'На столе [[00-book|учебник]].')];
-  const out = text(contextLines('item', sessionEntities(stream, 'item'), 0, g, save(), COLS, ROWS));
+  const out = text(inventoryLines(g, save({ inventory: ['00-book'] }), 0, COLS, ROWS));
 
   assert.match(out, /учебник/);
   assert.match(out, /Физика реакторов/);
-  // Действия предмета остаются игрой: панель их не предлагает.
-  assert.equal(/осмотреть|листать|вперёд/.test(out), false);
+  assert.match(out, /Esc закрыть/);
+});
+
+test('пустой инвентарь говорит об этом и напоминает команду', () => {
+  const out = text(inventoryLines(game(), save(), 0, COLS, ROWS));
+
+  assert.match(out, /На руках сейчас ничего нет/);
+  assert.match(out, /Полный список: «инвентарь»/);
+});
+
+test('вещи комнаты в панель инвентаря не попадают', () => {
+  // Стационарный предмет доступен действием комнаты, а не карманом Марго.
+  const out = text(inventoryLines(game(), save({ inventory: [] }), 0, COLS, ROWS));
+  assert.equal(out.includes('учебник'), false);
 });
 
 test('счётчик и подсказка про стрелки появляются, только когда есть что листать', () => {
@@ -118,12 +129,12 @@ test('счётчик и подсказка про стрелки появляю�
 });
 
 test('служебная полоса подписывает панели цифрами, а управление — вопросом', () => {
-  const line = systemLine(['справочник', 'дело', 'предметы'], COLS)
+  const line = systemLine(['справочник', 'дело', 'инвентарь'], COLS)
     .map((s) => s.text)
     .join('')
     .trim();
 
-  assert.equal(line, '1 справочник · 2 дело · 3 предметы · ? управление');
+  assert.equal(line, '1 справочник · 2 дело · 3 инвентарь · ? управление');
 });
 
 

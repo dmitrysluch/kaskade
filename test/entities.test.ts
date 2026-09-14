@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { available, kindOf, parseEntities, resolveEntities } from '../app/shared/entities.ts';
-import { enter, itemsHere, sessionEntities, textEntry } from '../app/client/engine/state.ts';
+import { enter, sessionEntities, textEntry } from '../app/client/engine/state.ts';
 import { streamLines } from '../app/client/ui/lines.ts';
 import { RULES } from '../app/server/validate/index.ts';
 import { content, doc, node } from './helpers.ts';
@@ -11,8 +11,9 @@ import type { GameContent, SaveState } from '../app/shared/types.ts';
  * Явно размеченные сущности (07-оболочка-тз, «Явно размеченные сущности»).
  *
  * Главное здесь не разбор ссылок, а обещание: подсвечено ровно то, что игрок
- * может прямо сейчас взять в руки, спросить или посмотреть в справочнике.
- * Ложная подсветка стоит доверия ко всем остальным — её и проверяем.
+ * может прямо сейчас спросить или посмотреть в справочнике. Предметы в тексте
+ * не размечаются вовсе — они вещи комнаты или собственность Марго, а не
+ * справочная ссылка. Ложная подсветка стоит доверия ко всем остальным.
  */
 
 const ROOM = 'episodes/p/rooms/r';
@@ -50,15 +51,15 @@ function game(text = ''): GameContent {
 }
 
 test('разбор: ссылка с формой и без, и счёт одинаковых форм', () => {
-  const r = parseEntities('Берёшь [[00-book|учебник]]. Второй [[00-book|учебник]] лежит рядом. [[ref-kkw|KKW]].');
+  const r = parseEntities('Слово [[word-alers|Алерс]]. Второй раз [[word-alers|Алерс]]. [[ref-kkw|KKW]].');
 
   // Игрок видит текст без разметки — ни скобок, ни идентификаторов.
-  assert.equal(r.text, 'Берёшь учебник. Второй учебник лежит рядом. KKW.');
+  assert.equal(r.text, 'Слово Алерс. Второй раз Алерс. KKW.');
   assert.deepEqual(
     r.mentions.map((m) => [m.id, m.label, m.nth]),
     [
-      ['00-book', 'учебник', 0],
-      ['00-book', 'учебник', 1],
+      ['word-alers', 'Алерс', 0],
+      ['word-alers', 'Алерс', 1],
       ['ref-kkw', 'KKW', 0],
     ],
   );
@@ -68,31 +69,29 @@ test('тип следует из id, а не из префикса в разме
   const g = game();
   assert.equal(kindOf(g, 'alers'), 'word');
   assert.equal(kindOf(g, 'ref-kkw'), 'reference');
-  assert.equal(kindOf(g, '00-book'), 'item');
   assert.equal(kindOf(g, 'неведомое'), null);
 });
 
-test('доступность: термин всегда, слово — с карточкой, предмет — пока рядом', () => {
-  const here = new Set(['00-book']);
-  assert.equal(available('reference', 'ref-kkw', save(), new Set()), true);
+test('предмет сущностью разметки не является', () => {
+  // 07-оболочка-тз: предметы доступны как вещи комнаты или собственность Марго,
+  // а не как справочная ссылка. Ссылка на предмет — ошибка, а не подсветка.
+  assert.equal(kindOf(game(), '00-book'), null);
+});
 
-  assert.equal(available('word', 'alers', save(), here), false);
-  assert.equal(available('word', 'alers', save({ words: { alers: 'grey' } }), here), true);
-
-  assert.equal(available('item', '00-book', save(), here), true);
-  assert.equal(available('item', '00-phone', save(), here), false);
-  // Вещь на руках — тоже рядом: она ездит с игроком.
-  assert.equal(available('item', '00-phone', save({ inventory: ['00-phone'] }), here), true);
+test('доступность: термин всегда, слово — когда карточка уже есть', () => {
+  assert.equal(available('reference', 'ref-kkw', save()), true);
+  assert.equal(available('word', 'alers', save()), false);
+  assert.equal(available('word', 'alers', save({ words: { alers: 'grey' } })), true);
 });
 
 test('недоступное упоминание остаётся текстом и не обещает команду', () => {
   const g = game();
-  const raw = 'На столе [[00-book|учебник]], в кармане [[00-phone|телефон]], и что-то про [[alers|Алерса]].';
-  const r = resolveEntities(g, save(), itemsHere(g, save()), raw);
+  const raw = 'Речь про [[ref-kkw|АЭС]] и что-то про [[alers|Алерса]].';
+  const r = resolveEntities(g, save(), raw);
 
-  // Текст печатается целиком: про отсутствующее писать можно, обещать — нет.
-  assert.equal(r.text, 'На столе учебник, в кармане телефон, и что-то про Алерса.');
-  assert.deepEqual(r.mentions.map((m) => m.id), ['00-book']);
+  // Текст печатается целиком: про слово, которого нет, писать можно.
+  assert.equal(r.text, 'Речь про АЭС и что-то про Алерса.');
+  assert.deepEqual(r.mentions.map((m) => m.id), ['ref-kkw']);
 });
 
 test('подсветка считается в момент вывода, а не при каждой отрисовке', () => {
@@ -108,22 +107,23 @@ test('подсветка считается в момент вывода, а н�
 });
 
 test('текст узла приходит в поток без разметки', () => {
-  const g = game('На столе [[00-book|учебник]].');
+  const g = game('Говорили про [[ref-kkw|АЭС]].');
   const r = enter(g, save(), `${ROOM}#`);
   const entry = r.entries.find((e) => e.kind === 'text')!;
 
-  assert.equal(entry.text, 'На столе учебник.');
-  assert.deepEqual(entry.mentions?.map((m) => [m.kind, m.id]), [['item', '00-book']]);
+  assert.equal(entry.text, 'Говорили про АЭС.');
+  assert.deepEqual(entry.mentions?.map((m) => [m.kind, m.id]), [['reference', 'ref-kkw']]);
 
   const [line] = streamLines([entry], 60);
-  assert.equal(line!.find((s) => s.cls === 'item')?.text, 'учебник');
+  assert.equal(line!.find((s) => s.cls === 'term')?.text, 'АЭС');
 });
 
 test('сессионная история: уникальные сущности в порядке последних упоминаний', () => {
   const g = game();
+  const withWord = save({ words: { alers: 'white' } });
   const stream = [
-    textEntry(g, save(), 'Про [[ref-kkw|KKW]] и [[00-book|учебник]].'),
-    textEntry(g, save(), 'Снова [[ref-kkw|KKW]].'),
+    textEntry(g, withWord, 'Про [[ref-kkw|KKW]] и про [[alers|Алерса]].'),
+    textEntry(g, withWord, 'Снова [[ref-kkw|KKW]].'),
   ];
 
   const terms = sessionEntities(stream, 'reference');
@@ -131,8 +131,8 @@ test('сессионная история: уникальные сущности
   // Повтор не заводит вторую запись, а переносит место: теперь оно во второй записи.
   assert.equal(terms[0]!.at, 1);
 
-  const items = sessionEntities(stream, 'item');
-  assert.deepEqual(items.map((e) => [e.id, e.at]), [['00-book', 0]]);
+  const words = sessionEntities(stream, 'word');
+  assert.deepEqual(words.map((e) => [e.id, e.at]), [['alers', 0]]);
 });
 
 test('история — про выведенное, а не про написанное автором', () => {
@@ -162,7 +162,7 @@ test('справочник — заметки: статья приходит с 
 
   assert.equal(kindOf(g, 'ref-ines'), 'reference');
   // Ссылаются по id, а печатается форма из предложения.
-  const r = resolveEntities(g, save(), new Set(), 'Глава про [[ref-ines|шкалу событий]].');
+  const r = resolveEntities(g, save(), 'Глава про [[ref-ines|шкалу событий]].');
   assert.equal(r.text, 'Глава про шкалу событий.');
   assert.deepEqual(r.mentions.map((m) => [m.kind, m.id]), [['reference', 'ref-ines']]);
 });

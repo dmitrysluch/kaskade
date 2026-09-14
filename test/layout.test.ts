@@ -444,7 +444,7 @@ test('служебная полоса закреплена и не зависи�
   const line = systemLine(SYSTEM_COMMANDS, 80);
   const text = line.map((s) => s.text).join('').trim();
 
-  assert.equal(text, '1 справочник · 2 дело · 3 предметы · 0 меню · ? управление');
+  assert.equal(text, '1 справочник · 2 дело · 3 инвентарь · 0 меню · ? управление');
   // Все служебные — своим цветом.
   assert.equal(line.filter((s) => s.cls === 'system').length, 5);
 

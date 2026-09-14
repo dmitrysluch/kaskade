@@ -35,6 +35,7 @@ import {
 import {
   commandLines,
   contextLines,
+  inventoryLines,
   detailLines,
   inputLine,
   overlayLines,
@@ -78,7 +79,14 @@ type Bundle = { ok: true; content: GameContent } | { ok: false; errors: string[]
  */
 
 /**
- * Цифра открывает **контекстную панель**, а не одноимённую команду
+ * Что показывает нижняя панель. Знание и вещи — разные вопросы: у знания есть
+ * место в потоке, где оно прозвучало, а у вещи в кармане — нет. Поэтому
+ * `1` и `2` ходят по сессионной истории, а `3` — по инвентарю.
+ */
+type PanelKind = EntityKind | 'inventory';
+
+/**
+ * Цифра открывает **панель**, а не одноимённую команду
  * (07-оболочка-тз, «Контекстная панель по `1`, `2`, `3`»).
  *
  * Разница содержательная. Команда отвечает на вопрос «что вообще бывает»,
@@ -87,10 +95,10 @@ type Bundle = { ok: true; content: GameContent } | { ok: false; errors: string[]
  * не на тот вопрос. Панель показывает одну сущность и возвращает в то место
  * потока, где она встретилась.
  */
-const PANEL_KEYS: Record<string, EntityKind> = {
+const PANEL_KEYS: Record<string, PanelKind> = {
   '1': 'reference',
   '2': 'word',
-  '3': 'item',
+  '3': 'inventory',
 };
 
 /*
@@ -156,7 +164,13 @@ export function App() {
    * это навигация по уже прочитанному, она не переживает даже перезагрузку
    * вкладки, и переживать не должна.
    */
-  const [panel, setPanel] = useState<{ kind: EntityKind; index: number; scroll: number } | null>(null);
+  const [panel, setPanel] = useState<{ kind: PanelKind; index: number; scroll: number } | null>(null);
+  /**
+   * Последняя вещь, которую получили или применили: с неё открывается панель
+   * инвентаря. «Последняя» — потому что о ней и вспоминают: её только что дали
+   * в руки или ею только что что-то сделали.
+   */
+  const [lastItem, setLastItem] = useState<string | null>(null);
   /**
    * Положение курсора в хранилище вещей: какая вещь выбрана, какая открыта
    * и какое её действие подсвечено. Не в сессии: это курсор, а не состояние мира.
@@ -214,6 +228,21 @@ export function App() {
     if (session) persistSave(session.save);
   }, [session]);
 
+  /*
+   * Полученная вещь становится последней сама: панель по `3` открывается на том,
+   * что игроку только что дали в руки. Считаем по приросту инвентаря, а не по
+   * `give` в узле: вещь могла прийти откуда угодно, а смысл один.
+   */
+  const inventory = session?.save.inventory;
+  const known = useRef<string[]>([]);
+  useEffect(() => {
+    const items = inventory ?? [];
+    const added = items.find((id) => !known.current.includes(id));
+    known.current = items;
+    if (added) setLastItem(added);
+    else setLastItem((prev) => (prev != null && items.includes(prev) ? prev : null));
+  }, [inventory]);
+
   const episode = useMemo(
     () => content?.episodes.find((e) => e.id === session?.save.episodeState.episode) ?? content?.episodes[0],
     [content, session],
@@ -255,21 +284,6 @@ export function App() {
     [content, session],
   );
 
-  /**
-   * Последний термин справочника, который был на экране. `1` открывает справочник
-   * на нём, а не на алфавитном списке: игрок, не понявший слова, должен получить
-   * ответ, а не стену терминов.
-   */
-  const lastTerm = useMemo(() => {
-    if (!content || !session) return null;
-    const text = session.stream.map((e) => e.text).join('\n').toLowerCase();
-    let found: { term: string; at: number } | null = null;
-    for (const term of Object.values(content.reference).map((t) => t.label)) {
-      const at = text.lastIndexOf(term.toLowerCase());
-      if (at !== -1 && (!found || at > found.at)) found = { term, at };
-    }
-    return found?.term ?? null;
-  }, [content, session]);
   const shown = useMemo(() => matches(catalog, input), [catalog, input]);
 
   // Что выбрано на самом деле: стрелками, Tab или введённым целиком текстом.
@@ -351,7 +365,7 @@ export function App() {
         const call = option.system;
         // Хранилище открывается с начала: курсор — состояние этого открытия,
         // а не память о прошлом.
-        if (call.kind === 'предметы') setStorage({ pick: 0, open: null, act: 0 });
+        if (call.kind === 'инвентарь') setStorage({ pick: 0, open: null, act: 0 });
         // Меню — экран оболочки, а не оверлей содержимого. Командой оно при этом
         // остаётся полноправной: эхо в потоке и запись в истории у него такие же.
         if (call.kind === 'меню') setMenu(true);
@@ -369,6 +383,12 @@ export function App() {
       if (!option.target) {
         setSession({ ...session, save: counted, stream: [...session.stream, echo], reading, history });
         return;
+      }
+
+      // Применённая вещь становится последней: панель по `3` откроется на ней.
+      if (option.object) {
+        const used = content.docs[option.object];
+        if (used?.type === 'item') setLastItem(used.id);
       }
 
       const r = enter(content, counted, option.target, option.moves);
@@ -398,15 +418,10 @@ export function App() {
    */
   const runSystem = useCallback(
     (kind: SystemCommand) => {
-      // `1` открывает справочник на последнем термине, который был на экране:
-      // иначе игрок, не понявший слова, получает вместо ответа стену терминов.
-      const arg = kind === 'справочник' ? lastTerm : null;
-      const option =
-        catalog.find((o) => o.system?.kind === kind && o.system.arg === arg) ??
-        catalog.find((o) => o.system?.kind === kind && o.system.arg === null);
+      const option = catalog.find((o) => o.system?.kind === kind);
       if (option) run(option);
     },
-    [catalog, lastTerm, run],
+    [catalog, run],
   );
 
   /**
@@ -444,26 +459,48 @@ export function App() {
    * клавишу сразу после того, как что-то прочитал, и спрашивает именно про это.
    */
   const openPanel = useCallback(
-    (kind: EntityKind) => {
+    (kind: PanelKind) => {
       if (!session) return;
+      // Место, куда вернуть поток, запоминается один раз: переключение панели
+      // не должно терять исходное положение.
+      const keep = (index: number) => setPanel((prev) => ({ kind, index, scroll: prev?.scroll ?? scroll }));
+
+      if (kind === 'inventory') {
+        // Инвентарь открывается на той вещи, о которой вспомнили последней;
+        // поток при этом не двигается — вещь не звучала, её просто носят.
+        const items = session.save.inventory;
+        const at = lastItem == null ? items.length - 1 : items.indexOf(lastItem);
+        keep(Math.max(0, at));
+        setFocus(null);
+        return;
+      }
+
       const list = sessionEntities(session.stream, kind);
       const index = Math.max(0, list.length - 1);
-      // Место, куда вернуть поток, запоминается один раз: переключение типа
-      // панели не должно терять исходное положение.
-      setPanel((prev) => ({ kind, index, scroll: prev?.scroll ?? scroll }));
+      keep(index);
       const current = list[index];
       if (current) {
         scrollTo(current.at);
         setFocus(current.mention);
       }
     },
-    [session, scroll, scrollTo],
+    [session, scroll, scrollTo, lastItem],
   );
 
-  /** Соседняя сущность в истории. Порядок — по последним упоминаниям. */
+  /** Соседняя запись панели: знание — по последним упоминаниям, вещи — по инвентарю. */
   const movePanel = useCallback(
     (step: number) => {
       if (!panel || !session) return;
+
+      if (panel.kind === 'inventory') {
+        const items = session.save.inventory;
+        if (items.length === 0) return;
+        const index = (panel.index + step + items.length) % items.length;
+        setPanel({ ...panel, index });
+        setLastItem(items[index]!);
+        return;
+      }
+
       const list = sessionEntities(session.stream, panel.kind);
       if (list.length === 0) return;
       const index = (panel.index + step + list.length) % list.length;
@@ -501,7 +538,7 @@ export function App() {
    */
   const runStorage = useCallback(
     (key: string): boolean => {
-      if (!content || !session || session.overlay?.kind !== 'предметы') return false;
+      if (!content || !session || session.overlay?.kind !== 'инвентарь') return false;
       const items = session.save.inventory;
       if (items.length === 0) return false;
 
@@ -894,7 +931,7 @@ export function App() {
           scroll={scroll}
           glyphs={frameGlyphs(renderer.frame)}
           {...(TOUCH ? { close: `${TAP_HINT} — закрыть`, onClose: closeOverlay }
-          : session.overlay.kind === 'предметы' && session.save.inventory.length > 0 ?
+          : session.overlay.kind === 'инвентарь' && session.save.inventory.length > 0 ?
             {
               close:
                 storage.open == null ?
@@ -945,17 +982,18 @@ export function App() {
         )}
         system={systemLine(SYSTEM_COMMANDS, layout.text)}
         panel={
-          panel && session
-            ? contextLines(
-                panel.kind,
-                sessionEntities(session.stream, panel.kind),
-                panel.index,
-                bundle.content,
-                session.save,
-                cols,
-                LOWER_ROWS - 1,
-              )
-            : null
+          !panel || !session ? null
+          : panel.kind === 'inventory' ?
+            inventoryLines(bundle.content, session.save, panel.index, cols, LOWER_ROWS - 1)
+          : contextLines(
+              panel.kind,
+              sessionEntities(session.stream, panel.kind),
+              panel.index,
+              bundle.content,
+              session.save,
+              cols,
+              LOWER_ROWS - 1,
+            )
         }
         more={{
           up: Math.min(scroll, layout.maxScroll) < layout.maxScroll,
