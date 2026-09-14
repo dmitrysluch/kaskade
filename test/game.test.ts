@@ -9,6 +9,7 @@ import type { SaveState } from '../app/shared/types.ts';
 import type { StreamEntry } from '../app/client/engine/state.ts';
 import { option } from './helpers.ts';
 import { CLOSE, EXAMINE } from '../app/shared/pages.ts';
+import { plainText } from '../app/shared/entities.ts';
 import { join } from 'node:path';
 import { readYaml } from '../app/server/content/yaml.ts';
 import { CONTENT } from '../app/server/content/paths.ts';
@@ -476,8 +477,10 @@ test('предпросмотр берёт реплику Марго целево
     const preview = previewOf(game, option)!;
     assert.match(preview, /^—\s/, 'предпросмотр показывает реплику Марго');
     // Дословно: строка обязана найтись в узле как есть, а не быть пересказом.
+    // Сравниваем с текстом без разметки: игрок видит форму из ссылки, а не саму
+    // ссылку, и предпросмотр обязан совпадать именно с тем, что он прочтёт.
     assert.ok(
-      target.text.split('\n').some((l) => l.trim() === preview),
+      plainText(target.text).split('\n').some((l) => l.trim() === preview),
       `предпросмотра "${preview}" нет в узле ${target.addr}`,
     );
   }

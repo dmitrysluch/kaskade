@@ -1,4 +1,4 @@
-import { resolveEntities, type EntityKind, type EntityMention } from '../../shared/entities.ts';
+import { plainText, resolveEntities, type EntityKind, type EntityMention } from '../../shared/entities.ts';
 import { said, voiceOf } from '../../shared/speech.ts';
 import type { GameContent, Node, NodeAddr, Option, SaveState } from '../../shared/types.ts';
 
@@ -210,7 +210,9 @@ export function pageAt(content: GameContent, save: SaveState, docId: string): No
  * что именно прочтёт вслух.
  */
 export function previewOf(content: GameContent, option: Option): string | null {
-  const text = (option.target ? content.nodes[option.target]?.text : '') ?? '';
+  // Разметку снимаем здесь же: предпросмотр — это то, что игрок сейчас прочитает,
+  // а `[[ref-ines|шкалу]]` он прочитать не должен нигде и никогда.
+  const text = plainText((option.target ? content.nodes[option.target]?.text : '') ?? '');
   for (const line of text.split('\n')) {
     if (line.trim() === '') continue;
     const voice = voiceOf(line);

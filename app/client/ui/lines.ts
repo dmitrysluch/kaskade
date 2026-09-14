@@ -17,7 +17,7 @@ import { itemActions, type CatalogOption } from '../engine/catalog.ts';
 import type { OverlayCall, OverlayCommand, SessionEntity, StreamEntry, Term } from '../engine/state.ts';
 import { days, daysBetween } from '../../shared/dates.ts';
 import { speakerLabel, speakerOf } from '../../shared/speech.ts';
-import { entityClass, type EntityKind, type EntityMention } from '../../shared/entities.ts';
+import { entityClass, plainText, type EntityKind, type EntityMention } from '../../shared/entities.ts';
 import type { GameContent, Portrait, SaveState } from '../../shared/types.ts';
 
 /** Состояние → строки. Всё, что попадает на экран, сначала становится строками знаков. */
@@ -384,7 +384,7 @@ function entityCard(kind: EntityKind, id: string, content: GameContent, save: Sa
     if (!term) return [[]];
     out.push([{ text: term.label }, { text: '  ' }, { text: term.category, cls: 'dim' }]);
     out.push([]);
-    out.push([{ text: term.text, cls: 'dim' }]);
+    out.push([{ text: plainText(term.text), cls: 'dim' }]);
     return out;
   }
   if (kind === 'word') {
@@ -398,7 +398,7 @@ function entityCard(kind: EntityKind, id: string, content: GameContent, save: Sa
       { text: state === 'white' ? '[белое]' : '[серое]', cls: state === 'white' ? 'dim' : 'locked' },
     ]);
     out.push([]);
-    out.push([{ text: word?.text ?? '', cls: 'dim' }]);
+    out.push([{ text: plainText(word?.text ?? ''), cls: 'dim' }]);
     return out;
   }
   return out;
@@ -448,7 +448,7 @@ export function inventoryLines(
     ),
   );
   body.push([]);
-  for (const line of wrap(doc?.nodes[0]?.text ?? '', max)) body.push([{ text: line, cls: 'dim' }]);
+  for (const line of wrap(plainText(doc?.nodes[0]?.text ?? ''), max)) body.push([{ text: line, cls: 'dim' }]);
 
   const actions = doc ? itemActions(content, save, doc.docId) : [];
   if (actions.length > 0) {
@@ -572,14 +572,14 @@ function storageLines(
     });
     out.push([]);
     // Описание — только у выбранной вещи: список должен читаться списком.
-    wrapped(items[at]?.doc?.nodes[0]?.text ?? '', 'dim');
+    wrapped(plainText(items[at]?.doc?.nodes[0]?.text ?? ''), 'dim');
     return out;
   }
 
   const doc = content.docs[opened];
   out.push([{ text: pad() }, { text: doc?.label ?? opened }]);
   out.push([]);
-  wrapped(doc?.nodes[0]?.text ?? '', 'dim');
+  wrapped(plainText(doc?.nodes[0]?.text ?? ''), 'dim');
   out.push([]);
 
   const actions = itemActions(content, save, opened);
@@ -623,7 +623,7 @@ export function overlayLines(
           max,
         ),
       );
-      push(word?.text ?? '', 'dim');
+      push(plainText(word?.text ?? ''), 'dim');
       out.push([]);
     }
     return out;
@@ -653,7 +653,7 @@ export function overlayLines(
     }
     // Статья длиннее строки переносится с отступом под название: список должен
     // читаться колонкой, а не сползать в абзац.
-    const lines = wrap(term.text, Math.max(1, max - width - 2));
+    const lines = wrap(plainText(term.text), Math.max(1, max - width - 2));
     lines.forEach((line, i) => {
       out.push([
         { text: (i === 0 ? term.label : '').padEnd(width) },

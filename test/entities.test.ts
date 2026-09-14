@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { available, kindOf, parseEntities, resolveEntities } from '../app/shared/entities.ts';
-import { enter, sessionEntities, textEntry } from '../app/client/engine/state.ts';
-import { streamLines } from '../app/client/ui/lines.ts';
+import { enter, previewOf, sessionEntities, textEntry } from '../app/client/engine/state.ts';
+import { contextLines, inventoryLines, overlayLines, streamLines } from '../app/client/ui/lines.ts';
 import { RULES } from '../app/server/validate/index.ts';
-import { content, doc, node } from './helpers.ts';
+import { content, doc, node, option } from './helpers.ts';
 import type { GameContent, SaveState } from '../app/shared/types.ts';
 
 /**
@@ -165,4 +165,46 @@ test('справочник — заметки: статья приходит с 
   const r = resolveEntities(g, save(), 'Глава про [[ref-ines|шкалу событий]].');
   assert.equal(r.text, 'Глава про шкалу событий.');
   assert.deepEqual(r.mentions.map((m) => [m.kind, m.id]), [['reference', 'ref-ines']]);
+});
+
+test('разметка не доезжает до экрана ни одной поверхностью', () => {
+  // Поток снимает её сам, а предпросмотр, карточки и хранилища берут текст
+  // заметки напрямую — и раньше показывали игроку `[[ref-kkw|АЭС]]`.
+  const g = content({
+    words: { alers: { id: 'alers', label: 'Алерс', category: 'имена', text: 'Читал про [[ref-kkw|АЭС]].' } },
+    reference: { 'ref-kkw': { id: 'ref-kkw', label: 'KKW', category: 'физика', text: 'Атомная станция.' } },
+    docs: {
+      'episodes/p/scenes/s': doc('episodes/p/scenes/s', {
+        nodes: [node('episodes/p/scenes/s#да', { text: '— Это про [[ref-kkw|АЭС]], а не про завод.' })],
+      }),
+      'episodes/p/items/book': doc('episodes/p/items/book', {
+        type: 'item',
+        label: 'учебник',
+        nodes: [node('episodes/p/items/book#', { text: 'Учебник по [[ref-kkw|станциям]].' })],
+      }),
+    },
+  });
+
+  // Предпросмотр реплики Марго.
+  const preview = previewOf(g, option({ target: 'episodes/p/scenes/s#да' }));
+  assert.equal(preview, '— Это про АЭС, а не про завод.');
+
+  const shown = (lines: { text: string }[][]) => lines.map((l) => l.map((s) => s.text).join('')).join('\n');
+  const withWord = save({ words: { alers: 'white' }, inventory: ['book'] });
+
+  // Карточка слова: и в панели, и в хранилище.
+  const panel = shown(contextLines('word', sessionEntities([textEntry(g, withWord, 'Про [[alers|Алерса]].')], 'word'), 0, g, withWord, 60, 12));
+  assert.match(panel, /Читал про АЭС/);
+  assert.equal(panel.includes('[['), false);
+
+  const delo = shown(overlayLines({ kind: 'дело' }, g, withWord, 60));
+  assert.equal(delo.includes('[['), false);
+
+  // Карточка вещи: и в компактной панели, и на полном экране.
+  const bag = shown(inventoryLines(g, withWord, 0, 60, 12));
+  assert.match(bag, /Учебник по станциям/);
+  assert.equal(bag.includes('[['), false);
+
+  const full = shown(overlayLines({ kind: 'инвентарь' }, g, withWord, 60, { pick: 0, open: null, act: 0 }));
+  assert.equal(full.includes('[['), false);
 });
