@@ -348,18 +348,27 @@ export function App() {
 
       /*
        * Чтение — отдельный уровень (07-оболочка-тз, «Страницы предмета»): пока
-       * книга открыта, список состоит из неё одной. Новых полей у опции для
-       * этого не нужно, глагол уже несёт смысл.
+       * книга открыта, список состоит из неё одной.
+       *
+       * Решает **цель, а не глагол**: открывает книгу всё, что ведёт на её
+       * страницу, — и `осмотреть учебник` из комнаты, и авторское `прочитать
+       * протокол`, которое сцена объявила сама. Иначе игрок попадает на первую
+       * страницу и остаётся без «вперёд»: команда сработала, а книга не открылась.
        *
        * Одностраничный предмет в режим не входит: экран, где единственная
        * команда «закрыть», не стоит того, чтобы из него выходить.
        */
+      // Открывает книгу только страница. Обычное действие той же вещи
+      // (`вернуть протокол`) в режим чтения не входит — читать после него нечего.
+      const target = option.target ? content.nodes[option.target] : undefined;
+      const item = option.target ? content.docs[sceneOf(option.target)] : undefined;
       const opens =
-        option.verb === EXAMINE && option.object && pagesOf(content, option.object, session.save).length > 1;
+        target?.attrs.page != null && item?.type === 'item' && pagesOf(content, item.docId, session.save).length > 1 ?
+          item.docId
+        : null;
       const reading =
         option.verb === CLOSE ? null
-        : opens ? option.object
-        : session.reading;
+        : opens ?? session.reading;
 
       if (option.system) {
         const call = option.system;

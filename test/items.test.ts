@@ -160,3 +160,47 @@ test('валидатор: выданный предмет просят объя�
   assert.equal(found[0]!.severity, 'warn');
   assert.match(found[0]!.message, /portable: true/);
 });
+
+test('на странице книгу открывает цель, а не глагол', () => {
+  // Авторская команда сцены («прочитать протокол») ведёт на страницу так же,
+  // как осмотр из комнаты: иначе игрок попадает на первую страницу и остаётся
+  // без «вперёд» — команда сработала, а книга не открылась.
+  const g = game();
+  const page = g.nodes[`${BOOK}#обложка`]!;
+  assert.equal(page.attrs.page, 1);
+
+  // Обычное действие той же вещи страницей не является и режим не включает.
+  const act = g.nodes[`${PHONE}#позвонить`]!;
+  assert.equal(act.attrs.page, null);
+});
+
+test('валидатор: узел, где под условием и опции, и маршруты', () => {
+  // Так сломался протокол в отделении: единственный маршрут ждал флага, который
+  // ставит вещь, а действия вещи уехали в инвентарь — список оказался пуст.
+  const stuck = node(`${ROOM}#выдача`, {
+    attrs: attrs({ give: ['phone'] }),
+    options: [option({ label: '', target: `${ROOM}#дальше`, attrs: attrs({ if: 'вернул' }) })],
+  });
+  const g = content({
+    docs: {
+      [ROOM]: doc(ROOM, { type: 'room', nodes: [stuck, node(`${ROOM}#дальше`)] }),
+    },
+  });
+
+  const found = RULES.find((r) => r.id === 'routes')!.run(g).filter((f) => f.line === stuck.line);
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.message, /список пуст/);
+});
+
+test('условие, которое узел сам и выполняет, условием не считается', () => {
+  // `give: phone` и `if: has:phone` на одном узле спорить не могут.
+  const fine = node(`${ROOM}#выдача`, {
+    attrs: attrs({ give: ['phone'] }),
+    options: [option({ label: '', target: `${ROOM}#дальше`, attrs: attrs({ if: 'has:phone' }) })],
+  });
+  const g = content({
+    docs: { [ROOM]: doc(ROOM, { type: 'room', nodes: [fine, node(`${ROOM}#дальше`)] }) },
+  });
+
+  assert.deepEqual(RULES.find((r) => r.id === 'routes')!.run(g), []);
+});
