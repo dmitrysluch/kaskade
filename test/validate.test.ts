@@ -729,3 +729,52 @@ test('монтаж и титр на одном узле — две несовм�
   assert.equal(found.length, 1);
   assert.match(found[0]!.message, /titlecard, splash:margo/);
 });
+
+test('атрибут не на своём месте не молчит: `once` на переходе — ошибка', () => {
+  // На переходе движок читает только `if` и `advance`. `- once` под репликой
+  // выглядит работающим запретом, а реплику можно сказать сколько угодно раз:
+  // молчаливое игнорирование здесь дороже ошибки.
+  const scene = doc('episodes/p/scenes/s', {
+    nodes: [
+      node('episodes/p/scenes/s#хаб', {
+        options: [
+          option({ label: 'спросить', target: 'episodes/p/scenes/s#тема', attrs: attrs({ once: true }) }),
+          option({ label: 'уйти', target: 'episodes/p/scenes/s#конец', attrs: attrs({ advance: true, if: 'флаг' }) }),
+        ],
+      }),
+      node('episodes/p/scenes/s#тема'),
+      node('episodes/p/scenes/s#конец'),
+    ],
+  });
+
+  const found = run('transition-attrs', content({ docs: { [scene.docId]: scene } }));
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.message, /`once`/);
+  // `if` и `advance` на переходе законны и не ловятся.
+});
+
+test('атрибуты сгенерированной опции — атрибуты её узла, и претензий к ним нет', () => {
+  const item = doc('episodes/p/items/phone', {
+    type: 'item',
+    nodes: [node('episodes/p/items/phone#'), node('episodes/p/items/phone#позвонить', { attrs: attrs({ once: true }) })],
+  });
+  const room = doc('episodes/p/rooms/r', {
+    type: 'room',
+    nodes: [
+      node('episodes/p/rooms/r#', {
+        options: [
+          option({
+            label: 'позвонить телефон',
+            verb: 'позвонить',
+            object: 'episodes/p/items/phone',
+            target: 'episodes/p/items/phone#позвонить',
+            attrs: attrs({ once: true }),
+          }),
+        ],
+      }),
+    ],
+  });
+
+  const found = run('transition-attrs', content({ docs: { [item.docId]: item, [room.docId]: room } }));
+  assert.deepEqual(found, []);
+});

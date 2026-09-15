@@ -3,7 +3,7 @@ import { kindOf, parseEntities } from '../../shared/entities.ts';
 import { parseDate } from '../../shared/dates.ts';
 import { closeLabel, EXAMINE } from '../../shared/pages.ts';
 import { speakerOf } from '../../shared/speech.ts';
-import type { Doc, GameContent, Node, Option } from '../../shared/types.ts';
+import type { Attrs, Doc, GameContent, Node, Option } from '../../shared/types.ts';
 
 /**
  * Правила дизайна как автотесты (07-оболочка-тз, «Валидатор»).
@@ -1219,6 +1219,68 @@ const portable: Rule = {
   },
 };
 
+/**
+ * Атрибут на переходе, которого движок там не читает.
+ *
+ * У перехода работают ровно два: `if` — «отсюда туда сейчас нельзя» — и
+ * `advance`, помета о том, что команда закрывает возможности. Всё остальное
+ * принадлежит **узлу**: `once` значит «этот узел отыгрывается один раз»,
+ * `set` и `give` исполняет узел, в который пришли.
+ *
+ * Написанное не на своём месте молчит, и молчит убедительно: `- once` под
+ * репликой выглядит как работающий запрет, а реплику можно сказать сколько
+ * угодно раз. Поэтому ошибка, а не предупреждение (07-оболочка-тз, «Узлы,
+ * атрибуты, переходы»: любой ключ не на своём месте — ошибка валидатора,
+ * а не молчаливое игнорирование).
+ */
+const ON_NODE: { key: keyof Attrs; empty: (a: Attrs) => boolean }[] = [
+  { key: 'set', empty: (a) => a.set.length === 0 },
+  { key: 'unset', empty: (a) => a.unset.length === 0 },
+  { key: 'give', empty: (a) => a.give.length === 0 },
+  { key: 'take', empty: (a) => a.take.length === 0 },
+  { key: 'once', empty: (a) => !a.once },
+  { key: 'goto', empty: (a) => a.goto == null },
+  { key: 'tag', empty: (a) => a.tag.length === 0 },
+  { key: 'label', empty: (a) => a.label == null },
+  { key: 'items', empty: (a) => a.items.length === 0 },
+  { key: 'exits', empty: (a) => a.exits.length === 0 },
+  { key: 'dates', empty: (a) => Object.keys(a.dates).length === 0 },
+  { key: 'page', empty: (a) => a.page == null },
+  { key: 'timeLabel', empty: (a) => a.timeLabel == null },
+  { key: 'wait', empty: (a) => a.wait == null },
+  { key: 'cost', empty: (a) => a.cost == null },
+];
+
+const transitionAttrs: Rule = {
+  id: 'transition-attrs',
+  title: 'атрибуты не на своём месте',
+  run(content) {
+    const found: Finding[] = [];
+
+    for (const node of allNodes(content)) {
+      // Только авторские переходы: у сгенерированной опции атрибуты — это
+      // атрибуты её узла, и претензий к ним быть не может.
+      for (const option of node.options.filter((o) => o.verb === null)) {
+        for (const { key, empty } of ON_NODE) {
+          if (empty(option.attrs)) continue;
+          const to = option.target ?? '?';
+          found.push({
+            rule: 'transition-attrs',
+            severity: 'error',
+            file: docOfNode(content, node).path,
+            line: node.line,
+            message:
+              `у перехода в "${to}" стоит \`${key}\` — на переходе движок читает только ` +
+              `\`if\` и \`advance\`, остальное принадлежит узлу, в который переход ведёт`,
+          });
+        }
+      }
+    }
+
+    return found;
+  },
+};
+
 const waits: Rule = {
   id: 'wait',
   title: 'физическое ожидание',
@@ -1295,6 +1357,7 @@ const waits: Rule = {
 export const RULES: Rule[] = [
   brokenGraph,
   mentions,
+  transitionAttrs,
   portable,
   pages,
   speakers,
