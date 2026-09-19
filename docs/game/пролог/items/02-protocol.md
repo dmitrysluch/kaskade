@@ -128,9 +128,10 @@ portable: true
 - once
 - set: prolog.protocol-returned
 - take: 02-protocol
+- give: 02-protocol-copy
 
 Ты возвращаешь листы. Он даёт ручку.
 
-Ты подписываешь последнюю страницу.
+Ты подписываешь последнюю страницу. Второй экземпляр он отдаёт тебе.
 
 → [[02-neukoelln#свободны]]

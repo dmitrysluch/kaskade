@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { movesFrom, shortestPath, storyMap, walkSteps, type PathStep } from '../../shared/graph.ts';
 import { edgePath, place, type BoxSize } from './layout.ts';
 import { SceneMap } from './Scene.tsx';
+import { playFrom } from './play.ts';
 import type { GameContent } from '../../shared/types.ts';
 
 /**
@@ -126,6 +127,7 @@ export function AdmView({ content }: { content: GameContent }) {
   };
 
   const doc = open ? content.docs[open] : null;
+  const closed = doc != null && (content.episodes.find((e) => e.id === episode)?.closed.includes(doc.docId) ?? false);
   const entry = content.episodes.find((e) => e.id === episode)?.entry ?? '';
 
   return (
@@ -214,7 +216,22 @@ export function AdmView({ content }: { content: GameContent }) {
             <span className="adm-sub">
               {doc.docId} · {doc.nodes.length} узлов
             </span>
+            {doc.nodes[0] && (
+              <button
+                type="button"
+                className="adm-play"
+                onClick={() => playFrom(content, doc.nodes[0]!.addr)}
+              >
+                ▶ играть с этой заметки
+              </button>
+            )}
           </h2>
+          {closed && (
+            <p className="adm-note adm-none">
+              Заметка закрыта демо-срезом (`closed` в episode.yaml): играть с неё можно,
+              но переходы в неё в самой игре не появятся.
+            </p>
+          )}
           <p className="adm-note">
             Коробка — узел, подпись под именем — команда, которой в него приходят.
             Пометы: <span className="adm-advance">▶</span> необратимо, ⚑ ставит флаг, + выдаёт
@@ -325,6 +342,11 @@ function NodeCard({
         ))}
         {node.attrs.if && <span className="adm-route">if: {node.attrs.if}</span>}
         <span className="adm-pick">
+          {/* Отладочный вход: игра открывается прямо на этом узле, с чистым
+              состоянием. Что узлу нужно из флагов — написано тут же, слева. */}
+          <button type="button" className="adm-play" onClick={() => playFrom(content, addr)}>
+            ▶ играть отсюда
+          </button>
           {!inWalk && (
             <button type="button" onClick={onStart}>
               начать путь отсюда

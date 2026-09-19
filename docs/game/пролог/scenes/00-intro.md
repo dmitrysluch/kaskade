@@ -15,6 +15,7 @@ Zur Kenntnis genommen
 ## дело
 - tag: splash:margo
 - tag: titlecard
+- give: 00-card
 
 ГРИНБЕРГ, МАРГАРИТА · 22 ГОДА
 

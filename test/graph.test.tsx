@@ -2,6 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AdmView } from '../app/client/adm/Adm.tsx';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { ROOT } from '../app/server/content/paths.ts';
+import { debugSave } from '../app/client/adm/play.ts';
+import { begin } from '../app/client/engine/state.ts';
 import { loadContent } from '../app/server/content/load.ts';
 import { movesFrom, sceneGraph, shortestPath, storyMap, walkSteps } from '../app/shared/graph.ts';
 import { SceneMap } from '../app/client/adm/Scene.tsx';
@@ -388,4 +393,53 @@ test('путь виден на графе: номера шагов и подсв
 
   // Выход из последнего узла становится кнопкой: путь уходит в соседнюю заметку.
   assert.match(markup, /<button[^>]*adm-exit[^>]*>идти в аудиторию/);
+});
+
+test('отладочный вход: сейв встаёт на узел и играется как первый', () => {
+  const c = loadContent();
+  const addr = 'episodes/prolog/scenes/02-neukoelln#протокол';
+  const save = debugSave(c, addr);
+
+  assert.equal(save.episodeState.at, addr);
+  assert.equal(save.episodeState.episode, 'prolog');
+  // Состояние чистое: флаги и вещи не выдумываем — узел проверяется в том виде,
+  // в каком он и написан.
+  assert.deepEqual(save.flags, {});
+  assert.deepEqual(save.inventory, []);
+  assert.deepEqual(save.words, {});
+  // Обучение отладочный заход не показывает, а узел отыгрывается целиком:
+  // `started: false` означает «войти как в первый раз».
+  assert.equal(save.taught, true);
+  assert.equal(save.started, false);
+
+  // Игра действительно начинается с этого узла: вход печатает его текст
+  // и применяет его атрибуты.
+  const session = begin(c, save);
+  assert.equal(session.save.episodeState.at, addr);
+  assert.ok(session.stream.some((e) => e.text.includes('Прочитайте и верните')));
+  assert.ok(session.save.inventory.includes('02-protocol'), 'give узла отыгран');
+});
+
+test('отладочный вход живёт только на служебном адресе', () => {
+  /*
+   * Проверяем границу, а не кнопку: `/adm` отдаётся только при флаге `ADM`
+   * и на проде отвечает 404, поэтому единственное, что должно быть правдой, —
+   * что из самой игры этот вход недостижим. Стоит `playFrom` появиться
+   * в оболочке, и отладочный старт уедет игроку.
+   */
+  const client = join(ROOT, 'app/client');
+  const leaked: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) {
+        if (name !== 'adm') walk(full);
+      } else if (/\.tsx?$/.test(name) && readFileSync(full, 'utf8').includes('adm/play.ts')) {
+        leaked.push(full);
+      }
+    }
+  };
+  walk(client);
+
+  assert.deepEqual(leaked, [], 'отладочный вход просочился в игру');
 });

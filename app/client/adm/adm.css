@@ -346,3 +346,21 @@ button.adm-exit {
   white-space: pre-wrap;
   color: var(--ink);
 }
+
+/*
+ * Отладочный вход в игру. Заметен, но не громок: это инструмент автора рядом
+ * с двумя соседними кнопками, а не призыв к действию.
+ */
+.adm button.adm-play {
+  border-color: #2aa889;
+  color: #2aa889;
+}
+
+.adm button.adm-play:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.adm h2 button.adm-play {
+  font-size: 0.75em;
+}
