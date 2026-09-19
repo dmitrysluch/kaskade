@@ -6,6 +6,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from '../app/server/content/paths.ts';
 import { debugSave } from '../app/client/adm/play.ts';
+import { allFlags } from '../app/client/adm/flags.ts';
+import { buildCatalog } from '../app/client/engine/catalog.ts';
 import { begin } from '../app/client/engine/state.ts';
 import { loadContent } from '../app/server/content/load.ts';
 import { movesFrom, sceneGraph, shortestPath, storyMap, walkSteps } from '../app/shared/graph.ts';
@@ -442,4 +444,40 @@ test('отладочный вход живёт только на служебн�
   walk(client);
 
   assert.deepEqual(leaked, [], 'отладочный вход просочился в игру');
+});
+
+test('отладочный вход берёт отмеченное: флаги, слова, вещи', () => {
+  const c = loadContent();
+  const addr = 'episodes/prolog/rooms/03-office#стойка';
+  const flags = allFlags(c);
+  const known = flags.find((f) => f.name === 'prolog.birthday-known')!;
+
+  const save = debugSave(c, addr, {
+    flags: [known],
+    words: ['word-alers'],
+    inventory: ['03-box'],
+  });
+
+  // Флаг помнит дату сцены, где его ставят: иначе `{{флаг.at}}` покажет прочерк
+  // там, где игрок увидит число.
+  assert.deepEqual(save.flags[known.name], { value: true, at: known.at });
+  assert.equal(save.words['word-alers'], 'white');
+  assert.deepEqual(save.inventory, ['03-box']);
+
+  // И состояние работает: отмеченный флаг открывает то, что за ним заперто.
+  const session = begin(c, save);
+  const labels = buildCatalog(c, session.save).map((o) => o.label);
+  assert.equal(labels.includes('что за конверт'), true);
+});
+
+test('список флагов собирается по заметкам, а не ведётся руками', () => {
+  const flags = allFlags(loadContent());
+
+  // Все флаги пролога на месте, и у каждого видно, где его ставят.
+  assert.ok(flags.length > 20, `флагов всего ${flags.length}`);
+  assert.ok(flags.every((f) => f.name === f.name.trim() && f.name !== ''));
+  assert.ok(flags.some((f) => f.name.startsWith('prolog.')));
+
+  // Механики с собственными правилами флагами не считаются.
+  assert.equal(flags.some((f) => /^(has:|word:|date:|wait\.)/.test(f.name)), false);
 });

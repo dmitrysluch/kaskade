@@ -273,26 +273,36 @@ test('пролог проходится до конца, и на каждом ш
   assert.fail(`пролог не сошёлся за 200 шагов, застрял на ${save.episodeState.at}`);
 });
 
-test('демо-срез: сцены 00–02 открыты, 03 закрыта, граф целый', () => {
+test('демо-срез: закрытая заметка не предлагается, но граф целый', () => {
+  /*
+   * Срез — настройка показа, а не свойство контента: сейчас открыто всё,
+   * и проверять надо механику, а не конкретный список. Механика в том, что
+   * переход в закрытую заметку не появляется у игрока, а в графе остаётся.
+   */
   const closed = game.episodes[0]!.closed;
-  assert.deepEqual(closed, ['episodes/prolog/scenes/03-birthday'], 'демо-срез съехал');
+  for (const docId of closed) assert.ok(game.docs[docId], `в срезе заметка "${docId}", которой нет`);
 
-  // Дверь в Нойкёльн открыта: коридор снова предлагает уйти.
-  const done = { value: true, at: '15.10.2024' };
-  const corridor = {
-    ...at('episodes/prolog/rooms/01-corridor#'),
-    flags: { 'prolog.dorm-done': done, 'prolog.lecture-done': done },
-  };
-  assert.ok(labels(corridor).includes('уйти'));
+  // Берём любую заметку и закрываем её руками: так проверяется правило, а не
+  // сегодняшнее содержимое `episode.yaml`.
+  const doorTo = 'episodes/prolog/scenes/03-birthday';
+  const cut = { ...game, episodes: game.episodes.map((e) => ({ ...e, closed: [doorTo] })) };
 
-  // А дальше срез: маршруты в день рождения есть в графе, но не срабатывают.
-  // Ищем по графу: концовок у сцены несколько, и автор их переписывает.
   const doors = Object.values(game.nodes).filter((n) =>
-    n.options.some((o) => o.label === '' && o.target?.startsWith('episodes/prolog/scenes/03-birthday#')),
+    n.options.some((o) => o.target?.startsWith(`${doorTo}#`)),
   );
   assert.ok(doors.length > 0, 'в графе нет ни одного входа в день рождения');
+
   for (const door of doors) {
-    assert.equal(enter(game, at(door.addr), door.addr).save.episodeState.at, door.addr, door.addr);
+    // Маршрут есть в графе…
+    assert.ok(door.options.some((o) => o.target?.startsWith(`${doorTo}#`)));
+    // …но при закрытой заметке не срабатывает: игрок остаётся на месте.
+    assert.equal(enter(cut, at(door.addr), door.addr).save.episodeState.at, door.addr, door.addr);
+  }
+
+  // Открытая заметка тем же маршрутом уводит: срез — единственная разница.
+  const open = doors.find((d) => d.options.some((o) => o.label === '' && o.target?.startsWith(`${doorTo}#`)));
+  if (open) {
+    assert.notEqual(enter(game, at(open.addr), open.addr).save.episodeState.at, open.addr);
   }
 });
 

@@ -1,5 +1,6 @@
 import { persistSave } from '../engine/save.ts';
 import { freshSave } from '../engine/state.ts';
+import type { FlagInfo } from './flags.ts';
 import type { GameContent, SaveState } from '../../shared/types.ts';
 
 /**
@@ -13,12 +14,22 @@ import type { GameContent, SaveState } from '../../shared/types.ts';
  * `ADM` и на проде отвечает 404, поэтому отдельного запрета в игре не нужно —
  * кнопки, которая это делает, там просто нет.
  *
- * Состояние собирается **чистое**, а не «как будто игрок дошёл»: флагов,
- * слов и вещей у него нет. Выдумывать их значило бы выдумывать прохождение,
- * и узел бы проверялся не в том состоянии, в каком его увидит игрок. Что
- * узлу нужно, видно на его карточке: `if`, `⚑` и `+` там написаны.
+ * Состояние **называет автор**, а не угадывает движок: перед входом открывается
+ * окно со всеми флагами игры, словами «Дела» и вещами, и отмечается то, что
+ * к этому месту должно быть уже сделано. По умолчанию не отмечено ничего —
+ * узел проверяется ровно таким, каким написан.
  */
-export function debugSave(content: GameContent, addr: string): SaveState {
+/**
+ * Что игроку «уже отдано» на момент отладочного входа. Пусто — чистое
+ * состояние: ни флагов, ни слов, ни вещей.
+ */
+export interface DebugPicks {
+  flags?: FlagInfo[];
+  words?: string[];
+  inventory?: string[];
+}
+
+export function debugSave(content: GameContent, addr: string, picks: DebugPicks = {}): SaveState {
   const base = freshSave(content);
   // Эпизод берём из адреса: `episodes/<id>/...` — иначе отладочный вход
   // во вторую главу играл бы с рендерером и сроками первой.
@@ -26,6 +37,12 @@ export function debugSave(content: GameContent, addr: string): SaveState {
 
   return {
     ...base,
+    // Флаг помнит дату сцены, в которой его ставят: в отладочном заходе берём
+    // ту же самую, иначе `{{флаг.at}}` в тексте покажет прочерк там, где игрок
+    // увидит число.
+    flags: Object.fromEntries((picks.flags ?? []).map((f) => [f.name, { value: true, at: f.at }])),
+    words: Object.fromEntries((picks.words ?? []).map((id) => [id, 'white' as const])),
+    inventory: [...(picks.inventory ?? [])],
     // Обучение и подсказку отладочный заход не показывает: их показывают
     // игроку один раз, и здесь они только мешают.
     taught: true,
@@ -42,7 +59,7 @@ export function debugSave(content: GameContent, addr: string): SaveState {
 }
 
 /** Записать отладочный сейв и открыть игру. Сейв тот же самый, что у игрока. */
-export function playFrom(content: GameContent, addr: string): void {
-  persistSave(debugSave(content, addr));
+export function playFrom(content: GameContent, addr: string, picks: DebugPicks = {}): void {
+  persistSave(debugSave(content, addr, picks));
   location.href = '/';
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { movesFrom, shortestPath, storyMap, walkSteps, type PathStep } from '../../shared/graph.ts';
 import { edgePath, place, type BoxSize } from './layout.ts';
 import { SceneMap } from './Scene.tsx';
-import { playFrom } from './play.ts';
+import { StartDialog } from './Start.tsx';
 import type { GameContent } from '../../shared/types.ts';
 
 /**
@@ -90,6 +90,8 @@ export function AdmView({ content }: { content: GameContent }) {
   const [walk, setWalk] = useState<string[]>([]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  /** Узел, с которого собираются играть: открыто окно отладочного входа. */
+  const [play, setPlay] = useState<string | null>(null);
 
   const episode = episodeId ?? content.episodes[0]?.id ?? null;
   const map = useMemo(
@@ -217,11 +219,7 @@ export function AdmView({ content }: { content: GameContent }) {
               {doc.docId} · {doc.nodes.length} узлов
             </span>
             {doc.nodes[0] && (
-              <button
-                type="button"
-                className="adm-play"
-                onClick={() => playFrom(content, doc.nodes[0]!.addr)}
-              >
+              <button type="button" className="adm-play" onClick={() => setPlay(doc.nodes[0]!.addr)}>
                 ▶ играть с этой заметки
               </button>
             )}
@@ -271,6 +269,7 @@ export function AdmView({ content }: { content: GameContent }) {
               onFrom={setFrom}
               onTo={setTo}
               onStart={() => setWalk([node])}
+              onPlay={setPlay}
               inWalk={walk.includes(node)}
             />
           )}
@@ -283,6 +282,8 @@ export function AdmView({ content }: { content: GameContent }) {
           )}
         </section>
       )}
+
+      {play && <StartDialog content={content} addr={play} onClose={() => setPlay(null)} />}
 
       <section className="adm-path">
         <h2>Путь</h2>
@@ -317,10 +318,13 @@ function NodeCard({
   onFrom,
   onTo,
   onStart,
+  onPlay,
   inWalk,
 }: {
   content: GameContent;
   addr: string;
+  /** Отладочный вход: открывает окно, где отмечают уже сделанное. */
+  onPlay: (addr: string) => void;
   onFrom: (addr: string) => void;
   onTo: (addr: string) => void;
   onStart: () => void;
@@ -344,7 +348,7 @@ function NodeCard({
         <span className="adm-pick">
           {/* Отладочный вход: игра открывается прямо на этом узле, с чистым
               состоянием. Что узлу нужно из флагов — написано тут же, слева. */}
-          <button type="button" className="adm-play" onClick={() => playFrom(content, addr)}>
+          <button type="button" className="adm-play" onClick={() => onPlay(addr)}>
             ▶ играть отсюда
           </button>
           {!inWalk && (
