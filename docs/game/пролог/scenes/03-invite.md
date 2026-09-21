@@ -58,10 +58,14 @@ date: 04.07.2025
 
 ## коробка
 - once
-- give: 03-box
-- set: prolog.box-taken
+- give: 03-box-written
+- set: prolog.box-written
 
 Ты берёшь верхнюю коробку из стопки у ксерокса.
+
+На стойке лежит маркер. На крышке ты пишешь:
+
+> DEM BESTEN SCHACHTELBAUER
 
 → [[rooms/03-office#стойка]]
 
@@ -79,22 +83,7 @@ date: 04.07.2025
 ## пойти
 - set: prolog.birthday-came
 
-Ты выходишь в коридор со справкой. До шести вечера четыре часа.
-
-→ [[#надпись]]
-→ [[03-birthday]]
-
-## надпись
-- if: prolog.box-taken
-- take: 03-box
-- give: 03-box-written
-- set: prolog.box-written
-
-В читальном зале ты пишешь на крышке маркером:
-
-> DEM BESTEN SCHACHTELBAUER
-
-→ [[03-birthday]]
+→ [[03-arrival]]
 
 ## не-идти
 - if: prolog.birthday-known
