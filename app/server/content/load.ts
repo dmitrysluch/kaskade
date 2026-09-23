@@ -168,6 +168,7 @@ function parseEpisodes(gameFile: string, game: Record<string, unknown>): Episode
       verbs: strArray(merged.verbs),
       itemVerbs: strArray(merged.itemVerbs),
       characters: strArray(merged.characters),
+      speakers: strMap(merged.speakers),
       paletteOverride: strMap(merged.palette),
       ambience: merged.ambience == null ? null : String(merged.ambience),
       dates: parseDates(file, id, merged.dates),

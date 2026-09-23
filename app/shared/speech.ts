@@ -73,7 +73,13 @@ export function said(line: string): string {
   return speakerOf(line).text;
 }
 
-/** Как метка выглядит на экране: имя пишут строчными, показывают прописными. */
-export function speakerLabel(name: string): string {
-  return name.toUpperCase();
+/**
+ * Как метка выглядит на экране: имя пишут строчными, показывают прописными.
+ *
+ * `speakers` — объявленные эпизодом сокращения (`полицейский → полиц.`):
+ * колонка говорящего узкая, а метка в тексте остаётся человеческой. Сокращение
+ * задаёт автор, оболочка его не выдумывает.
+ */
+export function speakerLabel(name: string, speakers: Record<string, string> = {}): string {
+  return (speakers[name.toLowerCase()] ?? name).toUpperCase();
 }

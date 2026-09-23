@@ -61,7 +61,13 @@ const SPEAKER_GAP = 1;
  */
 const MIN_SPEECH = 34;
 
-export function streamLines(entries: StreamEntry[], max: number, focus: EntityMention | null = null): Seg[][] {
+export function streamLines(
+  entries: StreamEntry[],
+  max: number,
+  focus: EntityMention | null = null,
+  /** Сокращения экранных имён из `episode.yaml`: `полицейский → полиц.` */
+  speakers: Record<string, string> = {},
+): Seg[][] {
   const out: Seg[][] = [];
   // Ширина сетки: `max` приходит уже без полей, а колонка имени считается от края.
   const cols = max + MARGIN.text + MARGIN.right;
@@ -83,7 +89,7 @@ export function streamLines(entries: StreamEntry[], max: number, focus: EntityMe
       // не применяем: у них свой класс и свой цвет.
       const said = entry.kind === 'text' ? speakerOf(source) : { voice: entry.kind, name: null, text: source };
       const cls: string = said.voice;
-      const label = said.name == null ? null : speakerLabel(said.name);
+      const label = said.name == null ? null : speakerLabel(said.name, speakers);
 
       // Обратные кавычки снимаются до переноса: иначе они займут колонки.
       const plain = codes(label != null && inline ? `${label} · ${said.text}` : said.text);

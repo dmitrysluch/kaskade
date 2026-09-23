@@ -89,6 +89,7 @@ export function episode(id: string, patch: Partial<GameContent['episodes'][numbe
     verbs: [],
     itemVerbs: [],
     characters: [],
+    speakers: {},
     paletteOverride: {},
     ambience: null,
     dates: {},

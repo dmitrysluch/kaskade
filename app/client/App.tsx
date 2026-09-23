@@ -303,8 +303,8 @@ export function App() {
     const entries: StreamEntry[] = [];
     if (node.attrs.timeLabel) entries.push({ kind: 'time', text: node.attrs.timeLabel });
     if (node.text && content && session) entries.push(textEntry(content, session.save, node.text));
-    return streamLines(entries, width);
-  }, [isMontage, node, cols, content, session]);
+    return streamLines(entries, width, null, episode?.speakers ?? {});
+  }, [isMontage, node, cols, content, session, episode]);
 
   const layout = useMemo(() => {
     // Текст идёт во всю сетку, от поля до поля: поля — это те самые два-четыре
@@ -314,9 +314,9 @@ export function App() {
     // На телефоне поток прокручивается пальцем и окна в строках не имеет:
     // высота там пляшет вместе с адресной строкой браузера.
     const streamRows = Math.max(3, rows - STATUS_ROWS - LOWER_ROWS);
-    const stream = session ? streamLines(session.stream, text, focus) : [];
+    const stream = session ? streamLines(session.stream, text, focus, episode?.speakers ?? {}) : [];
     return { text, streamRows, stream, maxScroll: Math.max(0, stream.length - streamRows) };
-  }, [cols, rows, session, content, focus]);
+  }, [cols, rows, session, content, focus, episode]);
 
   // Новый текст всегда возвращает к низу: игрок читает то, что только что произошло.
   useEffect(() => setScroll(0), [session?.stream]);
@@ -456,11 +456,11 @@ export function App() {
       if (!session) return;
       // Между записями поток ставит пустую строку — первая строка записи идёт
       // сразу за ней.
-      const before = streamLines(session.stream.slice(0, at), layout.text).length;
+      const before = streamLines(session.stream.slice(0, at), layout.text, null, episode?.speakers ?? {}).length;
       const top = before === 0 ? 0 : before + 1;
       setScroll(Math.max(0, Math.min(layout.maxScroll, layout.stream.length - layout.streamRows - top)));
     },
-    [session, layout],
+    [session, layout, episode],
   );
 
   /**

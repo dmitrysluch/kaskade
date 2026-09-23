@@ -672,12 +672,29 @@ test('цитата без метки законна: это бумага, а н�
   );
 });
 
-test('метка длиннее колонки говорящего — предупреждение: она займёт свою строку', () => {
-  const found = run('speakers', scene('> полицейский — Раз.\n\n> полицейский — Два.'));
+test('метка не влезает в колонку — ошибка, пока не объявлено короткое имя', () => {
+  const text = '> полицейский — Раз.\n\n> полицейский — Два.';
+  const long = run('speakers', scene(text));
 
+  assert.equal(long.length, 1);
+  assert.equal(long[0]!.severity, 'error');
+  assert.match(long[0]!.message, /объявите короткое имя/);
+
+  // Объявили — претензий нет.
+  const withShort = content({
+    episodes: [episode('p', { speakers: { полицейский: 'полиц.' } })],
+    docs: { 'episodes/p/scenes/s': doc('episodes/p/scenes/s', { nodes: [node('episodes/p/scenes/s#', { text })] }) },
+  });
+  assert.deepEqual(run('speakers', withShort), []);
+
+  // Сокращение, которое само не влезает, задачу не решает, а прячет.
+  const bad = content({
+    episodes: [episode('p', { speakers: { полицейский: 'участковый' } })],
+    docs: { 'episodes/p/scenes/s': doc('episodes/p/scenes/s', { nodes: [node('episodes/p/scenes/s#', { text })] }) },
+  });
+  const found = run('speakers', bad);
   assert.equal(found.length, 1);
-  assert.equal(found[0]!.severity, 'warn');
-  assert.match(found[0]!.message, /не влезает в колонку/);
+  assert.match(found[0]!.message, /само не влезает/);
 });
 
 test('метка говорящего: одиночный голос — предупреждение, а не ошибка', () => {

@@ -1034,7 +1034,11 @@ const speakers: Rule = {
   run(content) {
     const found: Finding[] = [];
 
+    const byEpisode = new Map(content.episodes.map((e) => [e.id, e]));
+
     for (const doc of Object.values(content.docs)) {
+      const episodeId = episodeOf(doc.docId);
+      const episode = episodeId ? byEpisode.get(episodeId) : undefined;
       const names = new Map<string, { count: number; line: number }>();
 
       for (const node of doc.nodes) {
@@ -1083,22 +1087,33 @@ const speakers: Rule = {
           });
         }
         /*
-         * Метка живёт в своей колонке. Не влезла — не беда: такое имя занимает
-         * свою строку целиком, речь идёт со следующей. Ничего не ломается,
-         * но абзац становится на строку длиннее, и знать об этом автору стоит —
-         * поэтому предупреждение, а не ошибка.
+         * Метка живёт в своей колонке. Не влезла — объявите сокращение
+         * в `speakers:` эпизода (07-оболочка-тз: «ошибка либо явное короткое
+         * отображаемое имя»). Иначе имя займёт свою строку, и абзац разъедется
+         * ровно в диалоге, где реплики короткие и частые.
+         *
+         * Само сокращение тоже проверяется: объявить `полицейский → участковый`
+         * значит не решить задачу, а спрятать её.
          *
          * Про ремарку, ставшую именем, уже сказано выше: второй раз о той же
          * строке не говорим.
          */
-        else if (name.length >= SPEAKER_WIDTH) {
-          found.push({
-            rule: 'speakers',
-            severity: 'warn',
-            file: doc.path,
-            line,
-            message: `метка «${name}» не влезает в колонку говорящего (${SPEAKER_WIDTH} знаков) и займёт свою строку`,
-          });
+        else {
+          const short = episode?.speakers[name.toLowerCase()];
+          const shown = short ?? name;
+          if (shown.length >= SPEAKER_WIDTH) {
+            found.push({
+              rule: 'speakers',
+              severity: 'error',
+              file: doc.path,
+              line,
+              message:
+                short == null ?
+                  `метка «${name}» не влезает в колонку говорящего (${SPEAKER_WIDTH} знаков) — ` +
+                  `объявите короткое имя в speakers эпизода: \`${name}: ...\``
+                : `сокращение «${short}» для «${name}» само не влезает в колонку (${SPEAKER_WIDTH} знаков)`,
+            });
+          }
         }
       }
 
