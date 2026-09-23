@@ -210,35 +210,58 @@ test('поток режется по ширине колонки и раздел
   assert.equal(lines[2]![1]!.cls, 'echo');
 });
 
-test('три голоса разведены классами: собеседник, Марго, ремарка', () => {
+test('четыре голоса разведены классами: собеседник, Марго, цитата, ремарка', () => {
   const lines = streamLines(
-    [{ kind: 'text', text: '> — Знаю.\n— Нет. Осколки деления распадаются сами.\nОн не поднимает головы.' }],
+    [
+      {
+        kind: 'text',
+        text:
+          '> алерс — Знаю.\n> марго — Нет. Осколки деления распадаются сами.\n' +
+          '> «Единственный случай в истории».\nОн не поднимает головы.',
+      },
+    ],
     60,
   );
 
-  // Знак цитаты снимается целиком: кто говорит, видно по цвету.
-  // Первый сегмент строки — поле, второй — сам текст.
+  // Речь идёт колонкой: первый сегмент — имя, второй — сама реплика.
+  assert.equal(lines[0]![0]!.text.trim(), 'АЛЕРС');
+  assert.equal(lines[0]![0]!.cls, 'remark');
   assert.equal(lines[0]![1]!.cls, 'speech');
-  assert.equal(lines[0]![1]!.text, '— Знаю.');
+  assert.equal(lines[0]![1]!.text, 'Знаю.');
 
+  assert.equal(lines[1]![0]!.text.trim(), 'МАРГО');
   assert.equal(lines[1]![1]!.cls, 'margo');
-  assert.equal(lines[1]![1]!.text, '— Нет. Осколки деления распадаются сами.');
+  assert.equal(lines[1]![1]!.text, 'Нет. Осколки деления распадаются сами.');
 
-  assert.equal(lines[2]![1]!.cls, 'remark');
-  assert.equal(lines[2]![1]!.text, 'Он не поднимает головы.');
+  // Цитата — `>` без метки: человека за ней нет, колонки говорящего тоже.
+  assert.equal(lines[2]![1]!.cls, 'quote');
+  assert.equal(lines[2]![1]!.text, '«Единственный случай в истории».');
+  assert.equal(lines[2]![0]!.text, ' '.repeat(MARGIN.text));
+
+  assert.equal(lines[3]![1]!.cls, 'remark');
+  assert.equal(lines[3]![1]!.text, 'Он не поднимает головы.');
 });
 
-test('реплика-цитата становится отступом и не путается с эхом команды', () => {
+test('на узкой сетке та же структура идёт строкой, а не колонкой', () => {
+  const [line] = streamLines([{ kind: 'text', text: '> марго — Нет.' }], 32);
+
+  assert.equal(line![1]!.text, 'МАРГО');
+  assert.equal(line![2]!.text, ' · ');
+  assert.equal(line![3]!.text, 'Нет.');
+});
+
+test('реплика не путается с эхом команды', () => {
   const lines = streamLines(
     [
-      { kind: 'text', text: '> — Да. Всё верно.\nОн не спорит.' },
+      { kind: 'text', text: '> алерс — Да. Всё верно.\nОн не спорит.' },
       { kind: 'echo', text: 'взять телефон' },
     ],
     40,
   );
 
-  assert.equal(lines[0]![1]!.text, '— Да. Всё верно.');
-  assert.ok((lines[0]![1]!.cls ?? '').includes('speech'));
+  // Сетка узкая: та же структура идёт строкой — имя, точка, речь.
+  assert.equal(lines[0]!.map((seg) => seg.text).join('').trim(), 'АЛЕРС · Да. Всё верно.');
+  assert.ok((lines[0]!.at(-1)!.cls ?? '').includes('speech'));
   assert.equal(lines[1]![1]!.text, 'Он не спорит.');
 
   // Эхо печатается с висящим промптом: `>` стоит в поле, команда — под текстом.
@@ -452,30 +475,37 @@ test('служебная полоса закреплена и не зависи�
   assert.equal(systemLine(SYSTEM_COMMANDS, 30).map((s) => s.text).join('').length, 30 + MARGIN.text);
 });
 
-test('названный собеседник: имя перед репликой и своим цветом', () => {
-  const lines = streamLines([{ kind: 'text', text: '> тоби — Маннитол.' }], 40);
+test('названный собеседник: имя в своей колонке и своим цветом', () => {
+  const lines = streamLines([{ kind: 'text', text: '> тоби — Маннитол.' }], 72);
   const segs = lines[0]!;
 
-  // Имя пишут строчными, показывают с большой: это служебная метка, и
-  // капитализацию решает оболочка, а не автор.
-  assert.equal(segs.map((s) => s.text).join('').trim(), 'Тоби — Маннитол.');
-  assert.equal(segs.find((s) => s.text.startsWith('Тоби'))!.cls, 'remark');
-  assert.equal(segs.find((s) => s.text.includes('Маннитол'))!.cls, 'speech');
+  // Имя пишут строчными, показывают прописными: это служебная метка, и
+  // капитализацию решает оболочка, а не автор. Тире оболочка не печатает —
+  // границу между именем и речью держит колонка.
+  assert.equal(segs[0]!.text.trim(), 'ТОБИ');
+  assert.equal(segs[0]!.cls, 'remark');
+  assert.equal(segs[1]!.text, 'Маннитол.');
+  assert.equal(segs[1]!.cls, 'speech');
+  assert.equal(segs.map((s) => s.text).join('').includes('—'), false);
 });
 
-test('метка не повторяется на переносе и не съедает тире внутри фразы', () => {
+test('имя стоит в первой строке, а перенос идёт по колонке речи', () => {
   const long = '> полицейский — Он тоже не будет. Драка без заявителей — дальше не идёт.';
-  const lines = streamLines([{ kind: 'text', text: long }], 30);
-  const text = lines.map((l) => l.map((s) => s.text).join('').trim());
+  const lines = streamLines([{ kind: 'text', text: long }], 48);
 
-  assert.match(text[0]!, /^Полицейский —/);
-  // Вторая строка — продолжение реплики, а не второе имя.
-  assert.equal(text.slice(1).some((l) => l.startsWith('Полицейский')), false);
-  assert.ok(text.join(' ').includes('заявителей — дальше'), 'тире внутри фразы стало границей имени');
+  assert.equal(lines[0]![0]!.text.trim(), 'ПОЛИЦЕЙСКИЙ');
+  // Вторая строка — продолжение реплики: имя не повторяется, но колонка держится.
+  assert.equal(lines[1]![0]!.text.trim(), '');
+  assert.equal(lines[1]![0]!.text.length, lines[0]![0]!.text.length);
+  // Тире внутри фразы границей имени не стало.
+  const text = lines.map((l) => l.map((s) => s.text).join('')).join(' ');
+  assert.ok(text.includes('заявителей — дальше'), 'тире внутри фразы съедено');
 });
 
-test('безымянная реплика остаётся безымянной', () => {
-  const segs = streamLines([{ kind: 'text', text: '> — Знаю.' }], 40)[0]!;
-  assert.equal(segs.map((s) => s.text).join('').trim(), '— Знаю.');
-  assert.equal(segs.filter((s) => s.cls === 'remark').length, 0);
+test('цитата колонки говорящего не занимает', () => {
+  const segs = streamLines([{ kind: 'text', text: '> «Единственный случай в истории».' }], 72)[0]!;
+
+  assert.equal(segs[0]!.text, ' '.repeat(MARGIN.text));
+  assert.equal(segs[1]!.cls, 'quote');
+  assert.equal(segs[1]!.text, '«Единственный случай в истории».');
 });

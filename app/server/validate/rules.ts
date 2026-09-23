@@ -3,6 +3,7 @@ import { kindOf, parseEntities } from '../../shared/entities.ts';
 import { parseDate } from '../../shared/dates.ts';
 import { closeLabel, EXAMINE } from '../../shared/pages.ts';
 import { speakerOf } from '../../shared/speech.ts';
+import { SPEAKER_WIDTH } from '../../client/ui/lines.ts';
 import type { Attrs, Doc, GameContent, Node, Option } from '../../shared/types.ts';
 
 /**
@@ -1035,46 +1036,64 @@ const speakers: Rule = {
 
     for (const doc of Object.values(content.docs)) {
       const names = new Map<string, { count: number; line: number }>();
-      let bare: number | null = null;
 
       for (const node of doc.nodes) {
         for (const line of node.text.split('\n')) {
           const said = speakerOf(line);
-          if (said.voice !== 'speech') continue;
 
-          if (said.name == null) {
-            bare ??= node.line;
+          /*
+           * Цитата — `>` без метки — законна: так печатают бумагу, надпись,
+           * строку из учебника. Но цитата, начатая с тире, — это потерянная
+           * метка: безымянных устных реплик в игре нет (07-оболочка-тз,
+           * «Метка говорящего»). Разговор один на один исключением не является.
+           */
+          if (said.voice === 'quote') {
+            if (/^\s*—/.test(said.text)) {
+              found.push({
+                rule: 'speakers',
+                severity: 'error',
+                file: doc.path,
+                line: node.line,
+                message: `реплика без метки: «${said.text.slice(0, 32)}…» — у устной реплики метка обязательна, включая Марго`,
+              });
+            }
             continue;
           }
+          if (said.voice !== 'speech' && said.voice !== 'margo') continue;
+          if (said.name == null) continue;
 
           const seen = names.get(said.name);
           if (seen) seen.count += 1;
           else names.set(said.name, { count: 1, line: node.line });
-
-          // Ремарка, у которой съели перевод строки, выглядит ровно так:
-          // длинная фраза, точка на конце — и всё это встало именем.
-          const words = said.name.split(/\s+/).length;
-          if (words > 3 || said.name.endsWith('.')) {
-            found.push({
-              rule: 'speakers',
-              severity: 'error',
-              file: doc.path,
-              line: node.line,
-              message: `метка «${said.name}» — это ремарка, а не имя: метка до трёх слов и без точки`,
-            });
-          }
         }
       }
 
-      // Имён несколько, а где-то реплика без метки: скорее всего, её потеряли.
-      if (names.size > 1 && bare != null) {
-        found.push({
-          rule: 'speakers',
-          severity: 'warn',
-          file: doc.path,
-          line: bare,
-          message: `в сцене ${names.size} названных собеседника и реплика без метки — кто её говорит?`,
-        });
+      // Про саму метку говорим один раз на имя, а не на каждую её реплику:
+      // у Тоби их восемьдесят, и восемьдесят одинаковых строк — не отчёт.
+      for (const [name, { line }] of names) {
+        // Ремарка, у которой съели перевод строки, выглядит ровно так:
+        // длинная фраза, точка на конце — и всё это встало именем.
+        if (name.split(/\s+/).length > 3 || name.endsWith('.')) {
+          found.push({
+            rule: 'speakers',
+            severity: 'error',
+            file: doc.path,
+            line,
+            message: `метка «${name}» — это ремарка, а не имя: метка до трёх слов и без точки`,
+          });
+        }
+        // Метка живёт в своей колонке: то, что в неё не влезло, на экране
+        // обрежется, и автор узнает об этом от игрока. Про ремарку, ставшую
+        // именем, уже сказано выше — второй раз о той же строке не говорим.
+        else if (name.length > SPEAKER_WIDTH) {
+          found.push({
+            rule: 'speakers',
+            severity: 'error',
+            file: doc.path,
+            line,
+            message: `метка «${name}» длиннее колонки говорящего (${SPEAKER_WIDTH} знаков)`,
+          });
+        }
       }
 
       // Одна реплика на голос — это и потерянная метка, и законный прохожий.

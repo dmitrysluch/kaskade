@@ -10,6 +10,7 @@ import type { StreamEntry } from '../app/client/engine/state.ts';
 import { option } from './helpers.ts';
 import { CLOSE, EXAMINE } from '../app/shared/pages.ts';
 import { plainText } from '../app/shared/entities.ts';
+import { said, voiceOf } from '../app/shared/speech.ts';
 import { join } from 'node:path';
 import { readYaml } from '../app/server/content/yaml.ts';
 import { CONTENT } from '../app/server/content/paths.ts';
@@ -282,15 +283,21 @@ test('демо-срез: закрытая заметка не предлагае
   const closed = game.episodes[0]!.closed;
   for (const docId of closed) assert.ok(game.docs[docId], `в срезе заметка "${docId}", которой нет`);
 
-  // Берём любую заметку и закрываем её руками: так проверяется правило, а не
-  // сегодняшнее содержимое `episode.yaml`.
-  const doorTo = 'episodes/prolog/scenes/03-birthday';
-  const cut = { ...game, episodes: game.episodes.map((e) => ({ ...e, closed: [doorTo] })) };
+  /*
+   * Берём любую заметку, в которую ведёт переход из другой, и закрываем её
+   * руками: проверяется правило, а не сегодняшнее содержимое `episode.yaml`
+   * и не имя сцены — автор переписывает и то, и другое.
+   */
+  const door = Object.values(game.nodes)
+    .flatMap((n) => n.options.map((o) => ({ from: n, to: o.target })))
+    .find(({ from, to }) => to != null && sceneOf(to) !== sceneOf(from.addr) && game.nodes[to]);
+  assert.ok(door, 'в графе нет ни одного перехода между заметками');
 
+  const doorTo = sceneOf(door.to!);
+  const cut = { ...game, episodes: game.episodes.map((e) => ({ ...e, closed: [doorTo] })) };
   const doors = Object.values(game.nodes).filter((n) =>
     n.options.some((o) => o.target?.startsWith(`${doorTo}#`)),
   );
-  assert.ok(doors.length > 0, 'в графе нет ни одного входа в день рождения');
 
   for (const door of doors) {
     // Маршрут есть в графе…
@@ -301,7 +308,7 @@ test('демо-срез: закрытая заметка не предлагае
 
   // Открытая заметка тем же маршрутом уводит: срез — единственная разница.
   const open = doors.find((d) => d.options.some((o) => o.label === '' && o.target?.startsWith(`${doorTo}#`)));
-  if (open) {
+  if (open && open.options.every((o) => o.label === '' || o.verb !== null)) {
     assert.notEqual(enter(game, at(open.addr), open.addr).save.episodeState.at, open.addr);
   }
 });
@@ -485,12 +492,14 @@ test('предпросмотр берёт реплику Марго целево
   for (const option of withReply) {
     const target = game.nodes[option.target!]!;
     const preview = previewOf(game, option)!;
-    assert.match(preview, /^—\s/, 'предпросмотр показывает реплику Марго');
     // Дословно: строка обязана найтись в узле как есть, а не быть пересказом.
-    // Сравниваем с текстом без разметки: игрок видит форму из ссылки, а не саму
-    // ссылку, и предпросмотр обязан совпадать именно с тем, что он прочтёт.
+    // Сравниваем с текстом без разметки и без метки говорящего: игрок видит
+    // форму из ссылки и речь без служебного имени — с этим и обязан совпадать
+    // предпросмотр.
     assert.ok(
-      plainText(target.text).split('\n').some((l) => l.trim() === preview),
+      plainText(target.text)
+        .split('\n')
+        .some((l) => said(l).trim() === preview),
       `предпросмотра "${preview}" нет в узле ${target.addr}`,
     );
   }
@@ -505,13 +514,14 @@ test('предпросмотр проходит сквозь ремарку, н�
   // карандашом и читаешь вслух». Оболочка обязана показать то, что прочтут.
   const afterRemark = Object.values(game.nodes).filter((n) => {
     const lines = n.text.split('\n').filter((l) => l.trim() !== '');
-    return lines.length > 1 && !/^[>—]/.test(lines[0]!.trim()) && /^—\s/.test(lines[1]!.trim());
+    return lines.length > 1 && voiceOf(lines[0]!) === 'remark' && voiceOf(lines[1]!) === 'margo';
   });
 
   assert.ok(afterRemark.length > 0, 'в прологе нет узла с ремаркой перед репликой Марго');
   for (const node of afterRemark) {
     const preview = previewOf(game, option({ target: node.addr }));
-    assert.equal(preview, node.text.split('\n').filter((l) => l.trim() !== '')[1]!.trim());
+    const second = node.text.split('\n').filter((l) => l.trim() !== '')[1]!;
+    assert.equal(preview, said(plainText(second)).trim());
   }
 
   // Узел, который начинает собеседник, предпросмотра не даёт: за этим ходом

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { GameScreen, LOWER_ROWS } from '../app/client/ui/Screen.tsx';
 import { contextLines, inputLine, inventoryLines, systemLine } from '../app/client/ui/lines.ts';
-import { sessionEntities, textEntry } from '../app/client/engine/state.ts';
-import { content, doc, node } from './helpers.ts';
+import { enter, sessionEntities, textEntry } from '../app/client/engine/state.ts';
+import { attrs, content, doc, node } from './helpers.ts';
 import type { GameContent, SaveState } from '../app/shared/types.ts';
 
 /**
@@ -169,4 +169,43 @@ test('панель заменяет нижнюю область, а не лож�
   const closed = screen(null);
   assert.match(closed, /осмотреть учебник/);
   assert.match(closed, /осмотр/);
+});
+
+test('выданное слово попадает в панель по `2` без всякой разметки', () => {
+  // Слово, которое Марго только что получила, в тексте не размечено: его никто
+  // не упоминал, его дали. А `2` сразу после выдачи спрашивают именно про него.
+  const g = game();
+  const stream = [
+    { kind: 'grant' as const, text: 'АЛЕРС — в деле, 2', granted: { kind: 'word' as const, id: 'alers', label: 'АЛЕРС' } },
+  ];
+  const list = sessionEntities(stream, 'word');
+
+  assert.deepEqual(list.map((e) => e.id), ['alers']);
+  const out = contextLines('word', list, 0, g, save(), COLS, ROWS)
+    .map((line) => line.map((s) => s.text).join(''))
+    .join('\n');
+  assert.match(out, /Алерс/);
+});
+
+test('выданная вещь объявляется строкой — как слово, но в инвентарь', () => {
+  const g = content({
+    docs: {
+      'episodes/p/items/box': doc('episodes/p/items/box', { type: 'item', label: 'коробка' }),
+      'episodes/p/scenes/s': doc('episodes/p/scenes/s', {
+        nodes: [node('episodes/p/scenes/s#дали', { attrs: attrs({ give: ['box'] }), text: 'Он протягивает её.' })],
+      }),
+    },
+  });
+
+  const r = enter(g, save({ inventory: [], words: {} }), 'episodes/p/scenes/s#дали');
+  const grant = r.entries.find((e) => e.kind === 'grant')!;
+
+  // Первая вещь за игру получает клавишу, как и первое слово.
+  assert.equal(grant.text, 'КОРОБКА — в инвентаре, 3');
+  assert.deepEqual(grant.granted, { kind: 'item', id: 'box', label: 'КОРОБКА' });
+  assert.ok(r.save.inventory.includes('box'));
+
+  // Вторая — уже без клавиши: игрок знает, где смотреть.
+  const again = enter(g, r.save, 'episodes/p/scenes/s#дали');
+  assert.equal(again.entries.some((e) => e.kind === 'grant'), false, 'вещь выдана дважды');
 });

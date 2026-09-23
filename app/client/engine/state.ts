@@ -24,6 +24,13 @@ export interface StreamEntry {
    * «это можно набрать прямо сейчас».
    */
   mentions?: EntityMention[];
+  /**
+   * Что выдала эта строка (`kind: 'grant'`). Нужно панели по `2`: слово, которое
+   * Марго только что получила, в тексте не размечено — его никто не упоминал,
+   * его **дали**. А игрок, нажимающий `2` сразу после выдачи, спрашивает именно
+   * про него.
+   */
+  granted?: { kind: EntityKind | 'item'; id: string; label: string };
 }
 
 /** Служебные команды, которые открывают оверлей с содержимым игры. */
@@ -290,7 +297,10 @@ function applyAttrs(content: GameContent, save: SaveState, node: Node, stamp: st
     if (content.words[name]) {
       if (words[name] !== 'white') granted.push(name);
       words[name] = 'white';
-    } else if (!inventory.includes(name)) inventory.push(name);
+    } else if (!inventory.includes(name)) {
+      inventory.push(name);
+      granted.push(name);
+    }
   }
   for (const name of node.attrs.take) {
     delete words[name];
@@ -331,8 +341,14 @@ function applyAttrs(content: GameContent, save: SaveState, node: Node, stamp: st
  * узле разговора, и если это происходит молча, игрок не узнает, что словарь есть.
  */
 function grantLine(content: GameContent, id: string, first: boolean): string {
-  const label = content.words[id]?.label ?? id;
-  return `${label.toUpperCase()} — в деле${first ? ', 2' : ''}`;
+  const word = content.words[id];
+  if (word) return `${word.label.toUpperCase()} — в деле${first ? ', 2' : ''}`;
+
+  // Вещь объявляется так же, как слово, и по той же причине: `give` срабатывает
+  // посреди реплики, и молчаливая выдача не видна. Клавиша другая — инвентарь
+  // живёт на `3`, — а строка та же.
+  const label = Object.values(content.docs).find((d) => d.id === id)?.label ?? id;
+  return `${label.toUpperCase()} — в инвентаре${first ? ', 3' : ''}`;
 }
 
 /**
@@ -380,13 +396,23 @@ export interface SessionEntity {
 
 export function sessionEntities(stream: StreamEntry[], kind: EntityKind): SessionEntity[] {
   const out = new Map<string, SessionEntity>();
+  const put = (id: string, mention: EntityMention, at: number) => {
+    // Удаляем перед вставкой: Map держит порядок вставки, и это ровно
+    // «последнее упоминание — последним в списке».
+    out.delete(id);
+    out.set(id, { kind, id, mention, at });
+  };
+
   stream.forEach((entry, at) => {
+    // Выданное считается встреченным: строка выдачи и есть то место в потоке,
+    // где слово прозвучало впервые.
+    const granted = entry.granted;
+    if (granted && granted.kind === kind) {
+      put(granted.id, { kind, id: granted.id, label: granted.label, nth: 0 }, at);
+    }
     for (const mention of entry.mentions ?? []) {
       if (mention.kind !== kind) continue;
-      // Удаляем перед вставкой: Map держит порядок вставки, и это ровно
-      // «последнее упоминание — последним в списке».
-      out.delete(mention.id);
-      out.set(mention.id, { kind, id: mention.id, mention, at });
+      put(mention.id, mention, at);
     }
   });
   return [...out.values()];
@@ -425,7 +451,10 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
     // Чем штампуется флаг: датой места, где игрок стоит. У предмета своей даты
     // нет — «когда» отвечает комната, в которой его взяли, а не он сам.
     const stamp = node.date ?? dateAt(content, state);
-    const first = Object.keys(state.words).length === 0;
+    // Подсказка с клавишей — только у первой выдачи в своё хранилище: дальше
+    // игрок уже знает, где смотреть.
+    const firstWord = Object.keys(state.words).length === 0;
+    const firstItem = state.inventory.length === 0;
     const applied = applyAttrs(content, state, node, stamp);
     state = applied.save;
     /*
@@ -465,8 +494,14 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
     }
     if (node.attrs.timeLabel) entries.push({ kind: 'time', text: node.attrs.timeLabel });
     if (node.text) entries.push(textEntry(content, state, interpolate(node.text, state)));
-    applied.granted.forEach((id, i) => {
-      entries.push({ kind: 'grant', text: grantLine(content, id, first && i === 0) });
+    applied.granted.forEach((id) => {
+      const word = content.words[id];
+      const label = word?.label ?? Object.values(content.docs).find((d) => d.id === id)?.label ?? id;
+      entries.push({
+        kind: 'grant',
+        text: grantLine(content, id, word ? firstWord : firstItem),
+        granted: { kind: word ? 'word' : 'item', id, label: label.toUpperCase() },
+      });
     });
 
     const next: string | null = node.attrs.goto ?? nextRoute(content, state, node)?.target ?? null;

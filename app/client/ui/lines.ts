@@ -31,8 +31,34 @@ import type { GameContent, Portrait, SaveState } from '../../shared/types.ts';
  * ремарки: отдельного цвета на каждого говорящего не заводится — их может быть
  * сколько угодно, и различать их должно имя, а не оттенок, который надо помнить.
  */
+/**
+ * Колонка говорящего (07-оболочка-тз, «Метка говорящего и отдельная колонка»).
+ *
+ * Реплика — двухколоночная строка: имя в левой колонке, речь в правой. Это
+ * транскрипт, а не проза с подписями: имя повторяется у каждой реплики, даже
+ * когда человек говорит дважды подряд, и строка не зависит от соседней.
+ *
+ * Колонка **не является постоянным полем потока**: описание, текст комнаты,
+ * цитата и системная строка занимают обе колонки и начинаются от обычного
+ * левого края. Поэтому сцена без диалога не получает пустого отступа.
+ */
+export const SPEAKER_WIDTH = 12;
+
+/** Промежуток между колонками. Тире оболочка не печатает — его заменяет колонка. */
+const SPEAKER_GAP = 2;
+
+/**
+ * Уже колонки речи не остаётся: на телефоне двенадцать знаков под имя съедают
+ * треть строки. Там та же структура показывается в строку — `МАРГО · текст`.
+ */
+const MIN_SPEECH = 34;
+
 export function streamLines(entries: StreamEntry[], max: number, focus: EntityMention | null = null): Seg[][] {
   const out: Seg[][] = [];
+  // Ширина сетки: `max` приходит уже без полей, а колонка имени считается от края.
+  const cols = max + MARGIN.text + MARGIN.right;
+  const inline = max - SPEAKER_WIDTH - SPEAKER_GAP < MIN_SPEECH;
+  const textCol = MARGIN.text + SPEAKER_WIDTH + SPEAKER_GAP;
 
   for (const entry of entries) {
     if (out.length > 0) out.push([]);
@@ -49,22 +75,40 @@ export function streamLines(entries: StreamEntry[], max: number, focus: EntityMe
       // не применяем: у них свой класс и свой цвет.
       const said = entry.kind === 'text' ? speakerOf(source) : { voice: entry.kind, name: null, text: source };
       const cls: string = said.voice;
-      // Имя печатается перед репликой и переносится вместе с ней: считать
-      // ширину надо по тому, что игрок увидит, а не по одной реплике.
-      const label = said.name == null ? '' : `${speakerLabel(said.name)} `;
+      const label = said.name == null ? null : speakerLabel(said.name);
 
       // Обратные кавычки снимаются до переноса: иначе они займут колонки.
-      const plain = codes(`${label}${said.text}`);
+      const plain = codes(label != null && inline ? `${label} · ${said.text}` : said.text);
       const marks = entry.kind === 'text' ? [...plain.spans, ...spans] : [];
+
+      // Реплика с колонкой: текст переносится по своей колонке, имя стоит
+      // в первой строке и по правому краю — так оно примыкает к речи.
+      if (label != null && !inline) {
+        const width = Math.max(1, cols - textCol - MARGIN.right);
+        wrap(plain.text, width).forEach((line, i) => {
+          const gutter = i === 0 ? label.padStart(textCol - SPEAKER_GAP) : '';
+          out.push([
+            { text: gutter.padEnd(textCol), cls: 'remark' },
+            ...mark(line, cls, marks, seen),
+          ]);
+        });
+        continue;
+      }
 
       // Эхо печатается с висящим промптом, как это делает терминал: прокрутка
       // назад выглядит как одна колонка с торчащими приглашениями.
       wrap(plain.text, max).forEach((line, i) => {
         const lead = entry.kind === 'echo' && i === 0 ? hanging() : pad();
-        // Метка живёт только в первой строке: перенос её не повторяет.
-        const named = i === 0 && label !== '' && line.startsWith(label);
-        const segs = named
-          ? [{ text: label, cls: 'remark' }, ...mark(line.slice(label.length), cls, marks, seen)]
+        // В строчном режиме имя живёт только в первой строке — перенос его
+        // не повторяет, продолжение идёт обычным отступом.
+        const head = inline && label != null && i === 0 && line.startsWith(label);
+        const segs =
+          head ?
+            [
+              { text: label, cls: 'remark' },
+              { text: ' · ', cls: 'dim' },
+              ...mark(line.slice(label.length + 3), cls, marks, seen),
+            ]
           : mark(line, cls, marks, seen);
         out.push([{ text: lead, cls: 'dim' }, ...segs]);
       });

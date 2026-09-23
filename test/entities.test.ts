@@ -175,7 +175,9 @@ test('разметка не доезжает до экрана ни одной �
     reference: { 'ref-kkw': { id: 'ref-kkw', label: 'KKW', category: 'физика', text: 'Атомная станция.' } },
     docs: {
       'episodes/p/scenes/s': doc('episodes/p/scenes/s', {
-        nodes: [node('episodes/p/scenes/s#да', { text: '— Это про [[ref-kkw|АЭС]], а не про завод.' })],
+        nodes: [
+          node('episodes/p/scenes/s#да', { text: '> марго — Это про [[ref-kkw|АЭС]], а не про завод.' }),
+        ],
       }),
       'episodes/p/items/book': doc('episodes/p/items/book', {
         type: 'item',
@@ -187,7 +189,7 @@ test('разметка не доезжает до экрана ни одной �
 
   // Предпросмотр реплики Марго.
   const preview = previewOf(g, option({ target: 'episodes/p/scenes/s#да' }));
-  assert.equal(preview, '— Это про АЭС, а не про завод.');
+  assert.equal(preview, 'Это про АЭС, а не про завод.');
 
   const shown = (lines: { text: string }[][]) => lines.map((l) => l.map((s) => s.text).join('')).join('\n');
   const withWord = save({ words: { alers: 'white' }, inventory: ['book'] });
