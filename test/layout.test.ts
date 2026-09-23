@@ -207,7 +207,9 @@ test('поток режется по ширине колонки и раздел
 
   assert.ok(lines.every((l) => width(l) <= 20 + MARGIN.text));
   assert.deepEqual(lines[1], []);
-  assert.equal(lines[2]![1]!.cls, 'echo');
+  // Между раундами стоит тонкая черта, под ней — сама команда.
+  assert.equal(lines[2]![1]!.cls, 'round');
+  assert.equal(lines[3]![1]!.cls, 'echo');
 });
 
 test('четыре голоса разведены классами: собеседник, Марго, цитата, ремарка', () => {
@@ -265,9 +267,9 @@ test('реплика не путается с эхом команды', () => {
   assert.equal(lines[1]![1]!.text, 'Он не спорит.');
 
   // Эхо печатается с висящим промптом: `>` стоит в поле, команда — под текстом.
-  assert.equal(lines[3]![0]!.text.indexOf('>'), MARGIN.prompt);
-  assert.equal(lines[3]![1]!.text, 'взять телефон');
-  assert.equal(lines[3]![1]!.cls, 'echo');
+  const echo = lines.findIndex((l) => l.some((seg) => seg.cls === 'echo'));
+  assert.equal(lines[echo]![0]!.text.indexOf('>'), MARGIN.prompt);
+  assert.equal(lines[echo]![1]!.text, 'взять телефон');
 });
 
 test('срок в статусе склоняется по-русски и считается от даты заметки', () => {
@@ -530,4 +532,31 @@ test('цитата колонки говорящего не занимает', (
   assert.equal(segs[0]!.text, ' '.repeat(MARGIN.text));
   assert.equal(segs[1]!.cls, 'quote');
   assert.equal(segs[1]!.text, '«Единственный случай в истории».');
+});
+
+test('раунды разделены тонкой чертой перед командой, но не в начале потока', () => {
+  const lines = streamLines(
+    [
+      { kind: 'text', text: 'Аудитория.' },
+      { kind: 'echo', text: 'сесть сзади' },
+      { kind: 'text', text: 'Ты садишься.' },
+    ],
+    40,
+  );
+
+  const rules = lines.filter((l) => l.some((s) => s.cls === 'round'));
+  assert.equal(rules.length, 1, 'черта одна: перед командой');
+
+  // Стоит она выше эха, а не ниже: под чертой — то, что случилось в ответ.
+  const at = lines.findIndex((l) => l.some((s) => s.cls === 'round'));
+  assert.ok(lines[at + 1]!.some((s) => s.cls === 'echo'));
+
+  // Черта тоньше линейки: у рамки сплошной знак, здесь точечный.
+  const glyph = rules[0]!.find((s) => s.cls === 'round')!.text;
+  assert.equal(glyph.includes('─'), false);
+  assert.equal(glyph.includes('━'), false);
+
+  // Первая команда потока черты не получает: делить там нечего.
+  const first = streamLines([{ kind: 'echo', text: 'сесть сзади' }], 40);
+  assert.equal(first.some((l) => l.some((s) => s.cls === 'round')), false);
 });

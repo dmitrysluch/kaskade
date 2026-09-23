@@ -61,6 +61,21 @@ const SPEAKER_GAP = 1;
  */
 const MIN_SPEECH = 34;
 
+/**
+ * Разделитель раундов — тонкая черта перед введённой командой.
+ *
+ * Раунд здесь — «что произошло после одного хода игрока». Пока реплики
+ * короткие, границу держит само эхо команды; но стоит ответу занять пол-экрана,
+ * и, вернувшись к потоку, человек не находит, откуда читать: серое эхо тонет
+ * в стене текста.
+ *
+ * Черта намеренно **тоньше рамки**: рамка делит поверхность («выше мир, ниже
+ * ты»), а это деление внутри одного разговора. Точечный глиф вместо сплошного
+ * и ширина по тексту, а не по сетке, — чтобы линия читалась как пауза, а не
+ * как второй интерфейсный шов.
+ */
+const ROUND = '┈';
+
 export function streamLines(
   entries: StreamEntry[],
   max: number,
@@ -74,8 +89,13 @@ export function streamLines(
   const inline = max - SPEAKER_WIDTH - SPEAKER_GAP < MIN_SPEECH;
   const textCol = MARGIN.text + SPEAKER_WIDTH + SPEAKER_GAP;
 
-  for (const entry of entries) {
+  entries.forEach((entry, index) => {
     if (out.length > 0) out.push([]);
+    // Черту ставим перед командой: ниже неё — то, что случилось в ответ.
+    // Перед самой первой не ставим: делить там нечего.
+    if (entry.kind === 'echo' && index > 0) {
+      out.push([{ text: pad() }, { text: ROUND.repeat(Math.max(1, max)), cls: 'round' }]);
+    }
     /*
      * Подсвечивается только размеченное автором (07-оболочка-тз, «Явно
      * размеченные сущности»), и ровно те вхождения, которые он разметил:
@@ -133,7 +153,7 @@ export function streamLines(
         out.push([{ text: lead, cls: 'dim' }, ...segs]);
       });
     }
-  }
+  });
   return out;
 }
 
