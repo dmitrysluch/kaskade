@@ -490,16 +490,25 @@ test('названный собеседник: имя в своей колонк
 });
 
 test('имя стоит в первой строке, а перенос идёт по колонке речи', () => {
-  const long = '> полицейский — Он тоже не будет. Драка без заявителей — дальше не идёт.';
-  const lines = streamLines([{ kind: 'text', text: long }], 48);
+  const lines = streamLines([{ kind: 'text', text: '> тоби — Он тоже не будет. Драка без заявителей — дальше не идёт.' }], 48);
 
-  assert.equal(lines[0]![0]!.text.trim(), 'ПОЛИЦЕЙСКИЙ');
+  assert.equal(lines[0]![0]!.text.trim(), 'ТОБИ');
   // Вторая строка — продолжение реплики: имя не повторяется, но колонка держится.
   assert.equal(lines[1]![0]!.text.trim(), '');
   assert.equal(lines[1]![0]!.text.length, lines[0]![0]!.text.length);
   // Тире внутри фразы границей имени не стало.
   const text = lines.map((l) => l.map((s) => s.text).join('')).join(' ');
   assert.ok(text.includes('заявителей — дальше'), 'тире внутри фразы съедено');
+});
+
+test('имя, не влезшее в колонку, занимает свою строку, а не съедает промежуток', () => {
+  const lines = streamLines([{ kind: 'text', text: '> полицейский — Пакетики ваши?' }], 48);
+
+  assert.equal(lines[0]!.map((s) => s.text).join('').trim(), 'ПОЛИЦЕЙСКИЙ');
+  assert.equal(lines[1]!.at(-1)!.text, 'Пакетики ваши?');
+  // Речь начинается с той же колонки, что и у коротких имён.
+  const short = streamLines([{ kind: 'text', text: '> тоби — Пакетики ваши?' }], 48);
+  assert.equal(lines[1]![0]!.text.length, short[0]![0]!.text.length);
 });
 
 test('цитата колонки говорящего не занимает', () => {

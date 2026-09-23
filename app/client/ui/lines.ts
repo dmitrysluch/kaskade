@@ -42,10 +42,18 @@ import type { GameContent, Portrait, SaveState } from '../../shared/types.ts';
  * цитата и системная строка занимают обе колонки и начинаются от обычного
  * левого края. Поэтому сцена без диалога не получает пустого отступа.
  */
-export const SPEAKER_WIDTH = 12;
+export const SPEAKER_WIDTH = 10;
 
-/** Промежуток между колонками. Тире оболочка не печатает — его заменяет колонка. */
-const SPEAKER_GAP = 2;
+/**
+ * Имя прижато к левому краю, а не к колонке речи (ТЗ разрешает оба, базовым
+ * называя правый). Правый край давал рваную пустоту слева: короткое «ТОБИ»
+ * висело в середине поля, и глаз не находил, где начинается строка. Левый край
+ * выстраивает имена в столбик под текстом сцены — это и есть транскрипт.
+ *
+ * Имя длиннее колонки её не ломает: оно сдвигает свою первую строку и только
+ * её. Обрезать имя нельзя — метка служебная, но читает её человек.
+ */
+const SPEAKER_GAP = 1;
 
 /**
  * Уже колонки речи не остаётся: на телефоне двенадцать знаков под имя съедают
@@ -85,10 +93,16 @@ export function streamLines(entries: StreamEntry[], max: number, focus: EntityMe
       // в первой строке и по правому краю — так оно примыкает к речи.
       if (label != null && !inline) {
         const width = Math.max(1, cols - textCol - MARGIN.right);
+        // Имя длиннее колонки занимает свою строку целиком: втискивать его
+        // в колонку значило бы съесть промежуток и склеить имя с речью,
+        // а обрезать — соврать. Строкой больше, зато сетка ровная.
+        const own = MARGIN.text + label.length >= textCol;
+        if (own) out.push([{ text: `${pad()}${label}`, cls: 'remark' }]);
+
         wrap(plain.text, width).forEach((line, i) => {
-          const gutter = i === 0 ? label.padStart(textCol - SPEAKER_GAP) : '';
+          const named = i === 0 && !own;
           out.push([
-            { text: gutter.padEnd(textCol), cls: 'remark' },
+            { text: named ? `${pad()}${label}`.padEnd(textCol) : ' '.repeat(textCol), cls: 'remark' },
             ...mark(line, cls, marks, seen),
           ]);
         });

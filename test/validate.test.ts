@@ -672,12 +672,12 @@ test('цитата без метки законна: это бумага, а н�
   );
 });
 
-test('метка длиннее колонки говорящего — ошибка', () => {
-  const found = run('speakers', scene('> председатель комиссии — Раз.\n\n> председатель комиссии — Два.'));
+test('метка длиннее колонки говорящего — предупреждение: она займёт свою строку', () => {
+  const found = run('speakers', scene('> полицейский — Раз.\n\n> полицейский — Два.'));
 
   assert.equal(found.length, 1);
-  assert.equal(found[0]!.severity, 'error');
-  assert.match(found[0]!.message, /длиннее колонки/);
+  assert.equal(found[0]!.severity, 'warn');
+  assert.match(found[0]!.message, /не влезает в колонку/);
 });
 
 test('метка говорящего: одиночный голос — предупреждение, а не ошибка', () => {
