@@ -57,6 +57,17 @@ export const MIGRATIONS: Record<number, (save: SaveState) => SaveState> = {
   // не может — механики не существовало, — и `null` здесь не потеря данных,
   // а честное «никто ничего не ждёт».
   7: (save) => ({ ...save, wait: save.wait ?? null }),
+
+  /*
+   * 8 → 9 миграции нет намеренно ([[14-переходы-и-даты-тз]], «Дата и сохранение»).
+   *
+   * В девятой версии игровой день и срез мира приходят из подтверждённой
+   * карточки перехода, а до неё их не существует. У старой записи этих полей
+   * нет, и вывести их не из чего: дата лежала в заметке, где стоял игрок,
+   * а адрес этой заметки в новой схеме означает другое место. Подставить
+   * «какой-нибудь» день — это и есть то, от чего мы ушли; поэтому старая
+   * запись честно объявляется несовместимой, а не поднимается наугад.
+   */
 };
 
 export function migrate(save: SaveState, target: number): SaveState | null {
@@ -70,20 +81,39 @@ export function migrate(save: SaveState, target: number): SaveState | null {
   return current.saveVersion === target ? current : null;
 }
 
-export function loadSave(content: GameContent): SaveState {
+/**
+ * Что нашлось в хранилище.
+ *
+ * `incompatible` — сейв, который поднять нельзя: миграции для его версии нет
+ * ([[14-переходы-и-даты-тз]], «Дата и сохранение»). Молча начать заново здесь
+ * запрещено, и правильно: игрок потерял бы прохождение, не узнав об этом.
+ * Экран спрашивает, а запись остаётся в хранилище до подтверждения.
+ */
+export type Loaded =
+  | { kind: 'save'; save: SaveState }
+  | { kind: 'fresh'; save: SaveState }
+  | { kind: 'incompatible'; from: number };
+
+export function loadSave(content: GameContent): Loaded {
   const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(KEY);
-  if (!raw) return freshSave(content);
+  if (!raw) return { kind: 'fresh', save: freshSave(content) };
+
+  let parsed: SaveState;
   try {
-    const parsed = JSON.parse(raw) as SaveState;
-    const migrated = migrate(parsed, content.saveVersion);
-    if (!migrated) return freshSave(content);
-    // Узел мог исчезнуть, пока автор правил заметки: тогда начинаем эпизод сначала,
-    // а не показываем пустой экран.
-    if (!content.nodes[migrated.episodeState.at]) return freshSave(content);
-    return migrated;
+    parsed = JSON.parse(raw) as SaveState;
   } catch {
-    return freshSave(content);
+    // Испорченный JSON поднять нечем и жалеть нечего: это не прохождение,
+    // а мусор, и разговаривать о нём с игроком незачем.
+    return { kind: 'fresh', save: freshSave(content) };
   }
+
+  const migrated = migrate(parsed, content.saveVersion);
+  if (!migrated) return { kind: 'incompatible', from: Number(parsed.saveVersion ?? 0) };
+
+  // Узел мог исчезнуть, пока автор правил заметки: тогда начинаем эпизод сначала,
+  // а не показываем пустой экран.
+  if (!content.nodes[migrated.episodeState.at]) return { kind: 'fresh', save: freshSave(content) };
+  return { kind: 'save', save: migrated };
 }
 
 export function persistSave(save: SaveState): void {

@@ -166,7 +166,31 @@ export function nodeAt(content: GameContent, addr: string): Node | undefined {
  * и не должно быть — они не место, и позиции не меняют.
  */
 export function dateAt(content: GameContent, save: SaveState): string | null {
-  return content.nodes[save.episodeState.at]?.date ?? null;
+  // Контекст — единственный источник ([[14-переходы-и-даты-тз]], «Дата и
+  // сохранение»). Пока комнаты и сцены ещё носят `date:`, он остаётся запасным:
+  // фолбэк уйдёт вместе с этими полями, и валидатор их к тому времени запретит.
+  return save.context.date ?? content.nodes[save.episodeState.at]?.date ?? null;
+}
+
+/** Срез мира, в котором игрок сейчас. `null` — контекст ещё не установлен. */
+export function stageOf(save: SaveState): string | null {
+  return save.context.stage;
+}
+
+/**
+ * Подтвердить карточку перехода: одной операцией установить контекст и войти
+ * в цель ([[14-переходы-и-даты-тз]], «Исполнение и экран»).
+ *
+ * Состояния других помещений этого среза не сбрасываются: переезд в квартиру
+ * тем же вечером не должен обнулять секретариат. Ошибка разрешения цели сейв
+ * не меняет вовсе — лучше остаться на карточке, чем оказаться нигде.
+ */
+export function confirmTransition(content: GameContent, save: SaveState, docId: string): EnterResult {
+  const def = Object.values(content.transitions).find((t) => t.docId === docId);
+  if (!def || !content.nodes[def.target]) return { save, entries: [] };
+
+  const context = { stage: def.stage, date: def.date, transition: def.id };
+  return enter(content, { ...save, context }, def.target);
 }
 
 /**
@@ -461,6 +485,18 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
     const node: Node | undefined = content.nodes[current];
     if (!node) break;
 
+    /*
+     * Карточка перехода ([[14-переходы-и-даты-тз]]) останавливает проход **до**
+     * применения атрибутов: позиция игрока и есть карточка. Отдельного поля
+     * «незавершённый переход» в сейве поэтому нет, и всё вытекает само —
+     * перезагрузка показывает карточку, эффекты цели не выполнены, статус
+     * держит прежнюю дату. Дальше решает подтверждение (`confirmTransition`).
+     */
+    if (content.docs[sceneOf(node.addr)]?.type === 'transition') {
+      state = { ...state, episodeState: { ...state.episodeState, at: node.addr } };
+      break;
+    }
+
     // Чем штампуется флаг: датой места, где игрок стоит. У предмета своей даты
     // нет — «когда» отвечает комната, в которой его взяли, а не он сам.
     const stamp = node.date ?? dateAt(content, state);
@@ -558,6 +594,9 @@ export function freshSave(content: GameContent): SaveState {
     ),
     started: false,
     wait: null,
+    // Контекст пуст: до первой карточки перехода у игры нет ни даты, ни среза.
+    context: { stage: null, date: null, transition: null },
+    rooms: {},
     episodeState: { episode: episode.id, at: episode.entry, used: [] },
   };
 }

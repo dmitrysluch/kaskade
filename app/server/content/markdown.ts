@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import yaml from 'js-yaml';
+import { formatRoomRef, roomRefOf } from '../../shared/rooms.ts';
 import { emptyAttrs, type Attrs, type DocType } from '../../shared/types.ts';
 
 /**
@@ -61,7 +62,7 @@ export interface RawDoc {
   nodes: RawNode[];
 }
 
-const DOC_TYPES: DocType[] = ['scene', 'room', 'item', 'word', 'doc', 'person', 'reference'];
+const DOC_TYPES: DocType[] = ['scene', 'room', 'item', 'word', 'doc', 'person', 'reference', 'transition'];
 
 const ATTR_KEYS = new Set([
   'if',
@@ -104,9 +105,25 @@ export function anchor(raw: string): string {
   return raw.trim().replace(/\s+/g, '-').toLowerCase();
 }
 
+/**
+ * Список ссылок из атрибута или frontmatter.
+ *
+ * Элемент бывает объектом — адрес помещения (`{persistent: tu.h1012}`); такой
+ * приводится к канонической строке. Без этого `String(x)` молча превратил бы
+ * его в `[object Object]`, и автор увидел бы не ошибку, а исчезнувший выход.
+ */
 function asArray(v: unknown): string[] {
   if (v == null) return [];
-  if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
+  const one = (x: unknown): string => {
+    if (x != null && typeof x === 'object' && !Array.isArray(x)) {
+      const ref = roomRefOf(x);
+      return ref ? formatRoomRef(ref) : '';
+    }
+    return String(x).trim();
+  };
+
+  if (Array.isArray(v)) return v.map(one).filter(Boolean);
+  if (v != null && typeof v === 'object') return [one(v)].filter(Boolean);
   return String(v)
     .split(',')
     .map((x) => x.trim())

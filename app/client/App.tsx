@@ -3,6 +3,7 @@ import { buildCatalog, itemActions, SYSTEM_COMMANDS, type CatalogOption } from '
 import { commonPrefix, exact, matches } from './engine/completion.ts';
 import {
   begin,
+  confirmTransition,
   dateAt,
   enter,
   freshSave,
@@ -45,6 +46,7 @@ import {
   statusText,
   streamLines,
   systemLine,
+  transitionCard,
   viewport,
   type StoragePick,
 } from './ui/lines.ts';
@@ -55,6 +57,7 @@ import { ADVANCE_HINT, useAdvance } from './ui/advance.ts';
 import { useWaitClock } from './ui/wait.ts';
 import { Menu } from './ui/Menu.tsx';
 import { Splash } from './ui/Splash.tsx';
+import { Stale } from './ui/Stale.tsx';
 import { Transition } from './ui/Transition.tsx';
 import { Ambience, keystroke } from './audio/index.ts';
 import { CLOSE, EXAMINE } from '../shared/pages.ts';
@@ -159,6 +162,12 @@ export function App() {
    */
   const [menu, setMenu] = useState(false);
   /**
+   * Версия найденного сейва, если открыть его нельзя. Экран спрашивает
+   * подтверждение, и только оно стирает запись: «наполовину сброшенная игра» —
+   * это баг, который находит не автор, а тот, кому передали машину.
+   */
+  const [stale, setStale] = useState<number | null>(null);
+  /**
    * Открытая контекстная панель: какого типа, какая по счёту сущность в истории
    * и куда вернуть поток при закрытии. В сессии её нет и в сейве тем более —
    * это навигация по уже прочитанному, она не переживает даже перезагрузку
@@ -214,12 +223,22 @@ export function App() {
         return begin(content, freshSave(content));
       }
 
-      const save = loadSave(content);
+      const loaded = loadSave(content);
+      // Сейв от прежней версии не открываем молча: спрашиваем, а запись
+      // оставляем в хранилище до подтверждения.
+      if (loaded.kind === 'incompatible') {
+        setStale(loaded.from);
+        return null;
+      }
+
+      const save = loaded.save;
       if (!save.started) return begin(content, save);
       // Продолжение: узел уже отыгран, его атрибуты применять второй раз нельзя —
-      // просто показываем, где игрок стоит.
+      // просто показываем, где игрок стоит. На карточке перехода показывать
+      // нечего: она и есть экран.
       const node = content.nodes[save.episodeState.at];
-      const stream: StreamEntry[] = node?.text ? [textEntry(content, save, node.text)] : [];
+      const onCard = content.docs[sceneOf(save.episodeState.at)]?.type === 'transition';
+      const stream: StreamEntry[] = !onCard && node?.text ? [textEntry(content, save, node.text)] : [];
       return { save, stream, overlay: null, reading: null, history: [] };
     });
   }, [content]);
@@ -263,6 +282,13 @@ export function App() {
 
   const node = content && session ? content.nodes[session.save.episodeState.at] : undefined;
   const isCard = node?.attrs.tag.includes('titlecard') ?? false;
+  /**
+   * Игрок стоит на карточке перехода ([[14-переходы-и-даты-тз]]). Отдельного
+   * поля в сейве для этого нет: позиция и есть карточка, поэтому перезагрузка
+   * показывает её сама, а эффекты цели до подтверждения не выполнены.
+   */
+  const transition =
+    content && node ? Object.values(content.transitions).find((t) => t.docId === sceneOf(node.addr)) : undefined;
   /**
    * Монтажный кадр (07-оболочка-тз, «Монтажный кадр») — короткое событие, где
    * Марго действует, а руля игроку намеренно не дают. От титра отличается тем,
@@ -609,6 +635,17 @@ export function App() {
     setSession({ ...session, save: r.save, stream: r.entries });
   }, [content, session, node]);
 
+  /**
+   * Карточка подтверждена: одной операцией устанавливается контекст и играется
+   * цель. Пока этого не произошло, ни дата, ни срез, ни цель не тронуты.
+   */
+  const transitionDone = useCallback(() => {
+    if (!content || !session || !transition) return;
+    const r = confirmTransition(content, session.save, transition.docId);
+    setSession({ save: r.save, stream: r.entries, overlay: null, reading: null, history: session.history });
+    setScroll(0);
+  }, [content, session, transition]);
+
   const splashDone = useCallback(() => {
     setSession((prev) =>
       prev && node
@@ -629,7 +666,7 @@ export function App() {
    * и личное дело — одна сцена, разрывать её инструкцией хуже, а перед комнатой
    * у инструкции максимальная свежесть.
    */
-  const teaching = Boolean(session) && !session!.save.taught && !isCard && !splash;
+  const teaching = Boolean(session) && !session!.save.taught && !isCard && !transition && !splash;
   const [reopened, setReopened] = useState(false);
   const manual = teaching || reopened;
 
@@ -683,7 +720,14 @@ export function App() {
   // Пока идёт сплэш или обучение, ввод не принимается: терминал в этот момент
   // не терминал.
   const accepting =
-    Boolean(session) && !isCard && !isMontage && !splash && !manual && !menu && !session?.overlay;
+    Boolean(session) &&
+    !isCard &&
+    !isMontage &&
+    !transition &&
+    !splash &&
+    !manual &&
+    !menu &&
+    !session?.overlay;
 
   /*
    * Физическое ожидание (07-оболочка-тз, «Физическое ожидание»): узел держит
@@ -876,6 +920,20 @@ export function App() {
   const body = (() => {
     if (!bundle) return <div className="dim">…</div>;
     if (!bundle.ok) return <ErrorScreen cols={cols} rows={rows} errors={bundle.errors} />;
+    // Сейв от прежней версии: до подтверждения ни игры, ни стирания записи.
+    if (stale != null) {
+      return (
+        <Stale
+          from={stale}
+          to={bundle.content.saveVersion}
+          touch={TOUCH}
+          onRestart={() => {
+            setStale(null);
+            restart();
+          }}
+        />
+      );
+    }
     if (!session || !episode || !renderer) return <div className="dim">…</div>;
     /*
      * Слои оболочки идут поверх всего, включая кадры: `0` и `3` обязаны работать
@@ -900,6 +958,19 @@ export function App() {
           card={node?.text ?? ''}
           glyphs={frameGlyphs(renderer.frame)}
           onDone={splashCardDone}
+          touch={TOUCH}
+        />
+      );
+    }
+    if (transition) {
+      return (
+        <Transition
+          card={transitionCard(transition)}
+          bios={[]}
+          cols={cols}
+          rows={rows}
+          glyphs={frameGlyphs(renderer.frame)}
+          onDone={transitionDone}
           touch={TOUCH}
         />
       );

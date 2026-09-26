@@ -18,7 +18,7 @@ import type { OverlayCall, OverlayCommand, SessionEntity, StreamEntry, Term } fr
 import { days, daysBetween } from '../../shared/dates.ts';
 import { speakerLabel, speakerOf } from '../../shared/speech.ts';
 import { entityClass, plainText, type EntityKind, type EntityMention } from '../../shared/entities.ts';
-import type { GameContent, Portrait, SaveState } from '../../shared/types.ts';
+import type { GameContent, Portrait, SaveState, TransitionDef } from '../../shared/types.ts';
 
 /** Состояние → строки. Всё, что попадает на экран, сначала становится строками знаков. */
 
@@ -185,6 +185,18 @@ function entitySpans(entry: StreamEntry, focus: EntityMention | null): Span[] {
     byText.set(key, span);
   }
   return [...byText.values()];
+}
+
+/**
+ * Текст карточки перехода ([[14-переходы-и-даты-тз]], «Исполнение и экран»).
+ *
+ * Три строки и ни одной лишней: подпись монтажной связи, дата, место. Всё
+ * берётся только из файла перехода — в этом и смысл замены автоматической
+ * карточки авторской. Рамку, печать и ожидание `Enter` рисует тот же компонент,
+ * что титр: второго визуального стиля у полноэкранного кадра нет.
+ */
+export function transitionCard(def: TransitionDef): string {
+  return [def.timeLabel, def.date, def.location].filter((line) => line != null && line !== '').join('\n');
 }
 
 /**

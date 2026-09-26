@@ -13,6 +13,8 @@ import type {
   Node,
   ReferenceDef,
   RendererDef,
+  StageDef,
+  TransitionDef,
   WordDef,
 } from '../../shared/types.ts';
 
@@ -325,6 +327,46 @@ export function loadContent(): GameContent {
     }
   }
 
+  /*
+   * Карточки перехода ([[14-переходы-и-даты-тз]]). Поля читаются как есть,
+   * без проверок: чего не хватает и что не разбирается — дело валидатора,
+   * он покажет весь список сразу и с адресами. Сборка падает только там, где
+   * продолжать буквально нечем.
+   */
+  const transitions: Record<string, TransitionDef> = {};
+  for (const p of parsed.values()) {
+    if (p.raw.type !== 'transition') continue;
+    const node = docs[p.docId]?.nodes[0];
+    // Цель — единственный безымянный маршрут тела. Их может не быть или быть
+    // два: и то, и другое поймает правило `transitions`.
+    const route = node?.options.find((o) => o.label === '' && o.verb === null);
+
+    transitions[docs[p.docId]!.id] = {
+      id: docs[p.docId]!.id,
+      docId: p.docId,
+      stage: p.raw.fm.stage == null ? '' : String(p.raw.fm.stage).trim(),
+      date: p.date ?? '',
+      location: p.raw.fm.location == null ? '' : String(p.raw.fm.location).trim(),
+      timeLabel: p.raw.fm.timeLabel == null ? null : String(p.raw.fm.timeLabel).trim(),
+      target: route?.target ?? '',
+    };
+  }
+
+  /*
+   * Срезы мира. Набор задают сами переходы: срез существует тогда, когда в него
+   * есть чем войти. Дата у среза одна — расхождение ловит валидатор, здесь
+   * берётся первая по порядку файлов.
+   */
+  const stages: Record<string, StageDef[]> = {};
+  for (const def of Object.values(transitions)) {
+    const episode = episodeOf(def.docId);
+    if (episode == null || def.stage === '') continue;
+    const list = (stages[episode] ??= []);
+    const found = list.find((s) => s.stage === def.stage);
+    if (found) found.transitions.push(def.id);
+    else list.push({ stage: def.stage, date: def.date, transitions: [def.id] });
+  }
+
   const renderers: Record<string, RendererDef> = {};
   for (const [id, raw] of Object.entries(strObject(game.renderers))) {
     renderers[id] = parseRenderer(gameFile, id, raw);
@@ -341,6 +383,8 @@ export function loadContent(): GameContent {
     words,
     documents,
     reference,
+    transitions,
+    stages,
     nodes,
     docs,
   };
