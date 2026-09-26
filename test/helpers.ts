@@ -23,6 +23,8 @@ export function node(addr: string, patch: Partial<Node> = {}): Node {
   return {
     id: addr.slice(addr.indexOf('#') + 1),
     addr,
+    file: `/content/${addr.slice(0, addr.indexOf('#'))}.md`,
+    part: 'own',
     date: null,
     line: 1,
     attrs: attrs(),

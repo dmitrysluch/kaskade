@@ -116,11 +116,15 @@ test('упомянутое слово без карточки находится
 });
 
 test('блок options, продублированный по узлам, находится', () => {
+  const file = '/content/episodes/p/rooms/r.md';
   const room = doc('episodes/p/rooms/r', {
     type: 'room',
     exits: ['x'],
     nodes: [node('episodes/p/rooms/r#'), node('episodes/p/rooms/r#осмотреться')],
-    optionBlocks: [11, 26],
+    optionBlocks: [
+      { file, line: 11 },
+      { file, line: 26 },
+    ],
   });
   const game = content({ episodes: [episode('p')], docs: { [room.docId]: room } });
 

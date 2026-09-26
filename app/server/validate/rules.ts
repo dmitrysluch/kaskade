@@ -38,6 +38,16 @@ function docOfNode(content: GameContent, node: Node): Doc {
   return content.docs[node.addr.slice(0, node.addr.lastIndexOf('#'))]!;
 }
 
+/**
+ * Где ругаться про узел: файл берём у самого узла, а не у заметки.
+ *
+ * У собранной комнаты адрес логический, а текст лежит в одном из двух файлов —
+ * общей части или версии. Автору нужен тот, где он это писал.
+ */
+function where(node: Node): { file: string; line: number } {
+  return { file: node.file, line: node.line };
+}
+
 function allNodes(content: GameContent): Node[] {
   return Object.values(content.nodes);
 }
@@ -85,8 +95,7 @@ const brokenGraph: Rule = {
         found.push({
           rule: 'graph',
           severity: 'error',
-          file: doc.path,
-          line: node.line,
+          ...where(node),
           message: `в узел "${node.id || '(вступление)'}" нет ни одного входа`,
         });
       }
@@ -94,8 +103,7 @@ const brokenGraph: Rule = {
         found.push({
           rule: 'graph',
           severity: 'error',
-          file: doc.path,
-          line: node.line,
+          ...where(node),
           message: `из узла "${node.id || '(вступление)'}" некуда идти — нужен переход, генератор или узел "конец"`,
         });
       }
@@ -130,8 +138,7 @@ const missingWordCard: Rule = {
           found.push({
             rule: 'word-card',
             severity: 'error',
-            file: doc.path,
-            line: node.line,
+            ...where(node),
             message: `упомянуто "${name}", но нет ни карточки words/${name}.md, ни предмета с таким id`,
           });
         }
@@ -191,8 +198,7 @@ const verbsDeclared: Rule = {
           found.push({
             rule: 'verbs',
             severity: 'warn',
-            file: doc.path,
-            line: node.line,
+            ...where(node),
             message: `глагол "${verb}" не объявлен в verbs эпизода "${episode.id}"`,
           });
         }
@@ -221,8 +227,7 @@ const verbsDeclared: Rule = {
             found.push({
               rule: 'verbs',
               severity: 'warn',
-              file: doc.path,
-              line: node.line,
+              ...where(node),
               message: `глагол предмета "${node.id}" не объявлен ни в verbs, ни в itemVerbs эпизода "${episode.id}"`,
             });
           }
@@ -343,17 +348,27 @@ const roomScopedOptions: Rule = {
   run(content) {
     const found: Finding[] = [];
     for (const doc of Object.values(content.docs)) {
-      // Генераторы — свойство комнаты, а не узла: объявляются один раз и действуют
-      // везде. Два блока в одной заметке — это два места для одной правки.
-      if (doc.optionBlocks.length <= 1) continue;
+      /*
+       * Генераторы — свойство комнаты, а не узла: объявляются один раз
+       * и действуют везде. Два блока в одном файле — это два места для одной
+       * правки. Считаем по файлу, а не по заметке: у собранной комнаты блоков
+       * законно два — общий и версии, — и версия общий заменяет целиком.
+       */
+      const byFile = new Map<string, number[]>();
+      for (const block of doc.optionBlocks) {
+        byFile.set(block.file, [...(byFile.get(block.file) ?? []), block.line]);
+      }
 
-      found.push({
-        rule: 'options-scope',
-        severity: 'error',
-        file: doc.path,
-        line: doc.optionBlocks[1]!,
-        message: `блок options объявлен ${doc.optionBlocks.length} раза; он свойство комнаты — достаточно одного на заметку`,
-      });
+      for (const [file, lines] of byFile) {
+        if (lines.length <= 1) continue;
+        found.push({
+          rule: 'options-scope',
+          severity: 'error',
+          file,
+          line: lines[1]!,
+          message: `блок options объявлен ${lines.length} раза; он свойство комнаты — достаточно одного на файл`,
+        });
+      }
     }
     return found;
   },
@@ -374,8 +389,7 @@ const interpolationResolves: Rule = {
           found.push({
             rule: 'interpolation',
             severity: 'error',
-            file: doc.path,
-            line: node.line,
+            ...where(node),
             message: `подстановка {{${flag}.at}}: флаг "${flag}" нигде не ставится, дате взяться неоткуда`,
           });
         }
@@ -415,8 +429,7 @@ const dialogueTurns: Rule = {
           found.push({
             rule: 'dialogue',
             severity: 'warn',
-            file: doc.path,
-            line: node.line,
+            ...where(node),
             message: `${steps} узла подряд без хода игрока — диалог вываливается блоком`,
           });
         }
@@ -464,8 +477,7 @@ const splashes: Rule = {
           found.push({
             rule: 'splash',
             severity: 'warn',
-            file: doc.path,
-            line: node.line,
+            ...where(node),
             message: character
               ? `у "${who}" нет portrait.txt — сплэш будет пропущен`
               : `сплэш ссылается на "${who}", которого нет в characters/ — будет пропущен`,
@@ -478,8 +490,7 @@ const splashes: Rule = {
             found.push({
               rule: 'splash',
               severity: 'error',
-              file: doc.path,
-              line: node.line,
+              ...where(node),
               message:
                 `сплэш "${who}" ${portrait.width}×${portrait.height} не влезает в кадр ` +
                 `(потолок ${SPLASH_COLS}×${SPLASH_ROWS} пикселей)`,
@@ -766,8 +777,7 @@ const dates: Rule = {
             found.push({
               rule: 'dates',
               severity: 'error',
-              file: doc.path,
-              line: node.line,
+              ...where(node),
               message: `срок "${name}" не объявлен в dates эпизода`,
             });
           }
@@ -775,8 +785,7 @@ const dates: Rule = {
             found.push({
               rule: 'dates',
               severity: 'error',
-              file: doc.path,
-              line: node.line,
+              ...where(node),
               message: `срок "${name}": "${at}" не разбирается как дата`,
             });
           }
@@ -857,8 +866,7 @@ const hubExit: Rule = {
         found.push({
           rule: 'hub',
           severity: 'warn',
-          file: doc.path,
-          line: node.line,
+          ...where(node),
           message:
             `"${o.label}" уводит из хаба без возврата, а тем с once осталось ${topics.length} — ` +
             'стоит пометить advance',
@@ -885,8 +893,7 @@ const pages: Rule = {
     for (const doc of Object.values(content.docs)) {
       const paged = doc.nodes.filter((n) => n.attrs.page != null);
       const at = (node: Node): Omit<Finding, 'rule' | 'severity' | 'message'> => ({
-        file: doc.path,
-        line: node.line,
+        ...where(node),
       });
 
       for (const node of paged) {
@@ -1056,8 +1063,7 @@ const speakers: Rule = {
               found.push({
                 rule: 'speakers',
                 severity: 'error',
-                file: doc.path,
-                line: node.line,
+                ...where(node),
                 message: `реплика без метки: «${said.text.slice(0, 32)}…» — у устной реплики метка обязательна, включая Марго`,
               });
             }
@@ -1213,8 +1219,7 @@ const mentions: Rule = {
         found.push({
           rule: 'mentions',
           severity: 'error',
-          file: doc.path,
-          line: node.line,
+          ...where(node),
           message: `упоминание [[${mention.id}]] не разрешается ни в слово «Дела», ни в предмет, ни в термин справочника`,
         });
       }

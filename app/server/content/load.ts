@@ -243,6 +243,8 @@ export function loadContent(): GameContent {
     const date = p.date;
 
     const built: Node[] = p.raw.nodes.map((node) => {
+      // Пока источник один, происхождение у узла всегда «свой файл». Сборка
+      // комнат из общей части и версии появится вместе с виртуальными адресами.
       const exits = [...p.exits, ...node.attrs.exits];
       const items = [...p.items, ...node.attrs.items];
       const { options, pending, generators } = expandNode(
@@ -257,6 +259,8 @@ export function loadContent(): GameContent {
       return {
         id: node.id,
         addr: `${p.docId}#${node.id}`,
+        file: p.raw.path,
+        part: 'own',
         date,
         line: node.line,
         attrs: node.attrs,
@@ -287,7 +291,9 @@ export function loadContent(): GameContent {
       exits: p.exits,
       items: p.items,
       inHand: p.info.inHand,
-      optionBlocks: p.raw.nodes.filter((n) => n.generators.length > 0).map((n) => n.generators[0]!.line),
+      optionBlocks: p.raw.nodes
+        .filter((n) => n.generators.length > 0)
+        .map((n) => ({ file: p.raw.path, line: n.generators[0]!.line })),
     };
 
     const intro = built[0]?.text ?? '';

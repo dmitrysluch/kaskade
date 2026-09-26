@@ -1,4 +1,5 @@
 import { plainText, resolveEntities, type EntityKind, type EntityMention } from '../../shared/entities.ts';
+import { isStarred } from '../../shared/rooms.ts';
 import { said, voiceOf } from '../../shared/speech.ts';
 import type { GameContent, Node, NodeAddr, Option, SaveState } from '../../shared/types.ts';
 
@@ -139,7 +140,19 @@ export function interpolate(text: string, save: SaveState): string {
   return text.replace(INTERPOLATION, (_, name: string) => save.flags[name]?.at ?? '—');
 }
 
+/**
+ * Узел по адресу.
+ *
+ * Бросает на адресе, который ещё ждёт среза (`…:*#узел`): такого узла в карте
+ * нет и быть не может, и вернуть `undefined` значило бы молча притвориться,
+ * что узла не существует. Разница огромна: «нет узла» прячет команду из списка
+ * и рвёт ребро графа, а «срез не подставлен» — программная ошибка, которую
+ * надо видеть сразу. Подставляет срез `resolveTarget`.
+ */
 export function nodeAt(content: GameContent, addr: string): Node | undefined {
+  if (isStarred(addr)) {
+    throw new Error(`адрес ${addr} не разрешён: срез подставляется resolveTarget, а не читается напрямую`);
+  }
   return content.nodes[addr];
 }
 
