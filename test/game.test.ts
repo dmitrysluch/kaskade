@@ -69,38 +69,10 @@ test('лицо и запись стоят на одном узле: это ли�
   assert.ok(card.attrs.tag.includes('splash:margo'));
 });
 
-test('позвонить нет, пока телефон не взят, — и это не флаг, а механика', () => {
-  const withPhone = 'episodes/prolog/rooms/06-corridor#';
-  const before = at(withPhone);
-  assert.equal(
-    labels(before).some((l) => l.startsWith('позвонить')),
-    false,
-  );
-  assert.ok(labels(before).includes('взять телефон'));
-
-  const taken = enter(game, before, 'episodes/prolog/items/06-phone#взять', false);
-  assert.ok(taken.save.inventory.includes('06-phone'));
-  assert.ok(labels(taken.save).includes('позвонить'));
-
-  // Позиция не сдвинулась: предмет отвечает, но никуда не ведёт.
-  assert.equal(taken.save.episodeState.at, withPhone);
-});
-
 test('позвонить не попадает в строку подсказок никогда', () => {
   const episode = game.episodes[0]!;
   assert.equal(episode.verbs.includes('позвонить'), false);
   assert.ok(episode.itemVerbs.includes('позвонить'));
-});
-
-test('once не даёт позвонить дважды', () => {
-  const withPhone = { ...at('episodes/prolog/rooms/06-dean#'), inventory: ['06-phone'] };
-  const called = enter(game, withPhone, 'episodes/prolog/items/06-phone#позвонить', false);
-
-  assert.equal(called.save.flags['prolog.phoned']?.value, true);
-  assert.equal(
-    labels(called.save).some((l) => l.startsWith('позвонить')),
-    false,
-  );
 });
 
 test('история копится в пределах сцены, а переход на новое место её начинает заново', () => {
@@ -121,32 +93,30 @@ test('история копится в пределах сцены, а пере�
 
 test('дата берётся из заметки, где игрок стоит, а не из сейва', () => {
   const start = { ...freshSave(game), started: true };
-  const scene = enter(game, start, 'episodes/prolog/scenes/06-signature#');
-  assert.equal(dateAt(game, scene.save), '11.09.2026');
+  const scene = enter(game, start, 'episodes/prolog/scenes/02-neukoelln#');
+  assert.equal(dateAt(game, scene.save), '08.06.2025');
 
   // У комнаты своя дата, и статус показывает её же.
-  const room = enter(game, scene.save, 'episodes/prolog/rooms/06-dean#');
-  assert.equal(dateAt(game, room.save), '11.09.2026');
+  const room = enter(game, scene.save, 'episodes/prolog/rooms/03-office#');
+  assert.equal(dateAt(game, room.save), '04.07.2025');
 
   // Дата в сейве не хранится вовсе: показывать нечего, кроме как из заметки.
   assert.equal('date' in room.save.episodeState, false);
 });
 
 test('флаг помнит дату сцены, в которой поставлен', () => {
-  const inRoom = {
-    ...at('episodes/prolog/rooms/06-corridor#'),
-    inventory: ['06-phone'],
-    episodeState: { ...at('episodes/prolog/rooms/06-corridor#').episodeState, date: '11.09.2026' },
-  };
-  const called = enter(game, inRoom, 'episodes/prolog/items/06-phone#позвонить', false);
+  // Узел допроса ставит флаг; дата у него — дата заметки, а не системные часы.
+  const scene = 'episodes/prolog/scenes/02-neukoelln';
+  const setter = game.docs[scene]!.nodes.find((n) => n.attrs.set.length > 0)!;
+  const called = enter(game, at(`${scene}#`), setter.addr);
 
-  const flag = called.save.flags['prolog.phoned']!;
+  const flag = called.save.flags[setter.attrs.set[0]!]!;
   assert.equal(flag.value, true);
-  // Дата берётся из сцены, в которой игрок стоит, а не из системных часов:
-  // у предмета своей даты нет и быть не должно.
-  assert.equal(flag.at, '11.09.2026');
-
-  assert.equal(interpolate('дата: {{prolog.phoned.at}}', called.save), 'дата: 11.09.2026');
+  assert.equal(flag.at, '08.06.2025');
+  assert.equal(
+    interpolate(`дата: {{${setter.attrs.set[0]!}.at}}`, called.save),
+    'дата: 08.06.2025',
+  );
 });
 
 test('game.yaml — витрина: настройки эпизода живут только в episode.yaml', () => {
@@ -259,12 +229,15 @@ test('пролог проходится до конца, и на каждом ш
       seen.add(chosen.label);
     }
 
-    // Тот же переключатель режима, что в оболочке: осмотр многостраничной вещи
-    // открывает её, `закрыть` возвращает в место.
+    // Тот же переключатель режима, что в оболочке: книгу открывает **цель**,
+    // а не глагол, — и авторское «прочитать протокол» открывает её так же,
+    // как осмотр из комнаты.
+    const page = chosen.target ? full.nodes[chosen.target] : undefined;
+    const item = chosen.target ? full.docs[sceneOf(chosen.target)] : undefined;
     reading =
       chosen.verb === CLOSE ? null
-      : chosen.verb === EXAMINE && chosen.object && pagesOf(full, chosen.object).length > 1 ?
-        chosen.object
+      : page?.attrs.page != null && item?.type === 'item' && pagesOf(full, item.docId, save).length > 1 ?
+        item.docId
       : reading;
 
     // У `закрыть` цели нет: она ничего не отыгрывает, только гасит режим.
@@ -389,8 +362,8 @@ test('срок объявлен в episode.yaml и тикает сам, без �
     return statusText(dateAt(game, save), terms(game, save));
   };
   assert.equal(seen('episodes/prolog/rooms/00-room#'), '12.10.2024 · BLUE CARD 810 дней');
-  assert.equal(seen('episodes/prolog/scenes/04-abh#'), '12.05.2026 · BLUE CARD 233 дня');
-  assert.equal(seen('episodes/prolog/rooms/06-dean#'), '11.09.2026 · BLUE CARD 111 дней');
+  assert.equal(seen('episodes/prolog/scenes/02-neukoelln#'), '08.06.2025 · BLUE CARD 571 день');
+  assert.equal(seen('episodes/prolog/rooms/03-office#'), '04.07.2025 · BLUE CARD 545 дней');
 
   // Срок, который не назначен, не показывается вовсе.
   const noCard: SaveState = { ...at('episodes/prolog/rooms/00-room#'), dates: {} };
@@ -584,16 +557,20 @@ test('пока Алерс в аудитории, выход в коридор п
   assert.equal(идти(пусто)[0]!.target, 'episodes/prolog/rooms/01-corridor#');
 });
 
-test('оклик у двери звучит только до разговора, потом дверь просто дверь', () => {
-  const сцена = 'episodes/prolog/scenes/01-after-lecture#';
+test('у двери разговор короткий, но встречу закрывает так же', () => {
+  // Кто не подошёл, получает свой вход: один вопрос, один ответ и уход.
+  // Проверяем, что короткая ветка тоже ставит флаг конца — иначе аудитория
+  // осталась бы навсегда «после лекции», с Алерсом у доски.
   const кДвери = 'episodes/prolog/scenes/01-after-lecture#к-двери';
+  const answers = game.nodes[кДвери]!.options.filter((o) => o.label !== '');
+  assert.equal(answers.length, 2, 'у двери ровно два ответа');
 
-  // Разговора не было: маршрут доводит до оклика.
-  assert.equal(enter(game, at(кДвери), кДвери).save.episodeState.at, `${сцена}оклик`);
-
-  // Вступление ставит флаг; теперь тот же узел проваливается прямо в коридор.
-  const started = enter(game, at(сцена), сцена).save;
-  assert.equal(enter(game, started, кДвери).save.episodeState.at, 'episodes/prolog/rooms/01-corridor#');
+  for (const answer of answers) {
+    const played = enter(game, at(кДвери), answer.target!);
+    assert.equal(played.save.flags['prolog.after-lecture-done']?.value, true);
+    // И уводит из сцены наружу, в коридор: разговор у двери не возвращается.
+    assert.equal(sceneOf(played.save.episodeState.at), 'episodes/prolog/rooms/01-corridor');
+  }
 });
 
 /**
@@ -607,22 +584,42 @@ function поговорить(room: string, label: string) {
   return found[0]!.target!;
 }
 
-test('к Алерсу можно вернуться, и второй раз он не начинает сначала', () => {
+test('разговор с Алерсом одноразовый: закрыв его, аудиторию застаёшь пустой', () => {
   const target = поговорить('episodes/prolog/rooms/01-hall#после', 'поговорить с Алерсом');
 
+  // Вход один и тот же, и первым делом — знакомство.
   const first = enter(game, at(target), target);
   assert.equal(first.save.episodeState.at, 'episodes/prolog/scenes/01-after-lecture#знакомство');
 
-  const again = enter(game, first.save, target);
-  assert.equal(again.save.episodeState.at, 'episodes/prolog/scenes/01-after-lecture#хаб');
+  // Закрывает встречу `собрать вещи`: ставит флаг конца и возвращает в аудиторию,
+  // уже пустую. Второго входа в разговор из неё нет — Алерс ушёл.
+  const собраться = 'episodes/prolog/scenes/01-after-lecture#собраться';
+  const done = enter(game, at(собраться), собраться);
+  assert.equal(done.save.flags['prolog.after-lecture-done']?.value, true);
+  assert.equal(done.save.episodeState.at, 'episodes/prolog/rooms/01-hall#пусто');
+
+  const empty = game.nodes['episodes/prolog/rooms/01-hall#пусто']!;
+  assert.equal(empty.options.some((o) => o.label === 'поговорить с Алерсом'), false);
 });
 
 test('к Тоби можно вернуться, и находка второй раз не играет', () => {
-  const target = поговорить('episodes/prolog/rooms/00-room#', 'поговорить с Тоби');
+  // Комната зовёт разговор двумя командами, и они значат разное: `продолжить
+  // читать` заходит через книжную вклейку, `говорить с тоби` — прямо в хаб.
+  const читать = поговорить('episodes/prolog/rooms/00-room#', 'продолжить читать');
+  const говорить = поговорить('episodes/prolog/rooms/00-room#', 'говорить с тоби');
 
-  const first = enter(game, at(target), target);
+  const first = enter(game, at(читать), читать);
   assert.equal(first.save.episodeState.at, 'episodes/prolog/scenes/00-talk#находка');
 
-  const again = enter(game, first.save, target);
-  assert.equal(again.save.episodeState.at, 'episodes/prolog/scenes/00-talk#хаб');
+  // Второй раз вклейка не играет: на ней условие `!prolog.talk-started`, и маршрут
+  // проваливается на следующий. Флаг ставит сам разговор; здесь важно не где,
+  // а что вклейка после этого не повторяется.
+  const started = {
+    ...first.save,
+    flags: { ...first.save.flags, 'prolog.talk-started': { value: true, at: null } },
+  };
+  assert.equal(enter(game, started, читать).save.episodeState.at, 'episodes/prolog/scenes/00-talk#хаб');
+
+  // А эта команда ведёт в хаб с первого раза.
+  assert.equal(enter(game, at(говорить), говорить).save.episodeState.at, 'episodes/prolog/scenes/00-talk#хаб');
 });

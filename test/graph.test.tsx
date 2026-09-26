@@ -158,10 +158,17 @@ test('на настоящем прологе карта собирается и 
   const entry = real.episodes[0]!.entry;
   assert.equal(map.boxes.find((b) => entry.startsWith(`${b.docId}#`))!.layer, 0);
 
-  // И пролог обязан проходиться от входа до последнего титра.
-  const last = Object.keys(real.nodes).filter((a) => a.includes('07-titles'))[0]!;
-  const path = shortestPath(real, entry, last);
-  assert.ok(path && path.length > 20, `путь до финала — ${path?.length ?? 0} шагов`);
+  // И пролог обязан проходиться от входа до конца написанного. Конец ищем
+  // по графу, а не по имени файла: последнюю сцену автор переписывает чаще всех.
+  const ends = Object.keys(real.nodes).filter((a) => a.endsWith('#конец'));
+  assert.ok(ends.length > 0, 'в прологе нет ни одного узла «конец»');
+
+  const paths = ends.map((end) => shortestPath(real, entry, end)).filter(Boolean);
+  assert.ok(paths.length > 0, 'ни до одного конца пролога не доходит путь');
+  assert.ok(
+    paths.some((p) => p!.length > 20),
+    `самый длинный путь до конца — ${Math.max(...paths.map((p) => p!.length))} шагов`,
+  );
 });
 
 test('карта рисуется: коробка на заметку, связь на переход', () => {

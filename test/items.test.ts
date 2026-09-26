@@ -204,3 +204,19 @@ test('условие, которое узел сам и выполняет, ус
 
   assert.deepEqual(RULES.find((r) => r.id === 'routes')!.run(g), []);
 });
+
+test('once у действия предмета: второй раз его уже не предлагают', () => {
+  // Уехало сюда из `game.test.ts`: там оно держалось за телефон из шестой сцены,
+  // а сцена уехала в legacy. Механика от контента не зависит.
+  const g = game();
+  const phone = g.docs[PHONE]!;
+  const once = { ...phone, nodes: phone.nodes.map((n) => (n.id === 'позвонить' ? { ...n, attrs: attrs({ once: true }) } : n)) };
+  const world = { ...g, docs: { ...g.docs, [PHONE]: once }, nodes: Object.fromEntries(once.nodes.map((n) => [n.addr, n])) };
+
+  const before = save();
+  assert.deepEqual(itemActions(world, before, PHONE).map((o) => o.label), ['позвонить телефон']);
+
+  // Узел отыгран — действие исчезло: `once` считается по адресу узла.
+  const after = { ...before, episodeState: { ...before.episodeState, used: [`${PHONE}#позвонить`] } };
+  assert.deepEqual(itemActions(world, after, PHONE).map((o) => o.label), [] as string[]);
+});
