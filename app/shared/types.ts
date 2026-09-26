@@ -10,7 +10,7 @@
  */
 export type NodeAddr = string;
 
-export type DocType = 'scene' | 'room' | 'item' | 'word' | 'doc' | 'person' | 'reference' | 'transition';
+export type DocType = 'scene' | 'room' | 'item' | 'word' | 'person' | 'reference' | 'transition';
 
 /** Зарезервированные ключи атрибутов узла (07-оболочка-тз, «Узлы, атрибуты, переходы»). */
 export interface Attrs {
@@ -360,6 +360,12 @@ export interface ReferenceDef {
 export interface TransitionDef {
   id: string;
   docId: string;
+  /**
+   * Эпизод-владелец: переход лежит в его папке и может вести только в его
+   * комнату или сцену. При подтверждении он же становится `activeEpisode`
+   * ([[14-переходы-и-даты-тз]], «Новый файл»).
+   */
+  episode: string;
   /** Срез мира, который переход устанавливает. Строка: `00`, `03a`, `05`. */
   stage: string;
   /** Календарная дата, `ДД.ММ.ГГГГ`. С неё считается статус и штампы флагов. */
@@ -380,14 +386,6 @@ export interface StageDef {
   transitions: string[];
 }
 
-export interface DocumentDef {
-  id: string;
-  label: string;
-  grif: string | null;
-  date: string | null;
-  text: string;
-}
-
 export interface GameContent {
   title: string;
   saveVersion: number;
@@ -395,7 +393,6 @@ export interface GameContent {
   renderers: Record<string, RendererDef>;
   characters: Record<string, CharacterDef>;
   words: Record<string, WordDef>;
-  documents: Record<string, DocumentDef>;
   /**
    * Справочник: id статьи → статья. Живёт отдельно от «Дела» намеренно —
    * двадцать аббревиатур в списке улик, и список перестаёт читаться как
@@ -462,9 +459,9 @@ export interface SaveState {
   itemStates: Record<string, string>;
   /**
    * Сроки: имя → дата. Начальные приходят из `episode.yaml`, дальше их двигают узлы.
-   * Текущей даты здесь нет и быть не должно — она всегда берётся из `date:` заметки,
-   * в которой игрок стоит (`dateAt`), иначе заметка без даты молча показывала бы
-   * чужое время.
+   * Текущей даты здесь нет и быть не должно — она приходит из `currentDate`,
+   * установленной последним подтверждённым переходом, а не из заметки, в которой
+   * стоит игрок.
    */
   dates: Record<string, string>;
   /** Входили ли уже в стартовый узел: иначе при перезагрузке он сыграет дважды. */
@@ -478,13 +475,15 @@ export interface SaveState {
    * не имеют. `null` в полях значит «контекст ещё не установлен»: до первой
    * карточки в игре допустим только неигровой пролог интерфейса.
    */
-  context: { stage: string | null; date: string | null; transition: string | null };
+  activeStage: string | null;
+  currentDate: string | null;
+  lastTransitionId: string | null;
   /**
    * Где игрок остановился в каждом помещении: ключ `roomStateKey`, значение —
    * id узла. Состояние принадлежит срезу, а не файлу: новый срез получает своё,
    * и Тоби, ушедший в субботу, не возвращается при следующем входе.
    */
-  rooms: Record<string, string>;
+  roomStates: Record<string, string>;
   /**
    * Незаконченное физическое ожидание — не более одного за раз. Хранится
    * прожитое активное время, а не момент начала: настенные часы в счёт не идут,

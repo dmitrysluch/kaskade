@@ -32,8 +32,10 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     hinted: true,
     started: true,
     wait: null,
-    context: { stage: '00', date: '12.10.2024', transition: '00-start' },
-    rooms: {},
+    activeStage: '00',
+    currentDate: '12.10.2024',
+    lastTransitionId: '00-start',
+    roomStates: {},
     episodeState: { episode: 'p', at: `${DORM}#`, used: [] },
     ...patch,
   };
@@ -86,7 +88,7 @@ test('сохранённая нода выигрывает у вступлени
   const g = game();
   // Игрок дошёл до состояния «одна» — проход на нём остановился, и это запомнилось.
   const stayed = enter(g, save(), `${DORM}#один`).save;
-  assert.equal(stayed.rooms[roomStateKey('p', '00', 'tu.dorm-room')], 'один');
+  assert.equal(stayed.roomStates[roomStateKey('p', '00', 'tu.dorm-room')], 'один');
 
   // Возврат в помещение без якоря приводит туда же, а не в вступление с Тоби.
   assert.equal(roomEntry(g, stayed, DORM), `${DORM}#один`);
@@ -98,7 +100,7 @@ test('вступление-диспетчер выигрывает у сохра
   // состояние запомнилось.
   const first = enter(g, save({ episodeState: { episode: 'p', at: `${HALL}#`, used: [] } }), `${HALL}#`);
   assert.equal(first.save.episodeState.at, `${HALL}#пусто`);
-  assert.equal(first.save.rooms[roomStateKey('p', '01', 'tu.h1012')], 'пусто');
+  assert.equal(first.save.roomStates[roomStateKey('p', '01', 'tu.h1012')], 'пусто');
 
   // Книга появилась вне комнаты. Возврат обязан снова пройти через диспетчер,
   // иначе реакция на неё не сработает никогда.
@@ -113,14 +115,14 @@ test('`entry:` работает, когда вступления нет и со�
     ...g,
     docs: { ...g.docs, [HALL]: { ...g.docs[HALL]!, nodes: g.docs[HALL]!.nodes.filter((n) => n.id !== '') } },
   };
-  assert.equal(roomEntry(noIntro, save({ context: { stage: '01', date: null, transition: null } }), HALL), `${HALL}#до`);
+  assert.equal(roomEntry(noIntro, save({ activeStage: '01' }), HALL), `${HALL}#до`);
 });
 
 test('проходной узел состоянием не становится: коробка не появляется вновь', () => {
   const g = game();
   // `#коробка` помечена `once` — вручение не место, куда возвращаются.
   const given = enter(g, save(), `${DORM}#коробка`).save;
-  assert.equal(given.rooms[roomStateKey('p', '00', 'tu.dorm-room')], undefined);
+  assert.equal(given.roomStates[roomStateKey('p', '00', 'tu.dorm-room')], undefined);
   assert.deepEqual(given.inventory, ['коробка']);
   assert.equal(roomEntry(g, given, DORM), `${DORM}#`);
 });
@@ -138,9 +140,9 @@ test('состояние принадлежит срезу: новый срез 
   const stayed = enter(g, save(), `${DORM}#один`).save;
 
   // Тот же persistent в другом срезе — другое состояние и другой ключ.
-  assert.equal(stayed.rooms[roomStateKey('p', '04', 'tu.dorm-room')], undefined);
+  assert.equal(stayed.roomStates[roomStateKey('p', '04', 'tu.dorm-room')], undefined);
   assert.equal(
-    roomEntry(g, { ...stayed, context: { ...stayed.context, stage: '04' } }, virtDocId('p', 'tu.dorm-room', '04')),
+    roomEntry(g, { ...stayed, activeStage: '04' }, virtDocId('p', 'tu.dorm-room', '04')),
     null,
     'в четвёртом срезе комната не собрана — входа нет',
   );
@@ -152,5 +154,5 @@ test('звёздочка в цели разворачивается активн
   assert.equal(resolveTarget(g, save(), starred), `${DORM}#один`);
 
   // Без контекста разворачивать нечем: цели нет, и команда не показывается.
-  assert.equal(resolveTarget(g, save({ context: { stage: null, date: null, transition: null } }), starred), null);
+  assert.equal(resolveTarget(g, save({ activeStage: null }), starred), null);
 });

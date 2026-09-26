@@ -31,8 +31,10 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     hinted: true,
     started: true,
     wait: null,
-    context: { stage: null, date: null, transition: null },
-    rooms: {},
+    activeStage: null,
+    currentDate: null,
+    lastTransitionId: null,
+    roomStates: {},
     episodeState: { episode: 'p', at: `${ROOM}#`, used: [] },
     ...patch,
   };
@@ -41,6 +43,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
 const MONDAY: TransitionDef = {
   id: '01-monday',
   docId: CARD,
+  episode: 'p',
   stage: '01',
   date: '14.10.2024',
   location: 'TU BERLIN · АУДИТОРИЯ H 1012',
@@ -88,7 +91,9 @@ test('игрок останавливается на карточке, и цел
   // В поток ничего не попало, предмет цели не выдан, контекст не тронут.
   assert.deepEqual(r.entries, []);
   assert.deepEqual(r.save.inventory, []);
-  assert.deepEqual(r.save.context, { stage: null, date: null, transition: null });
+  assert.equal(r.save.activeStage, null);
+  assert.equal(r.save.currentDate, null);
+  assert.equal(r.save.lastTransitionId, null);
 });
 
 test('подтверждение ставит контекст и играет цель одной операцией', () => {
@@ -96,7 +101,11 @@ test('подтверждение ставит контекст и играет �
   const onCard = enter(g, save(), `${CARD}#`).save;
   const done = confirmTransition(g, onCard, CARD);
 
-  assert.deepEqual(done.save.context, { stage: '01', date: '14.10.2024', transition: '01-monday' });
+  assert.equal(done.save.activeStage, '01');
+  assert.equal(done.save.currentDate, '14.10.2024');
+  assert.equal(done.save.lastTransitionId, '01-monday');
+  // Эпизодом владеет переход: он же становится активным ([[14-переходы-и-даты-тз]]).
+  assert.equal(done.save.episodeState.episode, 'p');
   assert.equal(done.save.episodeState.at, `${ROOM}#утро`);
   // Цель отыграна ровно один раз: её текст в потоке, её `give` в инвентаре.
   assert.ok(done.entries.some((e) => e.text.includes('Аудитория')));
@@ -138,7 +147,7 @@ test('перезагрузка на карточке показывает кар
 
   assert.equal(g.docs[onCard.episodeState.at.slice(0, onCard.episodeState.at.indexOf('#'))]!.type, 'transition');
   assert.deepEqual(onCard.inventory, []);
-  assert.equal(onCard.context.date, null);
+  assert.equal(onCard.currentDate, null);
 });
 
 test('карточка появляется и при прежних срезе и дате', () => {
@@ -168,7 +177,7 @@ test('карточка появляется и при прежних срезе 
   });
 
   const after = confirmTransition(world, enter(world, save(), `${CARD}#`).save, CARD).save;
-  assert.equal(after.context.date, MONDAY.date);
+  assert.equal(after.currentDate, MONDAY.date);
 
   const again = enter(world, after, `${EVENING}#`);
   // Игрок снова стоит на карточке, хотя срез и дата те же.

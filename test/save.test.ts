@@ -23,8 +23,10 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     hinted: true,
     started: true,
     wait: null,
-    context: { stage: null, date: null, transition: null },
-    rooms: {},
+    activeStage: null,
+    currentDate: null,
+    lastTransitionId: null,
+    roomStates: {},
     episodeState: { episode: 'prolog', at: 'episodes/prolog/rooms/деканат#', used: [] },
     ...patch,
   };

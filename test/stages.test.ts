@@ -22,6 +22,7 @@ function card(id: string, stage: string, target: string): TransitionDef {
   return {
     id,
     docId: `episodes/p/transitions/${id}`,
+    episode: 'p',
     stage,
     date: '12.10.2024',
     location: 'место',

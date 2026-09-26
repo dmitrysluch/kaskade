@@ -42,17 +42,6 @@ test('узел без выхода находится, а «конец» — з�
   assert.match(found[0]!.message, /некуда идти/);
 });
 
-test('документ длиннее бюджета находится', () => {
-  const long = node('docs/x#', { text: 'а'.repeat(201) });
-  const game = content({
-    docs: { 'docs/x': doc('docs/x', { type: 'doc', nodes: [long] }) },
-  });
-
-  const found = run('doc-budget', game);
-  assert.equal(found.length, 1);
-  assert.match(found[0]!.message, /201 знаков/);
-});
-
 test('глагол из генератора должен быть объявлен в verbs', () => {
   const room = node('episodes/p/rooms/r#', {
     options: [option({ label: 'осмотреть доска', verb: 'осмотреть', target: 'episodes/p/items/д#осмотреть' })],

@@ -10,7 +10,6 @@ import { parseRenderer, readYaml, str, strArray, strMap } from './yaml.ts';
 import { loadCharacters } from './portrait.ts';
 import type {
   Doc,
-  DocumentDef,
   EpisodeDef,
   GameContent,
   Node,
@@ -223,6 +222,7 @@ function collectTransitions(parsed: Map<string, Parsed>, byBasename: Map<string,
     out.push({
       id: p.docId.split('/').pop()!,
       docId: p.docId,
+      episode: episodeOf(p.docId) ?? '',
       stage,
       date: p.date ?? '',
       location: p.raw.fm.location == null ? '' : String(p.raw.fm.location).trim(),
@@ -490,7 +490,6 @@ export function loadContent(): GameContent {
    * должно во что-то разрешаться, а у строки в словаре нет ни id, ни категории.
    */
   const reference: Record<string, ReferenceDef> = {};
-  const documents: Record<string, DocumentDef> = {};
 
   for (const p of parsed.values()) {
     /*
@@ -512,7 +511,13 @@ export function loadContent(): GameContent {
       const items = [...(p.items ?? []), ...node.attrs.items];
       const { options, pending, generators } = expandNode(
         ctx,
-        { path: p.raw.path, baseDocId: p.docId, selfDocId: p.docId, stage: null },
+        /*
+         * Срез для ссылок этой заметки. У сцены и предмета его нет: в какой
+         * срез они попадут, решает игра. А вот у перехода он свой: адрес
+         * `rooms-virt/tu.h1012` внутри него значит комнату **его** среза, а не
+         * старого активного ([[14-переходы-и-даты-тз]], «Новый файл»).
+         */
+        { path: p.raw.path, baseDocId: p.docId, selfDocId: p.docId, stage: p.raw.type === 'transition' ? p.stage : null },
         node,
         exits,
         items,
@@ -575,15 +580,6 @@ export function loadContent(): GameContent {
         id,
         label: p.info.label,
         category: String(p.raw.fm.category ?? 'прочее'),
-        text: intro,
-      };
-    }
-    if (p.raw.type === 'doc') {
-      documents[id] = {
-        id,
-        label: p.info.label,
-        grif: p.raw.fm['гриф'] == null ? null : String(p.raw.fm['гриф']),
-        date: p.raw.fm['дата'] == null ? null : String(p.raw.fm['дата']),
         text: intro,
       };
     }
@@ -681,7 +677,6 @@ export function loadContent(): GameContent {
     renderers,
     characters,
     words,
-    documents,
     reference,
     transitions,
     stages,

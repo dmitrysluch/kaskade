@@ -70,8 +70,10 @@ test('серое слово видно в каталоге и помечено �
     hinted: true,
     started: true,
     wait: null,
-    context: { stage: null, date: null, transition: null },
-    rooms: {},
+    activeStage: null,
+    currentDate: null,
+    lastTransitionId: null,
+    roomStates: {},
     episodeState: { episode: 'p', at: 'episodes/p/scenes/s#', used: [] },
   };
 
@@ -98,8 +100,10 @@ test('условия читаются так, как их пишет автор'
     hinted: true,
     started: true,
     wait: null,
-    context: { stage: null, date: null, transition: null },
-    rooms: {},
+    activeStage: null,
+    currentDate: null,
+    lastTransitionId: null,
+    roomStates: {},
     episodeState: { episode: 'p', at: 'x#', used: [] },
   };
 

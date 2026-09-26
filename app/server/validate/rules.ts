@@ -148,30 +148,6 @@ const missingWordCard: Rule = {
   },
 };
 
-const documentBudget: Rule = {
-  id: 'doc-budget',
-  title: 'документ длиннее бюджета',
-  run(content) {
-    // ~200 знаков ([[05-тексты-и-документы]]): длиннее — и бумага перестаёт быть
-    // бумагой, начинается скролл внутри рамки.
-    const LIMIT = 200;
-    return Object.values(content.docs)
-      .filter((d) => d.type === 'doc')
-      .flatMap((doc) => {
-        const text = doc.nodes[0]?.text ?? '';
-        if (text.length <= LIMIT) return [];
-        return [
-          {
-            rule: 'doc-budget',
-            severity: 'error' as const,
-            file: doc.path,
-            message: `документ ${text.length} знаков при бюджете ${LIMIT} — вынести объяснение в реплику живого человека`,
-          },
-        ];
-      });
-  },
-};
-
 const verbsDeclared: Rule = {
   id: 'verbs',
   title: 'глагол используется, но не объявлен',
@@ -1413,7 +1389,6 @@ export const RULES: Rule[] = [
   hubExit,
   dates,
   missingWordCard,
-  documentBudget,
   verbsDeclared,
   deadGenerators,
   episodeGivesWord,

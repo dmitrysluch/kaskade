@@ -1088,11 +1088,18 @@ export function App() {
   // третьей команды. Строка подсказок самого терминала при этом не меняется:
   // обучение живёт в обучающем слое, а терминал с первой секунды выглядит так,
   // как будет выглядеть всегда.
-  const hint =
-    session && episode?.tutorial.hint && !manual && !menu && !session.save.hinted &&
-    session.save.episodeState.at === episode.tutorial.at
-      ? episode.tutorial.hint
-      : null;
+  //
+  // Адрес обучения — логический (`rooms-virt/tu.dorm-room:00`, 07-оболочка-тз,
+  // «episode.yaml»), и он без якоря: подсказка принадлежит комнате, а не
+  // конкретному её состоянию. Иначе она пропадала бы при первом же входе через
+  // `entry` или сохранённое состояние — там адрес узла уже другой.
+  const hint = (() => {
+    const at = episode?.tutorial.at;
+    if (!session || !episode?.tutorial.hint || manual || menu || session.save.hinted || at == null) return null;
+    const here = session.save.episodeState.at;
+    const inRoom = at.endsWith('#') ? sceneOf(here) === sceneOf(at) : here === at;
+    return inRoom ? episode.tutorial.hint : null;
+  })();
 
   const screen = (
     <div

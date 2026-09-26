@@ -30,8 +30,10 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     hinted: true,
     started: true,
     wait: null,
-    context: { stage: null, date: null, transition: null },
-    rooms: {},
+    activeStage: null,
+    currentDate: null,
+    lastTransitionId: null,
+    roomStates: {},
     episodeState: { episode: 'p', at: `${R}#`, used: [] },
     ...patch,
   };

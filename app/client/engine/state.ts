@@ -169,12 +169,12 @@ export function dateAt(content: GameContent, save: SaveState): string | null {
   // Контекст — единственный источник ([[14-переходы-и-даты-тз]], «Дата и
   // сохранение»). Пока комнаты и сцены ещё носят `date:`, он остаётся запасным:
   // фолбэк уйдёт вместе с этими полями, и валидатор их к тому времени запретит.
-  return save.context.date ?? content.nodes[save.episodeState.at]?.date ?? null;
+  return save.currentDate ?? content.nodes[save.episodeState.at]?.date ?? null;
 }
 
 /** Срез мира, в котором игрок сейчас. `null` — контекст ещё не установлен. */
 export function stageOf(save: SaveState): string | null {
-  return save.context.stage;
+  return save.activeStage;
 }
 
 /**
@@ -189,8 +189,20 @@ export function confirmTransition(content: GameContent, save: SaveState, docId: 
   const def = Object.values(content.transitions).find((t) => t.docId === docId);
   if (!def || !content.nodes[def.target]) return { save, entries: [] };
 
-  const context = { stage: def.stage, date: def.date, transition: def.id };
-  return enter(content, { ...save, context }, def.target);
+  /*
+   * Одной операцией: эпизод-владелец, срез, дата, id перехода и вход в цель.
+   * Частично подменённый контекст — прямой запрет ТЗ: игрок оказался бы в новой
+   * комнате со старой датой или в старой комнате с новой.
+   */
+  const episode = def.episode === '' ? save.episodeState.episode : def.episode;
+  const next: SaveState = {
+    ...save,
+    activeStage: def.stage,
+    currentDate: def.date,
+    lastTransitionId: def.id,
+    episodeState: { ...save.episodeState, episode },
+  };
+  return enter(content, next, def.target);
 }
 
 /**
@@ -327,7 +339,7 @@ export function roomEntry(content: GameContent, save: SaveState, docId: string):
   const persistent = persistentOfAddr(docId);
   const stage = stageOfAddr(docId);
   if (persistent != null && stage != null) {
-    const saved = save.rooms[roomStateKey(save.episodeState.episode, stage, persistent)];
+    const saved = save.roomStates[roomStateKey(save.episodeState.episode, stage, persistent)];
     const node = saved == null ? undefined : doc.nodes.find((n) => n.id === saved);
     if (node) return node.addr;
   }
@@ -350,7 +362,7 @@ export function roomEntry(content: GameContent, save: SaveState, docId: string):
 export function resolveTarget(content: GameContent, save: SaveState, target: NodeAddr | null): NodeAddr | null {
   if (target == null) return null;
 
-  const addr = isStarred(target) ? (save.context.stage == null ? null : addrIn(target, save.context.stage)) : target;
+  const addr = isStarred(target) ? (save.activeStage == null ? null : addrIn(target, save.activeStage)) : target;
   if (addr == null) return null;
 
   /*
@@ -561,8 +573,8 @@ function remember(content: GameContent, save: SaveState, node: Node): SaveState 
   if (persistent == null || stage == null) return save;
 
   const key = roomStateKey(save.episodeState.episode, stage, persistent);
-  if (save.rooms[key] === node.id) return save;
-  return { ...save, rooms: { ...save.rooms, [key]: node.id } };
+  if (save.roomStates[key] === node.id) return save;
+  return { ...save, roomStates: { ...save.roomStates, [key]: node.id } };
 }
 
 export interface EnterResult {
@@ -700,8 +712,10 @@ export function freshSave(content: GameContent): SaveState {
     started: false,
     wait: null,
     // Контекст пуст: до первой карточки перехода у игры нет ни даты, ни среза.
-    context: { stage: null, date: null, transition: null },
-    rooms: {},
+    activeStage: null,
+    currentDate: null,
+    lastTransitionId: null,
+    roomStates: {},
     episodeState: { episode: episode.id, at: episode.entry, used: [] },
   };
 }
