@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseMarkdown, ContentError } from '../app/server/content/markdown.ts';
-import { expandNode, type ExpandContext, type TargetInfo } from '../app/server/content/options.ts';
+import { docGenerators, expandNode, type ExpandContext, type TargetInfo } from '../app/server/content/options.ts';
 
 /**
  * Раскрытие генераторов — то место, где «удобно автору» превращается в «одинаково
@@ -67,9 +67,17 @@ function room(body: string) {
   return parseMarkdown('room.md', `---\nid: пультовая\ntype: room\n---\n${body}`);
 }
 
+/** База ссылок стенда: одна заметка, срез не задан — как у сцены. */
+const BASE = { path: 'room.md', baseDocId: 'rooms/пультовая', selfDocId: 'rooms/пультовая', stage: null };
+
+/** Раскрыть вступление комнаты со стандартными генераторами. */
+function expand(doc: ReturnType<typeof room>, exits: string[], items: string[]) {
+  return expandNode(ctx, BASE, doc.nodes[0]!, exits, items, docGenerators(doc, exits, items));
+}
+
 test('комната без блока options ведёт себя очевидным образом', () => {
   const doc = room('\nОписание.\n');
-  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, ['коридор'], ['доска']);
+  const { options } = expand(doc, ['коридор'], ['доска']);
 
   assert.deepEqual(
     options.map((o) => o.label),
@@ -79,7 +87,7 @@ test('комната без блока options ведёт себя очевид�
 
 test('комната — место: `идти` ведёт в неё целиком и сдвигает игрока', () => {
   const doc = room('\nОписание.\n');
-  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, ['коридор'], []);
+  const { options } = expand(doc, ['коридор'], []);
   const идти = options[0]!;
 
   assert.equal(идти.target, 'rooms/коридор#');
@@ -88,7 +96,7 @@ test('комната — место: `идти` ведёт в неё целик�
 
 test('предмет отвечает только на то, что умеет, и не двигает игрока', () => {
   const doc = room('\n```options\nосмотреть: items\nвзять: items\n```\n');
-  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], ['доска', 'телефон']);
+  const { options } = expand(doc, [], ['доска', 'телефон']);
 
   // У доски есть только `осмотреть` — `взять доску` не появляется.
   assert.deepEqual(
@@ -100,7 +108,7 @@ test('предмет отвечает только на то, что умеет,
 
 test('после глагола стоит готовая форма, а не название вещи', () => {
   const doc = room('\n```options\nосмотреть: items\nподойти: items\n```\n');
-  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], ['доска']);
+  const { options } = expand(doc, [], ['доска']);
 
   // Общая форма — из `target`, а глагол, которому нужна своя, берёт её из
   // `targets`: склонять русский язык оболочка не умеет и не пробует.
@@ -118,13 +126,13 @@ test('после глагола стоит готовая форма, а не н
 
 test('форма не написана — берётся название: падеж и так совпал', () => {
   const doc = room('\n```options\nосмотреть: items\n```\n');
-  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], ['телефон']);
+  const { options } = expand(doc, [], ['телефон']);
   assert.deepEqual(options.map((o) => o.label), ['осмотреть телефон']);
 });
 
 test('комната отдаёт предмету только то, на что он отвечает', () => {
   const doc = room('\n```options\nосмотреть: items\nпозвонить: items\n```\n');
-  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], ['телефон']);
+  const { options } = expand(doc, [], ['телефон']);
 
   assert.deepEqual(
     options.map((o) => o.label),
@@ -136,33 +144,33 @@ test('глаголы вещей на руках сами в список мес�
   // ([[99-открытые-вопросы]], «Глаголы и состояния предметов»): с ростом
   // инвентаря они вытеснили бы действия текущей сцены.
   const doc = room('\nОписание.\n');
-  const { pending } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, ['коридор'], []);
+  const { pending } = expand(doc, ['коридор'], []);
   assert.deepEqual(pending, []);
 });
 
 test('явный генератор по инвентарю остаётся: его пишет автор', () => {
   const doc = room('\n```options\nпоказать: inventory\n```\n');
-  const { pending } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], []);
+  const { pending } = expand(doc, [], []);
   assert.deepEqual(pending, [{ verb: 'показать', from: 'inventory' }]);
 });
 
 test('неизвестный источник — ошибка с именем файла', () => {
   const doc = room('\n```options\nосмотреть: карманы\n```\n');
   assert.throws(
-    () => expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], []),
+    () => expand(doc, [], []),
     (e: unknown) => e instanceof ContentError && /неизвестный источник/.test((e as Error).message),
   );
 });
 
 test('источник пуст — генератор молча не отдаёт ничего', () => {
   const doc = room('\n```options\nосмотреть: items\n```\n');
-  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, [], []);
+  const { options } = expand(doc, [], []);
   assert.deepEqual(options, []);
 });
 
 test('авторская опция перекрывает сгенерированную с тем же текстом', () => {
   const doc = room('\nОписание.\n\n→ идти в коридор [[оклик#у-двери]]\n');
-  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, ['коридор'], []);
+  const { options } = expand(doc, ['коридор'], []);
 
   // Команда одна, и ведёт она в разговор, а не в комнату из `exits`.
   assert.deepEqual(
@@ -174,7 +182,7 @@ test('авторская опция перекрывает сгенериров�
 
 test('перекрытие считается по тексту: другая команда генератору не мешает', () => {
   const doc = room('\nОписание.\n\n→ догнать его [[оклик#у-двери]]\n');
-  const { options } = expandNode(ctx, doc, 'rooms/пультовая', doc.nodes[0]!, ['коридор'], []);
+  const { options } = expand(doc, ['коридор'], []);
 
   assert.deepEqual(
     options.map((o) => o.label),

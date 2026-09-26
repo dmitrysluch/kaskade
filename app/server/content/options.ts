@@ -35,9 +35,29 @@ export interface TargetInfo {
   pages: string[];
 }
 
+/**
+ * Откуда смотрит ссылка.
+ *
+ * Трёх разных «откуда» здесь не от усложнения, а потому что у собранной комнаты
+ * они действительно разные: `[[items/01-board]]`, написанная в общей части,
+ * ищется относительно **её файла**, а `[[#после]]` из того же файла указывает
+ * на **собранную** комнату и проверяется по её объединённому набору узлов.
+ * Один `docId` эти два случая не различает.
+ */
+export interface RefBase {
+  /** Файл, в котором написана ссылка: для сообщений об ошибке. */
+  path: string;
+  /** База относительного и basename-поиска: заметка-источник. */
+  baseDocId: string;
+  /** Куда смотрит `[[#якорь]]`: для комнаты — собранное представление. */
+  selfDocId: string;
+  /** Срез, в котором живёт эта ссылка; `null` — сцена или предмет. */
+  stage: string | null;
+}
+
 export interface ExpandContext {
   /** `[[файл#узел]]` → адрес. Бросает ContentError, если ссылка битая. */
-  resolve(fromDocId: string, ref: string, line: number): { docId: string; nodeId: string };
+  resolve(base: RefBase, ref: string, line: number): { docId: string; nodeId: string };
   get(docId: string): TargetInfo | undefined;
 }
 
@@ -74,12 +94,12 @@ function form(target: TargetInfo, verb: string): string {
 
 function optionTo(
   ctx: ExpandContext,
-  fromDocId: string,
+  base: RefBase,
   ref: string,
   line: number,
   make: (target: TargetInfo, nodeId: string) => Omit<Option, 'target' | 'moves'>,
 ): Option {
-  const { docId, nodeId } = ctx.resolve(fromDocId, ref, line);
+  const { docId, nodeId } = ctx.resolve(base, ref, line);
   const target = ctx.get(docId)!;
   return {
     ...make(target, nodeId),
@@ -99,8 +119,7 @@ function kindOf(target: TargetInfo): Option['kind'] {
 
 function expandGenerator(
   ctx: ExpandContext,
-  doc: RawDoc,
-  docId: string,
+  base: RefBase,
   gen: RawGenerator,
   exits: string[],
   items: string[],
@@ -120,7 +139,7 @@ function expandGenerator(
 
   if (refs === null) {
     throw new ContentError(
-      doc.path,
+      base.path,
       `неизвестный источник "${source}" в блоке options; допустимы: exits, items, words, inventory или явный список`,
       gen.line,
     );
@@ -128,13 +147,13 @@ function expandGenerator(
 
   const options: Option[] = [];
   for (const ref of refs) {
-    const { docId: targetId } = ctx.resolve(docId, ref, gen.line);
+    const { docId: targetId } = ctx.resolve(base, ref, gen.line);
     const target = ctx.get(targetId)!;
 
     // Комната — место: `идти` ведёт в неё целиком, узел с именем глагола ей не нужен.
     if (PLACES.includes(target.type)) {
       options.push(
-        optionTo(ctx, docId, ref, gen.line, (t) => ({
+        optionTo(ctx, base, ref, gen.line, (t) => ({
           label: label(gen.phrase, form(t, verb)),
           kind: kindOf(t),
           attrs: emptyAttrs(),
@@ -160,7 +179,7 @@ function expandGenerator(
     if (!paged && !target.nodeIds.has(verb)) continue;
 
     options.push(
-      optionTo(ctx, docId, `${ref}#${paged ? target.pages[0]! : verb}`, gen.line, (t) => ({
+      optionTo(ctx, base, `${ref}#${paged ? target.pages[0]! : verb}`, gen.line, (t) => ({
         label: label(gen.phrase, form(t, verb)),
         kind: kindOf(t),
         attrs: emptyAttrs(),
@@ -179,7 +198,11 @@ function expandGenerator(
  * везде. Дублировать их в `вход`, `осмотреться` и далее нельзя — это два места
  * для одной правки и гарантированное расхождение.
  */
-export function docGenerators(doc: RawDoc, exits: string[], items: string[]): RawGenerator[] {
+export function docGenerators(
+  doc: { type: DocType; nodes: { generators: RawGenerator[] }[] },
+  exits: string[],
+  items: string[],
+): RawGenerator[] {
   const declared = doc.nodes.flatMap((n) => n.generators);
   const generators = [...declared];
 
@@ -207,12 +230,11 @@ export function docGenerators(doc: RawDoc, exits: string[], items: string[]): Ra
 
 export function expandNode(
   ctx: ExpandContext,
-  doc: RawDoc,
-  docId: string,
+  base: RefBase,
   node: RawNode,
   exits: string[],
   items: string[],
-  generators: RawGenerator[] = docGenerators(doc, exits, items),
+  generators: RawGenerator[],
 ): { options: Option[]; pending: PendingOption[]; generators: GeneratorRef[] } {
   const options: Option[] = [];
   const pending: PendingOption[] = [];
@@ -221,7 +243,7 @@ export function expandNode(
   // маршрут: узел доигрывает и уводит дальше сам, игроку он не показывается.
   for (const t of node.transitions) {
     options.push(
-      optionTo(ctx, docId, t.ref, t.line, () => ({
+      optionTo(ctx, base, t.ref, t.line, () => ({
         label: t.label ?? '',
         // Авторский переход — всегда ход по истории, куда бы он ни вёл.
         kind: 'story' as const,
@@ -249,7 +271,7 @@ export function expandNode(
   const authored = new Set(options.map((o) => o.label).filter((label) => label !== ''));
 
   for (const gen of generators) {
-    const r = expandGenerator(ctx, doc, docId, gen, exits, items);
+    const r = expandGenerator(ctx, base, gen, exits, items);
     options.push(...r.options.filter((o) => !authored.has(o.label)));
     pending.push(...r.pending);
   }
