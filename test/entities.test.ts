@@ -190,7 +190,7 @@ test('разметка не доезжает до экрана ни одной �
   });
 
   // Предпросмотр реплики Марго.
-  const preview = previewOf(g, option({ target: 'episodes/p/scenes/s#да' }));
+  const preview = previewOf(g, save(), option({ target: 'episodes/p/scenes/s#да' }));
   assert.equal(preview, 'Это про АЭС, а не про завод.');
 
   const shown = (lines: { text: string }[][]) => lines.map((l) => l.map((s) => s.text).join('')).join('\n');

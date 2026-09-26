@@ -79,7 +79,7 @@ const html = renderToStaticMarkup(
     input: inputLine(inputArg),
     list: commandLines(shown, 0, inputArg, textWidth, LIST_ROWS),
     details: detailLines(
-      picked ? previewOf(game, picked) : null,
+      picked ? previewOf(game, save, picked) : null,
       picked?.attrs.advance ?? false,
       textWidth,
       DETAIL_ROWS,

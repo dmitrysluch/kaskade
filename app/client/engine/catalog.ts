@@ -1,4 +1,4 @@
-import { optionAvailable, pageAt, pagesOf, sceneOf } from './state.ts';
+import { optionAvailable, pageAt, pagesOf, resolveTarget, sceneOf } from './state.ts';
 import type { SystemCall, SystemCommand } from './state.ts';
 import { BACK, closeLabel, CLOSE, EXAMINE, FORWARD, LEAF } from '../../shared/pages.ts';
 import { emptyAttrs, type Doc, type GameContent, type Option, type SaveState } from '../../shared/types.ts';
@@ -31,6 +31,18 @@ export const SYSTEM_COMMANDS: SystemCommand[] = ['справочник', 'дел
 
 function plain(option: Option): CatalogOption {
   return { ...option, locked: false, system: null };
+}
+
+/**
+ * Цель опции разрешается **один раз**, на входе в каталог: дальше оболочка,
+ * поток и `enter` видят конкретный адрес узла.
+ *
+ * Иначе каждое место движка разбиралось бы со звёздочкой и с «помещением
+ * целиком» само — и однажды одно из них сделало бы это иначе.
+ */
+function resolved(content: GameContent, save: SaveState, option: CatalogOption): CatalogOption {
+  const addr = resolveTarget(content, save, option.target);
+  return addr == null || addr === option.target ? option : { ...option, target: addr };
 }
 
 function systemOption(kind: SystemCommand): CatalogOption {
@@ -163,7 +175,7 @@ export function itemActions(content: GameContent, save: SaveState, docId: string
       object: doc.docId,
       moves: false,
     };
-    if (optionAvailable(content, save, option)) out.push(plain(option));
+    if (optionAvailable(content, save, option)) out.push(resolved(content, save, plain(option)));
   }
   return out;
 }
@@ -216,7 +228,7 @@ export function buildCatalog(
 
       // Листание из комнаты не показывается: `осмотреть` открывает книгу,
       // и дальше список принадлежит ей одной.
-      out.push(plain(option));
+      out.push(resolved(content, save, plain(option)));
     }
 
     for (const pending of node.pending) {

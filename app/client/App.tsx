@@ -1055,7 +1055,7 @@ export function App() {
         input={inputLine(input)}
         list={commandLines(shown, pick, input, layout.text, LIST_ROWS)}
         details={detailLines(
-          picked ? previewOf(bundle.content, picked) : null,
+          picked ? previewOf(bundle.content, session.save, picked) : null,
           picked?.attrs.advance ?? false,
           layout.text,
           DETAIL_ROWS,

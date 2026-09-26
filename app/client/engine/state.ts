@@ -1,5 +1,5 @@
 import { plainText, resolveEntities, type EntityKind, type EntityMention } from '../../shared/entities.ts';
-import { isStarred } from '../../shared/rooms.ts';
+import { addrIn, isStarred, persistentOfAddr, roomStateKey, stageOfAddr } from '../../shared/rooms.ts';
 import { said, voiceOf } from '../../shared/speech.ts';
 import type { GameContent, Node, NodeAddr, Option, SaveState } from '../../shared/types.ts';
 
@@ -253,10 +253,11 @@ export function pageAt(content: GameContent, save: SaveState, docId: string): No
  * «Ты правишь три слова карандашом и читаешь вслух», и игрок всё равно видит,
  * что именно прочтёт вслух.
  */
-export function previewOf(content: GameContent, option: Option): string | null {
+export function previewOf(content: GameContent, save: SaveState, option: Option): string | null {
   // Разметку снимаем здесь же: предпросмотр — это то, что игрок сейчас прочитает,
   // а `[[ref-ines|шкалу]]` он прочитать не должен нигде и никогда.
-  const text = plainText((option.target ? content.nodes[option.target]?.text : '') ?? '');
+  const addr = resolveTarget(content, save, option.target);
+  const text = plainText((addr ? content.nodes[addr]?.text : '') ?? '');
   for (const line of text.split('\n')) {
     if (line.trim() === '') continue;
     const voice = voiceOf(line);
@@ -296,20 +297,97 @@ export function sceneOf(addr: string): string {
   return hash === -1 ? addr : addr.slice(0, hash);
 }
 
+/**
+ * Вход в помещение ([[13-навигация-и-комнаты-тз]], «Вход, состояние и опции»).
+ *
+ * Порядок несущий, и каждый шаг взят из приёмки ТЗ:
+ *
+ *   1. **вступление-диспетчер** — пустой текст, ни одной опции с меткой, есть
+ *      маршрут. Он обязан выигрывать у сохранённой ноды: на нём держится
+ *      «книга, полученная вне комнаты, открывает реакцию при возвращении».
+ *      Дальше решает автор — условия маршрутов пересчитываются каждый раз;
+ *   2. **сохранённая нода** — последнее устойчивое состояние. У общаги вступление
+ *      с текстом, и вернуться в него значило бы вернуть ушедшего Тоби;
+ *   3. `entry:` — именованный вход, если автор его назвал;
+ *   4. вступление;
+ *   5. первый узел — на случай комнаты без вступления вовсе.
+ */
+export function roomEntry(content: GameContent, save: SaveState, docId: string): NodeAddr | null {
+  const doc = content.docs[docId];
+  if (!doc) return null;
+
+  const intro = doc.nodes.find((n) => n.id === '');
+  const dispatcher =
+    intro != null &&
+    intro.text.trim() === '' &&
+    intro.options.length > 0 &&
+    intro.options.every((o) => o.label === '');
+  if (dispatcher) return intro.addr;
+
+  const persistent = persistentOfAddr(docId);
+  const stage = stageOfAddr(docId);
+  if (persistent != null && stage != null) {
+    const saved = save.rooms[roomStateKey(save.episodeState.episode, stage, persistent)];
+    const node = saved == null ? undefined : doc.nodes.find((n) => n.id === saved);
+    if (node) return node.addr;
+  }
+
+  const named = doc.entry == null ? undefined : doc.nodes.find((n) => n.id === doc.entry);
+  if (named) return named.addr;
+
+  return (intro ?? doc.nodes[0])?.addr ?? null;
+}
+
+/**
+ * Цель опции → адрес узла. Единственный способ: адрес может ждать среза
+ * (`…:*#узел`) или указывать на помещение целиком, и разбираться в этом каждому
+ * месту движка по-своему — верный путь к «команда молча исчезла».
+ *
+ * `null` значит «этого сейчас нет»: нет контекста, нет узла, нет помещения
+ * в этом срезе. Опция с таким адресом не показывается, а валидатор ловит
+ * причину заранее.
+ */
+export function resolveTarget(content: GameContent, save: SaveState, target: NodeAddr | null): NodeAddr | null {
+  if (target == null) return null;
+
+  const addr = isStarred(target) ? (save.context.stage == null ? null : addrIn(target, save.context.stage)) : target;
+  if (addr == null) return null;
+
+  /*
+   * Адрес помещения без якоря значит «войти в помещение», а не «войти
+   * во вступление», — и проверяется это **раньше** прямого поиска узла:
+   * у вступления адрес ровно такой же (`docId#`), и прямой поиск нашёл бы его
+   * первым. Тогда возврат в общагу каждый раз возвращал бы ушедшего Тоби.
+   *
+   * Само вступление при этом не потеряно: правило входа доходит до него,
+   * когда сохранённого состояния нет.
+   */
+  const docId = sceneOf(addr);
+  if (addr.endsWith('#') && content.docs[docId]?.type === 'room') return roomEntry(content, save, docId);
+  return content.nodes[addr] ? addr : null;
+}
+
 /** Опция отпадает, если её условие не выполнено или её узел уже отыгран по `once`. */
 export function optionAvailable(content: GameContent, save: SaveState, option: Option): boolean {
   if (!evalCondition(option.attrs.if, save)) return false;
   if (option.target == null) return true;
 
-  // Заметка закрыта для показа (`closed` в episode.yaml) — переход в неё
-  // не предлагается. Граф при этом целый: закрыт вход, а не связь.
-  const episode = content.episodes.find((e) => e.id === save.episodeState.episode);
-  if (episode?.closed.includes(sceneOf(option.target))) return false;
+  // Адрес разрешается первым делом: в цели может ждать среза звёздочка,
+  // а может стоять помещение целиком.
+  const addr = resolveTarget(content, save, option.target);
+  if (addr == null) return false;
 
-  const target = content.nodes[option.target];
+  // Заметка закрыта для показа (`closed` в episode.yaml) или помещение закрыто
+  // в этом срезе (`available: false`) — переход не предлагается. Граф при этом
+  // целый: закрыт вход, а не связь.
+  const episode = content.episodes.find((e) => e.id === save.episodeState.episode);
+  if (episode?.closed.includes(sceneOf(addr))) return false;
+  if (content.docs[sceneOf(addr)]?.available === false) return false;
+
+  const target = content.nodes[addr];
   if (!target) return false;
   if (!evalCondition(target.attrs.if, save)) return false;
-  if (target.attrs.once && save.episodeState.used.includes(option.target)) return false;
+  if (target.attrs.once && save.episodeState.used.includes(addr)) return false;
   return true;
 }
 
@@ -465,6 +543,28 @@ export function textEntry(content: GameContent, save: SaveState, raw: string): S
   return mentions.length === 0 ? { kind: 'text', text } : { kind: 'text', text, mentions };
 }
 
+/**
+ * Запомнить, где игрок остался в помещении ([[13-навигация-и-комнаты-тз]],
+ * «Вход, состояние и опции»).
+ *
+ * Состояние принадлежит срезу, а не файлу: новый срез получает своё, и Тоби,
+ * ушедший в субботу, в понедельник не возвращается. Переименование файла общей
+ * части состояние не теряет — ключ логический.
+ */
+function remember(content: GameContent, save: SaveState, node: Node): SaveState {
+  if (node.attrs.once) return save;
+  const docId = sceneOf(node.addr);
+  if (content.docs[docId]?.type !== 'room') return save;
+
+  const persistent = persistentOfAddr(docId);
+  const stage = stageOfAddr(docId);
+  if (persistent == null || stage == null) return save;
+
+  const key = roomStateKey(save.episodeState.episode, stage, persistent);
+  if (save.rooms[key] === node.id) return save;
+  return { ...save, rooms: { ...save.rooms, [key]: node.id } };
+}
+
 export interface EnterResult {
   save: SaveState;
   entries: StreamEntry[];
@@ -482,7 +582,8 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
   let hops = 0;
 
   while (current != null) {
-    const node: Node | undefined = content.nodes[current];
+    const addr = resolveTarget(content, state, current);
+    const node: Node | undefined = addr == null ? undefined : content.nodes[addr];
     if (!node) break;
 
     /*
@@ -555,6 +656,10 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
 
     const next: string | null = node.attrs.goto ?? nextRoute(content, state, node)?.target ?? null;
     current = next;
+    // Проход остановился — значит это устойчивое состояние помещения, и его
+    // надо помнить. Узел с `once` состоянием не становится: вручение коробки
+    // и выбор места — проходные, возвращаться в них нельзя.
+    if (next == null) state = remember(content, state, node);
     if (++hops > 100) throw new Error(`зациклился безусловный переход в ${addr}`);
   }
 

@@ -459,12 +459,12 @@ test('предпросмотр берёт реплику Марго целево
   // Ищем по графу, а не по имени узла: реплики автор переписывает каждый день.
   const withReply = Object.values(game.nodes)
     .flatMap((n) => n.options)
-    .filter((o) => o.label !== '' && previewOf(game, o) != null);
+    .filter((o) => o.label !== '' && previewOf(game, at('episodes/prolog/rooms/00-room#'), o) != null);
 
   assert.ok(withReply.length > 10, `предпросмотров всего ${withReply.length}`);
   for (const option of withReply) {
     const target = game.nodes[option.target!]!;
-    const preview = previewOf(game, option)!;
+    const preview = previewOf(game, at('episodes/prolog/rooms/00-room#'), option)!;
     // Дословно: строка обязана найтись в узле как есть, а не быть пересказом.
     // Сравниваем с текстом без разметки и без метки говорящего: игрок видит
     // форму из ссылки и речь без служебного имени — с этим и обязан совпадать
@@ -479,7 +479,7 @@ test('предпросмотр берёт реплику Марго целево
 
   // За действием без реплики Марго предпросмотра нет.
   const look = game.nodes['episodes/prolog/rooms/00-room#']!.options.find((o) => o.verb === 'осмотреть')!;
-  assert.equal(previewOf(game, look), null);
+  assert.equal(previewOf(game, at('episodes/prolog/rooms/00-room#'), look), null);
 });
 
 test('предпросмотр проходит сквозь ремарку, но не сквозь чужую реплику', () => {
@@ -492,7 +492,7 @@ test('предпросмотр проходит сквозь ремарку, н�
 
   assert.ok(afterRemark.length > 0, 'в прологе нет узла с ремаркой перед репликой Марго');
   for (const node of afterRemark) {
-    const preview = previewOf(game, option({ target: node.addr }));
+    const preview = previewOf(game, at('episodes/prolog/rooms/00-room#'), option({ target: node.addr }));
     const second = node.text.split('\n').filter((l) => l.trim() !== '')[1]!;
     assert.equal(preview, said(plainText(second)).trim());
   }
@@ -500,7 +500,7 @@ test('предпросмотр проходит сквозь ремарку, н�
   // Узел, который начинает собеседник, предпросмотра не даёт: за этим ходом
   // слов Марго нет, и придумывать их нельзя.
   const answers = Object.values(game.nodes).find((n) => /^>/.test(n.text.trim()))!;
-  assert.equal(previewOf(game, option({ target: answers.addr })), null);
+  assert.equal(previewOf(game, at('episodes/prolog/rooms/00-room#'), option({ target: answers.addr })), null);
 });
 
 test('список идёт в одном порядке: окружение, сюжет, advance, служебные', () => {

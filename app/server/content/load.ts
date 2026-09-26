@@ -553,6 +553,8 @@ export function loadContent(): GameContent {
       exits: p.exits ?? [],
       items: p.items ?? [],
       inHand: p.info.inHand,
+      entry: p.entry,
+      available: p.available ?? true,
       optionBlocks: p.raw.nodes
         .filter((n) => n.generators.length > 0)
         .map((n) => ({ file: p.raw.path, line: n.generators[0]!.line })),
@@ -639,6 +641,8 @@ export function loadContent(): GameContent {
       exits: room.exits,
       items: room.items,
       inHand: [],
+      entry: room.entry,
+      available: room.available,
       optionBlocks: room.optionBlocks,
     };
   }
