@@ -32,6 +32,8 @@ type Bundle = { ok: true; content: GameContent } | { ok: false; errors: string[]
 
 /** Размер коробки заметки; сама раскладка — в `layout.ts`, она общая. */
 const BOX: BoxSize = { w: 210, h: 62, gapX: 34, gapY: 46 };
+/** Карта кампуса уже шире четырёх параллельных мест; переносим слой по строкам. */
+const PER_ROW = 4;
 
 function nodeName(addr: string): string {
   const hash = addr.indexOf('#');
@@ -98,7 +100,7 @@ export function AdmView({ content }: { content: GameContent }) {
     () => (episode ? storyMap(content, episode) : { boxes: [], edges: [], columns: [] }),
     [content, episode],
   );
-  const { boxes, width, height } = useMemo(() => place(map.columns, BOX), [map]);
+  const { boxes, width, height } = useMemo(() => place(map.columns, BOX, PER_ROW), [map]);
   const at = useMemo(() => new Map(boxes.map((b) => [b.docId, b])), [boxes]);
 
   const path = useMemo(() => (from && to ? shortestPath(content, from, to) : null), [content, from, to]);

@@ -1,16 +1,17 @@
 ---
-id: 01-corridor
+id: 01-auditorium-gallery
 type: room
 persistent: tu.auditorium-gallery
 stage: "01"
-label: коридор
-target: в коридор
+available: true
 exits:
+  - persistent: tu.yard
+  - persistent: tu.library
   - persistent: tu.h1012
-items: [01-notice]
+  - persistent: tu.elevator
 ---
 
-Коридор факультета, пусто, впереди лестница на выход.
+Аудиторная галерея факультета, пусто, впереди лестница на выход.
 Автомат с кофе не работает с весны, на нём записка «[[ref-kaputt|kaputt]]» и смайлик.
 Из двадцати ламп горит половина: об экономии висит отдельная бумага.
 Доска объявлений во всю стену.

@@ -1,5 +1,5 @@
 ---
-id: 03-flat
+id: 03-living-room
 type: room
 persistent: ahlers.living-room
 stage: "03"

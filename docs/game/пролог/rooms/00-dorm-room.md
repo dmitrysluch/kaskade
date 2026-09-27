@@ -1,11 +1,10 @@
 ---
-id: 00-room
+id: 00-dorm-room
 type: room
 persistent: tu.dorm-room
 stage: "00"
-label: комната
-target: в комнату
-items: [00-book, 00-schedule, 00-blister, 00-speaker, 00-window]
+available: true
+items: [00-book, 00-schedule, 00-blister]
 # Первый интерактивный экран после титров и transition `00-start`.
 # `#начало` однократно выдаёт Blue Card уже с установленной датой.
 # Возвраты идут во вступление или сохранённое состояние, минуя выдачу.

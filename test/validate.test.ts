@@ -389,26 +389,36 @@ test('условие и на переходе, и на цели — сказан
   assert.ok(run('routes', game).some((f) => /сказано дважды/.test(f.message)));
 });
 
-test('сцена без date: находится — дату нельзя унаследовать у предыдущей заметки', () => {
+test('временные метаданные сцены запрещены: дата принадлежит transition', () => {
   const game = content({
     episodes: [episode('p')],
     docs: {
-      'episodes/p/scenes/s': doc('episodes/p/scenes/s', { nodes: [node('episodes/p/scenes/s#')] }),
-      // У слова даты нет и не должно быть: оно не место.
-      'words/w': doc('words/w', { type: 'word', nodes: [node('words/w#')] }),
+      'episodes/p/scenes/s': doc('episodes/p/scenes/s', {
+        date: '12.05.2026',
+        nodes: [node('episodes/p/scenes/s#')],
+      }),
     },
   });
 
   const found = run('dates', game);
   assert.equal(found.length, 1);
-  assert.match(found[0]!.message, /нет date:/);
+  assert.match(found[0]!.message, /date принадлежит transition/);
 });
 
-test('дата в чужом формате находится при загрузке', () => {
+test('дата transition в чужом формате находится', () => {
   const game = content({
     episodes: [episode('p')],
-    docs: {
-      'episodes/p/scenes/s': doc('episodes/p/scenes/s', { date: '2026-05-12', nodes: [node('episodes/p/scenes/s#')] }),
+    transitions: {
+      start: {
+        id: 'start',
+        docId: 'episodes/p/transitions/start',
+        episode: 'p',
+        stage: '00',
+        date: '2026-05-12',
+        location: 'TU',
+        timeLabel: null,
+        target: 'episodes/p/scenes/s#',
+      },
     },
   });
 
@@ -416,19 +426,63 @@ test('дата в чужом формате находится при загру
 });
 
 test('дата, уехавшая назад по ходу пролога, находится', () => {
+  const source = 'episodes/p/scenes/01-a';
   const game = content({
     episodes: [episode('p')],
     docs: {
-      'episodes/p/scenes/01-a': doc('episodes/p/scenes/01-a', { date: '14.10.2024', nodes: [node('episodes/p/scenes/01-a#')] }),
-      'episodes/p/rooms/01-r': doc('episodes/p/rooms/01-r', { type: 'room', date: '14.10.2024', nodes: [node('episodes/p/rooms/01-r#')] }),
-      'episodes/p/scenes/02-b': doc('episodes/p/scenes/02-b', { date: '01.01.2024', nodes: [node('episodes/p/scenes/02-b#')] }),
+      [source]: doc(source, {
+        nodes: [node(`${source}#`, { options: [option({ label: 'дальше', target: 'episodes/p/transitions/next#' })] })],
+      }),
     },
+    transitions: {
+      start: {
+        id: 'start',
+        docId: 'episodes/p/transitions/start',
+        episode: 'p',
+        stage: '00',
+        date: '14.10.2024',
+        location: 'TU',
+        timeLabel: null,
+        target: `${source}#`,
+      },
+      next: {
+        id: 'next',
+        docId: 'episodes/p/transitions/next',
+        episode: 'p',
+        stage: '01',
+        date: '01.01.2024',
+        location: 'TU',
+        timeLabel: null,
+        target: 'episodes/p/scenes/02-b#',
+      },
+    },
+    docStages: { [source]: ['00'] },
   });
 
   const found = run('dates', game);
   assert.equal(found.length, 1);
   assert.match(found[0]!.message, /поехала назад/);
-  assert.match(found[0]!.file, /02-b/);
+  assert.match(found[0]!.file, /01-a/);
+});
+
+test('один stage не может получить две даты из разных transition', () => {
+  const game = content({
+    episodes: [episode('p')],
+    transitions: {
+      first: {
+        id: 'first', docId: 'episodes/p/transitions/first', episode: 'p', stage: '00',
+        date: '12.05.2026', location: 'TU', timeLabel: null, target: 'episodes/p/scenes/a#',
+      },
+      second: {
+        id: 'second', docId: 'episodes/p/transitions/second', episode: 'p', stage: '00',
+        date: '13.05.2026', location: 'TU', timeLabel: null, target: 'episodes/p/scenes/b#',
+      },
+    },
+  });
+
+  const found = run('dates', game);
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.message, /две даты/);
 });
 
 test('срок, не объявленный в эпизоде, находится', () => {
@@ -436,7 +490,6 @@ test('срок, не объявленный в эпизоде, находитс�
     episodes: [episode('p', { dates: { blueCard: { label: 'BLUE CARD', at: null, expired: 'истекла' } } })],
     docs: {
       'episodes/p/scenes/s': doc('episodes/p/scenes/s', {
-        date: '12.05.2026',
         nodes: [
           node('episodes/p/scenes/s#', { attrs: attrs({ dates: { blueCard: '31.12.2026' } }) }),
           node('episodes/p/scenes/s#б', { attrs: attrs({ dates: { hearing: '03.03.2027' } }) }),
