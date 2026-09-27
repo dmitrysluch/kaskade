@@ -1,5 +1,5 @@
 import { persistSave } from '../engine/save.ts';
-import { freshSave } from '../engine/state.ts';
+import { freshSave, sceneOf } from '../engine/state.ts';
 import type { FlagInfo } from './flags.ts';
 import type { GameContent, SaveState } from '../../shared/types.ts';
 
@@ -24,9 +24,18 @@ import type { GameContent, SaveState } from '../../shared/types.ts';
  * состояние: ни флагов, ни слов, ни вещей.
  */
 export interface DebugPicks {
+  transitionId?: string;
   flags?: FlagInfo[];
   words?: string[];
   inventory?: string[];
+}
+
+/** Контекст отладочного входа выбирается из авторских переходов. */
+export function debugTransitions(content: GameContent, addr: string) {
+  const docId = sceneOf(addr);
+  const stages = content.docStages[docId] ?? [];
+  return Object.values(content.transitions).filter((t) =>
+    t.docId === docId || (addr.startsWith(`episodes/${t.episode}/`) && stages.includes(t.stage)));
 }
 
 export function debugSave(content: GameContent, addr: string, picks: DebugPicks = {}): SaveState {
@@ -34,9 +43,20 @@ export function debugSave(content: GameContent, addr: string, picks: DebugPicks 
   // Эпизод берём из адреса: `episodes/<id>/...` — иначе отладочный вход
   // во вторую главу играл бы с рендерером и сроками первой.
   const episode = content.episodes.find((e) => addr.startsWith(`episodes/${e.id}/`));
+  const candidates = debugTransitions(content, addr);
+  const transition = picks.transitionId
+    ? candidates.find((t) => t.id === picks.transitionId)
+    : candidates.find((t) => sceneOf(t.target) === sceneOf(addr)) ?? candidates[0];
+  if (picks.transitionId && !transition) throw new Error('Переход не задаёт контекст выбранного узла');
+  if (!content.nodes[addr]) throw new Error(`Нет узла ${addr}`);
+  if (content.docs[sceneOf(addr)]?.type === 'room' && !transition) throw new Error('Для помещения нужен transition');
+  const beforeContext = content.docs[sceneOf(addr)]?.type === 'transition';
 
   return {
     ...base,
+    activeStage: beforeContext ? null : transition?.stage ?? null,
+    currentDate: beforeContext ? null : transition?.date ?? null,
+    lastTransitionId: beforeContext ? null : transition?.id ?? null,
     // Флаг помнит дату сцены, в которой его ставят: в отладочном заходе берём
     // ту же самую, иначе `{{флаг.at}}` в тексте покажет прочерк там, где игрок
     // увидит число.

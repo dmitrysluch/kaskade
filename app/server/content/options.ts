@@ -1,5 +1,6 @@
 import { ContentError, type RawDoc, type RawGenerator, type RawNode } from './markdown.ts';
 import { EXAMINE } from '../../shared/pages.ts';
+import { isVirtual } from '../../shared/rooms.ts';
 import {
   emptyAttrs,
   type DocType,
@@ -242,16 +243,19 @@ export function expandNode(
   // Переход — та же опция, что и всё остальное. Метка есть — опция, метки нет —
   // маршрут: узел доигрывает и уводит дальше сам, игроку он не показывается.
   for (const t of node.transitions) {
-    options.push(
-      optionTo(ctx, base, t.ref, t.line, () => ({
+    const { docId, nodeId } = ctx.resolve(base, t.ref, t.line);
+    options.push({
         label: t.label ?? '',
         // Авторский переход — всегда ход по истории, куда бы он ни вёл.
         kind: 'story' as const,
         attrs: t.attrs,
         verb: null,
         object: null,
-      })),
-    );
+        target: `${docId}#${nodeId}`,
+        // Динамический адрес комнаты ещё не имеет конкретного TargetInfo.
+        // Авторская метка уже написана: здесь нужен только тип цели.
+        moves: isVirtual(docId) || PLACES.includes(ctx.get(docId)!.type),
+    });
   }
 
   /*

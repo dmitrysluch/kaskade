@@ -1,11 +1,10 @@
 ---
 id: 03-corridor
 type: room
+persistent: tu.faculty-corridor
+stage: "03"
 label: коридор
 target: в коридор
-date: 04.07.2025
-location: TU BERLIN · КАФЕДРА
-timeLabel: месяц спустя
 items: [03-door-202, 03-door-209, 03-door-214, 03-door-217, 03-numbers]
 # Точка входа в блок `03`.
 # Тот же коридор, что в хабе `05` в 2026-м, и в этом вся его работа: там он
@@ -32,5 +31,5 @@ items: [03-door-202, 03-door-209, 03-door-214, 03-door-217, 03-numbers]
 осмотреть: items
 ```
 
-→ идти в секретариат [[rooms/03-office]]
+→ идти в секретариат [[rooms-virt/tu.secretariat]]
   - advance

@@ -455,7 +455,7 @@ test('отладочный вход живёт только на служебн�
 
 test('отладочный вход берёт отмеченное: флаги, слова, вещи', () => {
   const c = loadContent();
-  const addr = 'episodes/prolog/rooms/03-office#стойка';
+  const addr = 'episodes/prolog/rooms-virt/tu.secretariat:03#стойка';
   const flags = allFlags(c);
   const known = flags.find((f) => f.name === 'prolog.birthday-known')!;
 

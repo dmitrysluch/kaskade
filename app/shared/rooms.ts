@@ -16,7 +16,7 @@
  * (`app/server/content/rooms.ts`): оно работает с разобранными файлами.
  */
 
-import type { Doc, Node, RoomRef } from './types.ts';
+import type { Doc, GameContent, Node, RoomRef } from './types.ts';
 
 /** Префикс виртуального адреса. Резолвер узнаёт его раньше файлового поиска. */
 export const VIRT = 'rooms-virt/';
@@ -34,6 +34,14 @@ export const VIRT = 'rooms-virt/';
  * Бывает только в цели опции, в `goto` и в `exits`. В сейве — никогда.
  */
 export const ANY_STAGE = '*';
+
+/** Развернуть динамическую цель для статического графа во всех срезах источника. */
+export function targetsIn(content: GameContent, from: string, target: string): string[] {
+  if (!isStarred(target)) return [target];
+  const docId = docPart(from);
+  const stages = content.docStages[docId] ?? [];
+  return stages.map((stage) => addrIn(target, stage));
+}
 
 /** `persistent` — латиница, цифры, точки и дефисы: `tu.dorm-room`, `ahlers.living-room`. */
 const PERSISTENT = /^[a-z0-9][a-z0-9.-]*$/;

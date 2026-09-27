@@ -407,6 +407,8 @@ export interface GameContent {
    * есть чем войти.
    */
   stages: Record<string, StageDef[]>;
+  /** Срезы, в которых достижима заметка; нужны графу и отладочным входам. */
+  docStages: Record<string, string[]>;
   /** Все узлы игры по адресу — движку больше ничего не нужно. */
   nodes: Record<NodeAddr, Node>;
   docs: Record<string, Doc>;

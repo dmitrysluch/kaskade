@@ -1,6 +1,7 @@
 import { verbOf } from '../content/options.ts';
 import { kindOf, parseEntities } from '../../shared/entities.ts';
 import { parseDate } from '../../shared/dates.ts';
+import { targetsIn } from '../../shared/rooms.ts';
 import { closeLabel, EXAMINE } from '../../shared/pages.ts';
 import { speakerOf } from '../../shared/speech.ts';
 import { SPEAKER_WIDTH } from '../../client/ui/lines.ts';
@@ -80,8 +81,9 @@ const brokenGraph: Rule = {
     const found: Finding[] = [];
     const reached = new Set<string>(content.episodes.map((e) => e.entry));
     for (const node of allNodes(content)) {
-      for (const o of node.options) if (o.target) reached.add(o.target);
-      if (node.attrs.goto) reached.add(node.attrs.goto);
+      for (const target of [...node.options.flatMap((o) => o.target ? [o.target] : []), ...(node.attrs.goto ? [node.attrs.goto] : [])]) {
+        for (const addr of targetsIn(content, node.addr, target)) reached.add(addr);
+      }
     }
 
     for (const node of allNodes(content)) {
@@ -516,11 +518,15 @@ const routes: Rule = {
     const found: Finding[] = [];
 
     /** Куда ведёт маршрут: адрес нужен и для условия цели, и для сообщения. */
-    const targetOf = (o: Option): Node | undefined => (o.target ? content.nodes[o.target] : undefined);
     const name = (o: Option): string => o.target ?? '?';
 
     for (const node of allNodes(content)) {
       const doc = docOfNode(content, node);
+      // У карточки один маршрут, проверенный при загрузке. Доступность её цели
+      // проверяется до показа карточки, а не как меню самого transition.
+      if (doc.type === 'transition') continue;
+      const targetOf = (o: Option): Node | undefined => o.target
+        ? content.nodes[targetsIn(content, node.addr, o.target)[0] ?? ''] : undefined;
       const where = { file: doc.path, line: node.line };
       const at = `в узле "${node.id || '(вступление)'}"`;
 
@@ -694,102 +700,54 @@ const routes: Rule = {
   },
 };
 
-/**
- * Даты (07-оболочка-тз, «Как показано, что прошло время»).
- *
- * Дата в этой игре — единственный способ сказать, что прошло время, и берётся
- * она из `date:` той заметки, где игрок стоит. Значит, у каждой сцены и каждой
- * комнаты она обязана быть записана явно: заметка без даты не «наследует
- * предыдущую», она молча показывает игроку чужое время.
- */
+/** Дата принадлежит transition; сроки Blue Card остаются отдельными датами. */
 const dates: Rule = {
   id: 'dates',
-  title: 'даты: записаны явно, разбираются и не идут назад',
+  title: 'контекст переходов и сроки',
   run(content) {
     const found: Finding[] = [];
-
-    /** Номер сцены из имени файла: `01-hall` принадлежит первой сцене. */
-    const sceneNo = (docId: string): number | null => {
-      const m = /\/(\d+)-[^/]*$/.exec(docId);
-      return m ? Number(m[1]) : null;
-    };
-
+    const report = (file: string, message: string) => found.push({ rule: 'dates', severity: 'error', file, message });
     const declared = new Map(content.episodes.map((e) => [e.id, new Set(Object.keys(e.dates))]));
-    const ordered: { doc: Doc; no: number; at: number; raw: string }[] = [];
+    const stageDates = new Map<string, string>();
+
+    for (const def of Object.values(content.transitions)) {
+      const file = content.docs[def.docId]?.path ?? def.docId;
+      if (parseDate(def.date) == null) report(file, `date: "${def.date}" не разбирается как календарная дата`);
+      const key = `${def.episode}|${def.stage}`;
+      const previous = stageDates.get(key);
+      if (previous != null && previous !== def.date) report(file, `у stage ${def.stage} две даты: ${previous} и ${def.date}`);
+      stageDates.set(key, def.date);
+    }
 
     for (const doc of Object.values(content.docs)) {
-      const place = doc.type === 'scene' || doc.type === 'room';
-
-      if (place && !doc.date) {
-        found.push({
-          rule: 'dates',
-          severity: 'error',
-          file: doc.path,
-          message: 'нет date: — статусу нечего показать, а брать дату из предыдущей заметки нельзя',
-        });
-      }
-
-      if (doc.date) {
-        const at = parseDate(doc.date);
-        if (at == null) {
-          found.push({
-            rule: 'dates',
-            severity: 'error',
-            file: doc.path,
-            message: `date: "${doc.date}" не разбирается; формат один на всю игру — 12.05.2026`,
-          });
-        } else {
-          const no = sceneNo(doc.docId);
-          if (place && no != null) ordered.push({ doc, no, at, raw: doc.date });
+      if (doc.type === 'scene' || doc.type === 'room') {
+        for (const field of ['date', 'location', 'timeLabel']) {
+          if (doc.fm[field] != null || (field === 'date' && doc.date != null)) {
+            report(doc.path, `${field} принадлежит transition, перенесите временные метаданные из ${doc.type}`);
+          }
         }
       }
-
-      // Срок можно двигать только объявленный: имя, которого нет в episode.yaml,
-      // не покажется в статусе никогда, и заметить это в игре нечем.
       const known = declared.get(episodeOf(doc.docId) ?? '') ?? new Set<string>();
       for (const node of doc.nodes) {
         for (const [name, at] of Object.entries(node.attrs.dates)) {
-          if (!known.has(name)) {
-            found.push({
-              rule: 'dates',
-              severity: 'error',
-              ...where(node),
-              message: `срок "${name}" не объявлен в dates эпизода`,
-            });
-          }
-          if (parseDate(at) == null) {
-            found.push({
-              rule: 'dates',
-              severity: 'error',
-              ...where(node),
-              message: `срок "${name}": "${at}" не разбирается как дата`,
-            });
+          if (!known.has(name)) report(node.file, `срок "${name}" не объявлен в dates эпизода`);
+          if (parseDate(at) == null) report(node.file, `срок "${name}": "${at}" не разбирается как дата`);
+        }
+        for (const target of [...node.options.flatMap((o) => o.target ? [o.target] : []), ...(node.attrs.goto ? [node.attrs.goto] : [])]) {
+          const def = Object.values(content.transitions).find((t) => target === `${t.docId}#`);
+          if (!def) continue;
+          for (const stage of content.docStages[doc.docId] ?? []) {
+            const before = stageDates.get(`${episodeOf(doc.docId)}|${stage}`);
+            if (before && (parseDate(def.date) ?? Infinity) < (parseDate(before) ?? -Infinity)) {
+              report(node.file, `переход ${def.id}: дата ${def.date} раньше ${before} — дата поехала назад`);
+            }
           }
         }
       }
     }
-
-    // Сцены выстроены в фиксированном порядке, и дата, уехавшая в прошлое, —
-    // опечатка. Сравниваем по номеру сцены: комната принадлежит своей сцене,
-    // внутри одного номера порядок между заметками не определён.
-    ordered.sort((a, b) => a.no - b.no);
-    let seen: { no: number; at: number; raw: string } | null = null;
-    for (const item of ordered) {
-      if (seen && item.no > seen.no && item.at < seen.at) {
-        found.push({
-          rule: 'dates',
-          severity: 'error',
-          file: item.doc.path,
-          message: `date: ${item.raw} раньше, чем ${seen.raw} у сцены ${String(seen.no).padStart(2, '0')} — дата поехала назад`,
-        });
-      }
-      if (!seen || item.at > seen.at) seen = { no: item.no, at: item.at, raw: item.raw };
-    }
-
     return found;
   },
 };
-
 /**
  * Выход из хаба разговора, который закрывает ещё не сказанные темы, обязан быть
  * помечен `advance`: игрок не видит, что уходит навсегда, и узнаёт об этом,
@@ -814,8 +772,8 @@ const hubExit: Rule = {
         seen.add(addr);
         const node = content.nodes[addr];
         if (!node) continue;
-        for (const o of node.options) if (o.target) queue.push(o.target);
-        if (node.attrs.goto) queue.push(node.attrs.goto);
+        for (const o of node.options) if (o.target) queue.push(...targetsIn(content, node.addr, o.target));
+        if (node.attrs.goto) queue.push(...targetsIn(content, node.addr, node.attrs.goto));
       }
       return false;
     };
@@ -836,7 +794,7 @@ const hubExit: Rule = {
         // Уводит только то, что двигает игрока: `осмотреть доску` оставляет его
         // на месте, сколько бы там ни было тем.
         if (o.label === '' || o.attrs.advance || !o.target || !o.moves || o.kind !== 'story') continue;
-        if (reaches(o.target, node.addr)) continue;
+        if (targetsIn(content, node.addr, o.target).some((target) => reaches(target, node.addr))) continue;
 
         const doc = docOfNode(content, node);
         found.push({

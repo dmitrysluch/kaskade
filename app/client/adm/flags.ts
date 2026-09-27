@@ -40,8 +40,12 @@ export function allFlags(content: GameContent): FlagInfo[] {
 
   for (const node of Object.values(content.nodes)) {
     const doc = node.addr.slice(0, node.addr.indexOf('#'));
+    const dates = new Set(Object.values(content.transitions)
+      .filter((t) => doc.startsWith(`episodes/${t.episode}/`) && content.docStages[doc]?.includes(t.stage))
+      .map((t) => t.date));
+    const date = dates.size === 1 ? [...dates][0]! : null;
     for (const flag of [...node.attrs.set, ...node.attrs.unset]) {
-      if (!set.has(flag)) set.set(flag, { at: node.date ?? content.docs[doc]?.date ?? null, where: doc });
+      if (!set.has(flag)) set.set(flag, { at: date, where: doc });
       seen.add(flag);
     }
     for (const cond of [node.attrs.if, ...node.options.map((o) => o.attrs.if)]) {

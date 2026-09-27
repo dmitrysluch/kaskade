@@ -2,7 +2,6 @@
 id: 00-intro
 type: scene
 label: вступление
-date: 12.10.2024
 ---
 - tag: titlecard
 
@@ -15,7 +14,6 @@ Zur Kenntnis genommen
 ## дело
 - tag: splash:margo
 - tag: titlecard
-- give: 00-card
 
 ГРИНБЕРГ, МАРГАРИТА · 22 ГОДА
 
@@ -25,4 +23,4 @@ Zur Kenntnis genommen
 
 BLUE CARD · ПРАВО ПРЕБЫВАНИЯ ПРИВЯЗАНО К ДОЛЖНОСТИ
 
-→ [[rooms/00-room]]
+→ [[transitions/00-start]]

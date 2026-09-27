@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { loadContent } from '../app/server/content/load.ts';
 import { validate } from '../app/server/validate/index.ts';
 import { buildCatalog, type CatalogOption } from '../app/client/engine/catalog.ts';
-import { begin, dateAt, enter, evalCondition, freshSave, interpolate, previewOf, pagesOf, sceneOf, terms, waitRoute } from '../app/client/engine/state.ts';
+import { begin, confirmTransition, dateAt, enter, evalCondition, freshSave, interpolate, previewOf, pagesOf, sceneOf, terms, waitRoute } from '../app/client/engine/state.ts';
 import { overlayLines, statusText } from '../app/client/ui/lines.ts';
 import type { SaveState } from '../app/shared/types.ts';
 import type { StreamEntry } from '../app/client/engine/state.ts';
@@ -27,7 +27,15 @@ function labels(save: SaveState) {
 }
 
 function at(addr: string): SaveState {
-  return { ...freshSave(game), started: true, episodeState: { ...freshSave(game).episodeState, at: addr } };
+  const stage = game.docStages[sceneOf(addr)]?.[0];
+  const transition = Object.values(game.transitions).find((t) => t.stage === stage);
+  if (!transition) return { ...freshSave(game), started: true, episodeState: { ...freshSave(game).episodeState, at: addr } };
+  const base = freshSave(game);
+  const onCard = enter(game, base, `${transition.docId}#`).save;
+  // Контекст тестового входа всегда устанавливается реальным transition.
+  const flags = { 'prolog.dorm-done': { value: true, at: null }, 'prolog.lecture-done': { value: true, at: null } };
+  const entered = confirmTransition(game, { ...onCard, flags }, transition.docId).save;
+  return { ...entered, flags: {}, started: true, episodeState: { ...entered.episodeState, at: addr } };
 }
 
 test('контент проходит валидатор', () => {
@@ -52,6 +60,12 @@ test('пролог начинается вступлением, а не комн
   let entries: StreamEntry[] = [];
   for (let i = 0; i < 5; i++) {
     const node = game.nodes[state.episodeState.at]!;
+    if (game.docs[sceneOf(node.addr)]?.type === 'transition') {
+      const step = confirmTransition(game, state, sceneOf(node.addr));
+      state = step.save;
+      entries = step.entries;
+      continue;
+    }
     if (!node.attrs.tag.includes('titlecard')) break;
     const next = node.options.find((o) => o.label === '')!.target!;
     const step = enter(game, state, next);
@@ -76,14 +90,14 @@ test('позвонить не попадает в строку подсказо�
 });
 
 test('история копится в пределах сцены, а переход на новое место её начинает заново', () => {
-  const room = 'episodes/prolog/rooms/01-hall#';
+  const room = 'episodes/prolog/rooms-virt/tu.h1012:01#';
 
   // Осмотреть предмет — та же страница: узел предмета игрока не двигает.
   const look = enter(game, at(room), 'episodes/prolog/items/01-board#осмотреть', false);
   assert.equal(sceneOf(look.save.episodeState.at), sceneOf(room));
 
   // Уйти в коридор — новая страница.
-  const go = enter(game, at(room), 'episodes/prolog/rooms/01-corridor#');
+  const go = enter(game, at(room), 'episodes/prolog/rooms-virt/tu.auditorium-gallery:01#');
   assert.notEqual(sceneOf(go.save.episodeState.at), sceneOf(room));
 
   // Внутри одной сцены переходы по узлам страницу не сбрасывают.
@@ -91,17 +105,17 @@ test('история копится в пределах сцены, а пере�
   assert.equal(sceneOf(inScene.save.episodeState.at), 'episodes/prolog/scenes/01-lecture');
 });
 
-test('дата берётся из заметки, где игрок стоит, а не из сейва', () => {
-  const start = { ...freshSave(game), started: true };
+test('дату меняет только подтверждённый переход, осмотр и разговор её сохраняют', () => {
+  const start = at('episodes/prolog/scenes/02-neukoelln#');
   const scene = enter(game, start, 'episodes/prolog/scenes/02-neukoelln#');
   assert.equal(dateAt(game, scene.save), '08.06.2025');
-
-  // У комнаты своя дата, и статус показывает её же.
-  const room = enter(game, scene.save, 'episodes/prolog/rooms/03-office#');
+  const card = enter(game, scene.save, 'episodes/prolog/transitions/03-tu-entry#');
+  assert.equal(dateAt(game, card.save), '08.06.2025');
+  const moved = confirmTransition(game, card.save, 'episodes/prolog/transitions/03-tu-entry');
+  const room = enter(game, moved.save, 'episodes/prolog/rooms-virt/tu.secretariat:03#');
   assert.equal(dateAt(game, room.save), '04.07.2025');
-
-  // Дата в сейве не хранится вовсе: показывать нечего, кроме как из заметки.
-  assert.equal('date' in room.save.episodeState, false);
+  const look = enter(game, room.save, 'episodes/prolog/items/00-book#обложка', false);
+  assert.equal(dateAt(game, look.save), '04.07.2025');
 });
 
 test('флаг помнит дату сцены, в которой поставлен', () => {
@@ -136,15 +150,18 @@ test('game.yaml — витрина: настройки эпизода живут
   assert.ok(episode.title && episode.title !== episode.id);
 });
 
-test('у каждой сцены пролога есть внутриигровая дата', () => {
+test('даты принадлежат переходам, игровые сцены получают их через stage', () => {
   const scenes = Object.values(game.docs).filter((d) => d.type === 'scene');
   assert.ok(scenes.length > 0);
-  for (const scene of scenes) assert.ok(scene.date, `у сцены ${scene.docId} нет date`);
+  for (const scene of scenes) {
+    assert.equal(scene.date, null);
+    if (scene.id !== '00-intro') assert.ok(game.docStages[scene.docId]?.length, `у сцены ${scene.docId} нет контекста`);
+  }
 });
 
 test('блок options один на комнату, а предметы у каждого состояния свои', () => {
-  const вход = game.nodes['episodes/prolog/rooms/00-room#']!;
-  const один = game.nodes['episodes/prolog/rooms/00-room#один']!;
+  const вход = game.nodes['episodes/prolog/rooms-virt/tu.dorm-room:00#']!;
+  const один = game.nodes['episodes/prolog/rooms-virt/tu.dorm-room:00#один']!;
 
   const verbs = (n: typeof вход) => [...new Set(n.options.flatMap((o) => (o.verb ? [o.verb] : [])))].sort();
   const objects = (n: typeof вход) => n.options.flatMap((o) => (o.object ? [o.object] : [])).sort();
@@ -161,7 +178,7 @@ test('блок options один на комнату, а предметы у ка
 });
 
 test('служебные команды есть в каталоге всегда', () => {
-  const inRoom = labels(at('episodes/prolog/rooms/05-room#'));
+  const inRoom = labels(at('episodes/prolog/rooms-virt/tu.dorm-room:00#'));
   for (const command of ['справочник', 'дело', 'инвентарь']) assert.ok(inRoom.includes(command));
 });
 
@@ -199,6 +216,12 @@ test('пролог проходится до конца, и на каждом ш
     }
 
     const node = full.nodes[save.episodeState.at]!;
+    if (full.docs[sceneOf(node.addr)]?.type === 'transition') {
+      const moved = confirmTransition(full, save, sceneOf(node.addr));
+      assert.notEqual(moved.save.episodeState.at, save.episodeState.at, 'карточка не продолжилась');
+      save = moved.save;
+      continue;
+    }
     // Полноэкранный кадр ввод не принимает: и титр, и монтаж уводит нажатие,
     // а не команда. Для обхода это один и тот же безымянный маршрут.
     if (node.attrs.tag.includes('titlecard') || node.attrs.tag.includes('montage')) {
@@ -294,7 +317,7 @@ test('слово, отданное прологом, становится бел
   assert.ok(giver, 'в прологе ни один узел не отдаёт слова');
 
   const word = giver.attrs.give.find((id) => game.words[id])!;
-  const r = enter(game, at('episodes/prolog/rooms/00-room#'), giver.addr, false);
+  const r = enter(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#'), giver.addr, false);
   assert.equal(r.save.words[word], 'white');
 
   // Если слово отдаёт страница предмета, заодно запоминается и сама страница:
@@ -340,15 +363,11 @@ test('длительности показа в конфиге нет: кадр �
   assert.equal('timing' in game.renderers.academic!, false);
 });
 
-test('титр передаёт дату статусу', () => {
-  // Карточка гаснет, терминал возвращается — и в статусе уже новая дата, та самая,
-  // что была в рамке. Титр не подписывает кадр, а устанавливает отсчёт.
-  const card = Object.values(game.nodes).find((n) => n.attrs.tag.includes('titlecard'))!;
-  assert.ok(card.date, 'у титра нет собственной даты — статусу нечего передавать');
-
+test('авторский титр сохраняет текущую дату', () => {
+  const card = game.nodes['episodes/prolog/scenes/02-titles#']!;
+  assert.equal(card.date, null);
   const after = enter(game, at(card.addr), card.addr);
-  assert.equal(dateAt(game, after.save), card.date);
-  // И на самой карточке текст в поток не уезжает: это объект, а не реплика.
+  assert.equal(dateAt(game, after.save), '08.06.2025');
   assert.deepEqual(after.entries, []);
 });
 
@@ -361,17 +380,17 @@ test('срок объявлен в episode.yaml и тикает сам, без �
     const save: SaveState = { ...at(addr) };
     return statusText(dateAt(game, save), terms(game, save));
   };
-  assert.equal(seen('episodes/prolog/rooms/00-room#'), '12.10.2024 · BLUE CARD 810 дней');
+  assert.equal(seen('episodes/prolog/rooms-virt/tu.dorm-room:00#'), '12.10.2024 · BLUE CARD 810 дней');
   assert.equal(seen('episodes/prolog/scenes/02-neukoelln#'), '08.06.2025 · BLUE CARD 571 день');
-  assert.equal(seen('episodes/prolog/rooms/03-office#'), '04.07.2025 · BLUE CARD 545 дней');
+  assert.equal(seen('episodes/prolog/rooms-virt/tu.secretariat:03#'), '04.07.2025 · BLUE CARD 545 дней');
 
   // Срок, который не назначен, не показывается вовсе.
-  const noCard: SaveState = { ...at('episodes/prolog/rooms/00-room#'), dates: {} };
+  const noCard: SaveState = { ...at('episodes/prolog/rooms-virt/tu.dorm-room:00#'), dates: {} };
   assert.equal(statusText(dateAt(game, noCard), terms(game, noCard)), '12.10.2024');
 });
 
 test('срок можно сдвинуть узлом и спросить о нём в условии', () => {
-  const start = at('episodes/prolog/rooms/00-room#');
+  const start = at('episodes/prolog/rooms-virt/tu.dorm-room:00#');
   assert.equal(evalCondition('date:blueCard', start), true);
   assert.equal(evalCondition('date:blueCard', { ...start, dates: {} }), false);
 
@@ -384,7 +403,7 @@ test('адресных форм у служебных команд нет: хр�
   // 07-оболочка-тз, «Служебные команды»: `справочник контейнмент` больше
   // не существует. Быстрый путь к одной записи — панель по цифре, и она
   // отвечает на другой вопрос: «что это было сейчас», а не «что вообще бывает».
-  const save = at('episodes/prolog/rooms/00-room#');
+  const save = at('episodes/prolog/rooms-virt/tu.dorm-room:00#');
   const anyWord = Object.keys(game.words)[0]!;
   const withWord: SaveState = { ...save, words: { [anyWord]: 'white' } };
   const all = labels(withWord);
@@ -401,17 +420,17 @@ test('адресных форм у служебных команд нет: хр�
 
 test('управление — действие оболочки, а не команда терминала', () => {
   // Метаинструкция не притворяется действием: её нет ни в каталоге, ни в истории.
-  const all = labels(at('episodes/prolog/rooms/00-room#'));
+  const all = labels(at('episodes/prolog/rooms-virt/tu.dorm-room:00#'));
   assert.equal(all.includes('управление'), false);
   assert.ok(all.includes('справочник') && all.includes('дело') && all.includes('инвентарь'));
 });
 
 test('меню — команда: сброс обязан находиться набором, а не только клавишей', () => {
-  const all = labels(at('episodes/prolog/rooms/00-room#'));
+  const all = labels(at('episodes/prolog/rooms-virt/tu.dorm-room:00#'));
   assert.ok(all.includes('меню'));
 
   // Оно служебное, значит стоит в конце списка, а не среди действий комнаты.
-  const catalog = buildCatalog(game, at('episodes/prolog/rooms/00-room#'));
+  const catalog = buildCatalog(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#'));
   const option = catalog.find((o) => o.label === 'меню')!;
   assert.equal(option.kind, 'system');
   assert.equal(option.system?.kind, 'меню');
@@ -423,7 +442,7 @@ test('меню — команда: сброс обязан находиться 
 
 test('начать заново — то же состояние, что первый запуск', () => {
   // Сброс проходит через ту же дверь, что запуск: `begin` от чистого сейва.
-  const played = enter(game, at('episodes/prolog/rooms/00-room#'), 'episodes/prolog/rooms/00-room#').save;
+  const played = enter(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#'), 'episodes/prolog/rooms-virt/tu.dorm-room:00#').save;
   assert.notDeepEqual(played.episodeState.at, freshSave(game).episodeState.at);
 
   const again = begin(game, freshSave(game));
@@ -442,7 +461,7 @@ test('начать заново — то же состояние, что пер�
 });
 
 test('выданное слово объявляется в потоке', () => {
-  const save = at('episodes/prolog/rooms/00-room#');
+  const save = at('episodes/prolog/rooms-virt/tu.dorm-room:00#');
   const giver = Object.values(game.nodes).find((n) => n.attrs.give.some((g) => game.words[g]))!;
 
   const r = enter(game, save, giver.addr, false);
@@ -459,12 +478,12 @@ test('предпросмотр берёт реплику Марго целево
   // Ищем по графу, а не по имени узла: реплики автор переписывает каждый день.
   const withReply = Object.values(game.nodes)
     .flatMap((n) => n.options)
-    .filter((o) => o.label !== '' && previewOf(game, at('episodes/prolog/rooms/00-room#'), o) != null);
+    .filter((o) => o.label !== '' && previewOf(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#'), o) != null);
 
   assert.ok(withReply.length > 10, `предпросмотров всего ${withReply.length}`);
   for (const option of withReply) {
     const target = game.nodes[option.target!]!;
-    const preview = previewOf(game, at('episodes/prolog/rooms/00-room#'), option)!;
+    const preview = previewOf(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#'), option)!;
     // Дословно: строка обязана найтись в узле как есть, а не быть пересказом.
     // Сравниваем с текстом без разметки и без метки говорящего: игрок видит
     // форму из ссылки и речь без служебного имени — с этим и обязан совпадать
@@ -478,8 +497,8 @@ test('предпросмотр берёт реплику Марго целево
   }
 
   // За действием без реплики Марго предпросмотра нет.
-  const look = game.nodes['episodes/prolog/rooms/00-room#']!.options.find((o) => o.verb === 'осмотреть')!;
-  assert.equal(previewOf(game, at('episodes/prolog/rooms/00-room#'), look), null);
+  const look = game.nodes['episodes/prolog/rooms-virt/tu.dorm-room:00#']!.options.find((o) => o.verb === 'осмотреть')!;
+  assert.equal(previewOf(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#'), look), null);
 });
 
 test('предпросмотр проходит сквозь ремарку, но не сквозь чужую реплику', () => {
@@ -492,7 +511,7 @@ test('предпросмотр проходит сквозь ремарку, н�
 
   assert.ok(afterRemark.length > 0, 'в прологе нет узла с ремаркой перед репликой Марго');
   for (const node of afterRemark) {
-    const preview = previewOf(game, at('episodes/prolog/rooms/00-room#'), option({ target: node.addr }));
+    const preview = previewOf(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#'), option({ target: node.addr }));
     const second = node.text.split('\n').filter((l) => l.trim() !== '')[1]!;
     assert.equal(preview, said(plainText(second)).trim());
   }
@@ -500,11 +519,11 @@ test('предпросмотр проходит сквозь ремарку, н�
   // Узел, который начинает собеседник, предпросмотра не даёт: за этим ходом
   // слов Марго нет, и придумывать их нельзя.
   const answers = Object.values(game.nodes).find((n) => /^>/.test(n.text.trim()))!;
-  assert.equal(previewOf(game, at('episodes/prolog/rooms/00-room#'), option({ target: answers.addr })), null);
+  assert.equal(previewOf(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#'), option({ target: answers.addr })), null);
 });
 
 test('список идёт в одном порядке: окружение, сюжет, advance, служебные', () => {
-  const save = at('episodes/prolog/rooms/00-room#один');
+  const save = at('episodes/prolog/rooms-virt/tu.dorm-room:00#один');
   const withFlag: SaveState = {
     ...save,
     flags: { 'prolog.dorm-done': { value: true, at: '12.10.2024' } },
@@ -532,8 +551,8 @@ test('подпись времени — отдельная сущность, а 
   // У обычного узла она приходит в поток отдельной записью и раньше текста.
   const plain = enter(
     game,
-    at('episodes/prolog/rooms/00-room#'),
-    'episodes/prolog/rooms/00-room#',
+    at('episodes/prolog/rooms-virt/tu.dorm-room:00#'),
+    'episodes/prolog/rooms-virt/tu.dorm-room:00#',
     false,
   );
   assert.equal(plain.entries[0]!.kind, 'text');
@@ -545,8 +564,8 @@ test('подпись времени — отдельная сущность, а 
  * в коридор` заходит в разговор у двери; когда он ушёл, выход обычный.
  */
 test('пока Алерс в аудитории, выход в коридор перекрыт разговором', () => {
-  const после = 'episodes/prolog/rooms/01-hall#после';
-  const пусто = 'episodes/prolog/rooms/01-hall#пусто';
+  const после = 'episodes/prolog/rooms-virt/tu.h1012:01#после';
+  const пусто = 'episodes/prolog/rooms-virt/tu.h1012:01#пусто';
   const идти = (addr: string) => game.nodes[addr]!.options.filter((o) => o.label === 'идти в коридор');
 
   // Команда ровно одна: сгенерированный выход перекрыт, а не добавлен рядом.
@@ -554,7 +573,7 @@ test('пока Алерс в аудитории, выход в коридор п
   assert.equal(идти(после)[0]!.target, 'episodes/prolog/scenes/01-after-lecture#к-двери');
 
   assert.equal(идти(пусто).length, 1);
-  assert.equal(идти(пусто)[0]!.target, 'episodes/prolog/rooms/01-corridor#');
+  assert.equal(идти(пусто)[0]!.target, 'episodes/prolog/rooms-virt/tu.auditorium-gallery:01#');
 });
 
 test('у двери разговор короткий, но встречу закрывает так же', () => {
@@ -569,7 +588,7 @@ test('у двери разговор короткий, но встречу за�
     const played = enter(game, at(кДвери), answer.target!);
     assert.equal(played.save.flags['prolog.after-lecture-done']?.value, true);
     // И уводит из сцены наружу, в коридор: разговор у двери не возвращается.
-    assert.equal(sceneOf(played.save.episodeState.at), 'episodes/prolog/rooms/01-corridor');
+    assert.equal(sceneOf(played.save.episodeState.at), 'episodes/prolog/rooms-virt/tu.auditorium-gallery:01');
   }
 });
 
@@ -585,7 +604,7 @@ function поговорить(room: string, label: string) {
 }
 
 test('разговор с Алерсом одноразовый: закрыв его, аудиторию застаёшь пустой', () => {
-  const target = поговорить('episodes/prolog/rooms/01-hall#после', 'поговорить с Алерсом');
+  const target = поговорить('episodes/prolog/rooms-virt/tu.h1012:01#после', 'поговорить с Алерсом');
 
   // Вход один и тот же, и первым делом — знакомство.
   const first = enter(game, at(target), target);
@@ -596,17 +615,17 @@ test('разговор с Алерсом одноразовый: закрыв е
   const собраться = 'episodes/prolog/scenes/01-after-lecture#собраться';
   const done = enter(game, at(собраться), собраться);
   assert.equal(done.save.flags['prolog.after-lecture-done']?.value, true);
-  assert.equal(done.save.episodeState.at, 'episodes/prolog/rooms/01-hall#пусто');
+  assert.equal(done.save.episodeState.at, 'episodes/prolog/rooms-virt/tu.h1012:01#пусто');
 
-  const empty = game.nodes['episodes/prolog/rooms/01-hall#пусто']!;
+  const empty = game.nodes['episodes/prolog/rooms-virt/tu.h1012:01#пусто']!;
   assert.equal(empty.options.some((o) => o.label === 'поговорить с Алерсом'), false);
 });
 
 test('к Тоби можно вернуться, и находка второй раз не играет', () => {
   // Комната зовёт разговор двумя командами, и они значат разное: `продолжить
   // читать` заходит через книжную вклейку, `говорить с тоби` — прямо в хаб.
-  const читать = поговорить('episodes/prolog/rooms/00-room#', 'продолжить читать');
-  const говорить = поговорить('episodes/prolog/rooms/00-room#', 'говорить с тоби');
+  const читать = поговорить('episodes/prolog/rooms-virt/tu.dorm-room:00#', 'продолжить читать');
+  const говорить = поговорить('episodes/prolog/rooms-virt/tu.dorm-room:00#', 'говорить с тоби');
 
   const first = enter(game, at(читать), читать);
   assert.equal(first.save.episodeState.at, 'episodes/prolog/scenes/00-talk#находка');

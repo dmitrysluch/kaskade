@@ -157,19 +157,11 @@ export function nodeAt(content: GameContent, addr: string): Node | undefined {
 }
 
 /**
- * Текущая дата — та, что записана в заметке, где игрок стоит (07-оболочка-тз,
- * «Как показано, что прошло время»).
- *
- * Не текущее значение, которое кто-то когда-то положил в сейв: заметка без `date:`
- * тогда молча показывала бы чужое время, и опечатка доехала бы до игрока. `date:`
- * обязателен у сцен и комнат, это проверяет валидатор. У предмета и слова даты нет
- * и не должно быть — они не место, и позиции не меняют.
+ * Дату задаёт только подтверждённый transition (ТЗ 14).
+ * До первой карточки календарного контекста нет.
  */
 export function dateAt(content: GameContent, save: SaveState): string | null {
-  // Контекст — единственный источник ([[14-переходы-и-даты-тз]], «Дата и
-  // сохранение»). Пока комнаты и сцены ещё носят `date:`, он остаётся запасным:
-  // фолбэк уйдёт вместе с этими полями, и валидатор их к тому времени запретит.
-  return save.currentDate ?? content.nodes[save.episodeState.at]?.date ?? null;
+  return save.currentDate;
 }
 
 /** Срез мира, в котором игрок сейчас. `null` — контекст ещё не установлен. */
@@ -187,7 +179,7 @@ export function stageOf(save: SaveState): string | null {
  */
 export function confirmTransition(content: GameContent, save: SaveState, docId: string): EnterResult {
   const def = Object.values(content.transitions).find((t) => t.docId === docId);
-  if (!def || !content.nodes[def.target]) return { save, entries: [] };
+  if (!def || sceneOf(save.episodeState.at) !== docId) return { save, entries: [] };
 
   /*
    * Одной операцией: эпизод-владелец, срез, дата, id перехода и вход в цель.
@@ -202,6 +194,12 @@ export function confirmTransition(content: GameContent, save: SaveState, docId: 
     lastTransitionId: def.id,
     episodeState: { ...save.episodeState, episode },
   };
+  const target = resolveTarget(content, next, def.target);
+  if (!target || content.docs[sceneOf(target)]?.available === false) return { save, entries: [] };
+  const node = content.nodes[target]!;
+  if (!evalCondition(node.attrs.if, next) || (node.attrs.once && next.episodeState.used.includes(target))) {
+    return { save, entries: [] };
+  }
   return enter(content, next, def.target);
 }
 
@@ -328,12 +326,13 @@ export function roomEntry(content: GameContent, save: SaveState, docId: string):
   const doc = content.docs[docId];
   if (!doc) return null;
 
-  const intro = doc.nodes.find((n) => n.id === '');
+  const intro = doc.nodes.find((n) => n.id === (doc.entry ?? ''));
+  const routes = intro?.options.filter((o) => o.verb === null) ?? [];
   const dispatcher =
     intro != null &&
     intro.text.trim() === '' &&
-    intro.options.length > 0 &&
-    intro.options.every((o) => o.label === '');
+    routes.length > 0 &&
+    routes.every((o) => o.label === '');
   if (dispatcher) return intro.addr;
 
   const persistent = persistentOfAddr(docId);
@@ -400,6 +399,11 @@ export function optionAvailable(content: GameContent, save: SaveState, option: O
   if (!target) return false;
   if (!evalCondition(target.attrs.if, save)) return false;
   if (target.attrs.once && save.episodeState.used.includes(addr)) return false;
+  const transition = Object.values(content.transitions).find((t) => `${t.docId}#` === addr);
+  if (transition) {
+    const context = { ...save, activeStage: transition.stage, currentDate: transition.date };
+    return optionAvailable(content, context, { ...option, target: transition.target });
+  }
   return true;
 }
 
@@ -612,7 +616,7 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
 
     // Чем штампуется флаг: датой места, где игрок стоит. У предмета своей даты
     // нет — «когда» отвечает комната, в которой его взяли, а не он сам.
-    const stamp = node.date ?? dateAt(content, state);
+    const stamp = dateAt(content, state);
     // Подсказка с клавишей — только у первой выдачи в своё хранилище: дальше
     // игрок уже знает, где смотреть.
     const firstWord = Object.keys(state.words).length === 0;

@@ -61,7 +61,6 @@ function game(): GameContent {
       [HALL]: doc(HALL, {
         type: 'room',
         label: 'аудитория',
-        entry: 'до',
         nodes: [
           // Диспетчер: текста нет, метки нет, только условные маршруты.
           node(`${HALL}#`, {
@@ -113,7 +112,7 @@ test('`entry:` работает, когда вступления нет и со�
   const g = game();
   const noIntro = {
     ...g,
-    docs: { ...g.docs, [HALL]: { ...g.docs[HALL]!, nodes: g.docs[HALL]!.nodes.filter((n) => n.id !== '') } },
+    docs: { ...g.docs, [HALL]: { ...g.docs[HALL]!, entry: 'до', nodes: g.docs[HALL]!.nodes.filter((n) => n.id !== '') } },
   };
   assert.equal(roomEntry(noIntro, save({ activeStage: '01' }), HALL), `${HALL}#до`);
 });

@@ -71,6 +71,7 @@ export function content(patch: Partial<GameContent> = {}): GameContent {
     reference: {},
     transitions: {},
     stages: {},
+    docStages: {},
     nodes: {},
     docs: {},
     ...patch,

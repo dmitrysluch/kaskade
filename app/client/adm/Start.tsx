@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { allFlags, type FlagInfo } from './flags.ts';
-import { playFrom } from './play.ts';
+import { debugTransitions, playFrom } from './play.ts';
 import type { GameContent } from '../../shared/types.ts';
 
 /**
@@ -54,6 +54,8 @@ export function StartDialog({
   onClose: () => void;
 }) {
   const flags = useMemo(() => allFlags(content), [content]);
+  const transitions = useMemo(() => debugTransitions(content, addr), [content, addr]);
+  const [transitionId, setTransitionId] = useState(transitions[0]?.id ?? '');
   const words = useMemo(() => Object.values(content.words), [content]);
   const items = useMemo(
     () => Object.values(content.docs).filter((d) => d.type === 'item' && d.fm.portable === true),
@@ -79,6 +81,7 @@ export function StartDialog({
 
   const start = () => {
     playFrom(content, addr, {
+      ...(transitionId ? { transitionId } : {}),
       flags: flags.filter((f) => on.has(f.name)),
       words: words.filter((w) => on.has(w.id)).map((w) => w.id),
       inventory: items.filter((d) => on.has(d.id)).map((d) => d.id),
@@ -92,6 +95,15 @@ export function StartDialog({
           Играть с «{addr}»{' '}
           <span className="adm-sub">состояние собирается с нуля; отметьте, что уже сделано</span>
         </h2>
+
+        {transitions.length > 0 && (
+          <label>
+            Контекст перехода{' '}
+            <select value={transitionId} onChange={(e) => setTransitionId(e.target.value)}>
+              {transitions.map((t) => <option key={t.id} value={t.id}>{t.id} · {t.date} · {t.location}</option>)}
+            </select>
+          </label>
+        )}
 
         {groups.map(([group, list]) => (
           <section key={group}>

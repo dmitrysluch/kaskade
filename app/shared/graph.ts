@@ -1,4 +1,5 @@
 import type { GameContent, DocType } from './types.ts';
+import { targetsIn } from './rooms.ts';
 
 /**
  * Граф игры для служебного просмотра (`/adm`).
@@ -13,7 +14,7 @@ import type { GameContent, DocType } from './types.ts';
  */
 
 /** Места: сцена и комната. Предмет отвечает, но игрока не двигает. */
-const PLACES: DocType[] = ['scene', 'room'];
+const PLACES: DocType[] = ['scene', 'room', 'transition'];
 
 export interface MapBox {
   docId: string;
@@ -60,7 +61,7 @@ function targetsOf(content: GameContent, addr: string): { target: string; label:
   if (!node) return [];
   const out = node.options.flatMap((o) => (o.target ? [{ target: o.target, label: o.label }] : []));
   if (node.attrs.goto) out.push({ target: node.attrs.goto, label: '' });
-  return out;
+  return out.flatMap(({ target, label }) => targetsIn(content, addr, target).map((target) => ({ target, label })));
 }
 
 /**

@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CONTENT, docIdOf, walkMarkdown } from './paths.ts';
 import { ContentError, anchor, parseMarkdown, type RawDoc } from './markdown.ts';
-import { ANY_STAGE, parseRoomRef, virtDocId } from '../../shared/rooms.ts';
+import { ANY_STAGE, formatRoomRef, parseRoomRef, roomRefOf, virtDocId } from '../../shared/rooms.ts';
+import { validateNavigationSource } from './navigation.ts';
 import { mergeRoom, type MergedRoom, type RoomPart } from './rooms.ts';
 import { planStages, type Out, type PlanDoc, type StagePlan } from './stages.ts';
 import { docGenerators, expandNode, type ExpandContext, type TargetInfo } from './options.ts';
@@ -430,6 +431,7 @@ export function loadContent(): GameContent {
   for (const file of walkMarkdown()) {
     const raw = parseMarkdown(file, readFileSync(file, 'utf8'));
     const docId = docIdOf(file);
+    validateNavigationSource(raw, docId);
     const name = docId.split('/').pop()!;
     const id = String(raw.fm.id ?? name).trim();
     if (id !== name) {
@@ -441,7 +443,9 @@ export function loadContent(): GameContent {
       date: raw.fm.date == null ? null : String(raw.fm.date).trim(),
       // Объявлен ли список вообще — значимо: `exits: []` у версии значит
       // «выходов нет», а отсутствие списка — «берём общие».
-      exits: raw.fm.exits == null ? undefined : strArray(raw.fm.exits),
+      exits: raw.fm.exits == null ? undefined : raw.type === 'room'
+        ? (raw.fm.exits as unknown[]).map((ref) => formatRoomRef(roomRefOf(ref)!))
+        : strArray(raw.fm.exits),
       items: raw.fm.items == null ? undefined : strArray(raw.fm.items),
       persistent: raw.fm.persistent == null ? null : String(raw.fm.persistent).trim(),
       stage: raw.fm.stage == null ? null : String(raw.fm.stage).trim(),
@@ -477,8 +481,37 @@ export function loadContent(): GameContent {
   const byBasename = fileIndex(parsed);
   const transitionDefs = collectTransitions(parsed, byBasename);
   const plan = planStages(planDocs(parsed, byBasename), transitionDefs, episodes);
+  if (plan.violations.length > 0) {
+    const violation = plan.violations[0]!;
+    throw new ContentError(violation.file, violation.message);
+  }
+  for (const p of parsed.values()) {
+    const stages = transitionDefs.filter((t) => t.episode === episodeOf(p.docId)).map((t) => t.stage);
+    if (p.persistent && p.stage != null && !stages.includes(p.stage)) {
+      throw new ContentError(p.raw.path, `stage "${p.stage}" не объявлен ни одним transition эпизода`);
+    }
+    if (p.raw.type === 'transition' || !plan.preGame.has(p.docId)) continue;
+    for (const n of p.raw.nodes) {
+      if (p.raw.type !== 'scene' || !n.attrs.tag.some((t) => t === 'titlecard' || t.startsWith('splash:')) ||
+          n.attrs.give.length || n.attrs.take.length || n.attrs.set.length || n.attrs.unset.length ||
+          n.attrs.once || n.attrs.wait || Object.keys(n.attrs.dates).length || n.transitions.some((t) => t.label)) {
+        throw new ContentError(p.raw.path, 'игровой узел до первого transition: контекст ещё не установлен', n.line);
+      }
+    }
+  }
   const rooms = assembleRooms(parsed, plan);
   const ctx = buildResolver(parsed, new Map([...rooms].map(([docId, r]) => [docId, { info: r.info, nodeIds: r.info.nodeIds }])));
+  // Проверить динамические цели в каждом срезе, где играется источник.
+  for (const p of parsed.values()) {
+    if (p.persistent) continue;
+    for (const stage of plan.docStages.get(p.docId) ?? []) {
+      for (const node of p.raw.nodes) {
+        for (const ref of [...node.transitions.map((t) => t.ref), ...(node.attrs.goto ? [node.attrs.goto] : [])]) {
+          if (parseRoomRef(ref)) ctx.resolve({ path: p.raw.path, baseDocId: p.docId, selfDocId: p.docId, stage }, ref, node.line);
+        }
+      }
+    }
+  }
 
   const docs: Record<string, Doc> = {};
   const nodes: Record<string, Node> = {};
@@ -680,6 +713,10 @@ export function loadContent(): GameContent {
     reference,
     transitions,
     stages,
+    docStages: {
+      ...Object.fromEntries([...plan.docStages].filter(([id]) => docs[id]).map(([id, stages]) => [id, [...stages]])),
+      ...Object.fromEntries([...rooms].map(([id, { room }]) => [id, [room.stage]])),
+    },
     nodes,
     docs,
   };

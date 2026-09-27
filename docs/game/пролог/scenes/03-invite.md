@@ -2,9 +2,8 @@
 id: 03-invite
 type: scene
 label: секретариат
-date: 04.07.2025
-# Тот же скоп, что `rooms/03-corridor` и `rooms/03-office`: ни карточки
-# перехода, ни `location`. Точка входа в блок — коридор.
+# Stage `03`, как у коридора и секретариата: контекст установлен
+# transition `03-tu-entry`. Возвраты в секретариат дату не меняют.
 # Файл держит только реплики; пространство — комната. Прямого входа во
 # вступление нет, все узлы вызываются опциями `03-office`.
 # **Шапка комнаты не объясняет, зачем Марго здесь.** Причину предъявляет
@@ -33,7 +32,7 @@ date: 04.07.2025
 Она сдвигает конверт, чтобы освободить место, открывает папку и находит твой
 лист. Ставит печать.
 
-→ [[rooms/03-office#стойка]]
+→ [[rooms-virt/tu.secretariat#стойка]]
 
 ## конверт
 - once
@@ -48,13 +47,13 @@ date: 04.07.2025
 > секретарь — Адрес он раздал сам и сказал, что можно не приходить. [[ref-steglitz|Штеглиц]], Альбрехтштрассе, с шести.
 
 → [[#коробка-можно]]
-→ [[rooms/03-office#стойка]]
+→ [[rooms-virt/tu.secretariat#стойка]]
 
 ## коробка-можно
 - if: prolog.box-line-heard
 - set: prolog.box-possible
 
-→ [[rooms/03-office#стойка]]
+→ [[rooms-virt/tu.secretariat#стойка]]
 
 ## коробка
 - once
@@ -67,7 +66,7 @@ date: 04.07.2025
 
 > DEM BESTEN SCHACHTELBAUER
 
-→ [[rooms/03-office#стойка]]
+→ [[rooms-virt/tu.secretariat#стойка]]
 
 ## уйти
 
@@ -83,7 +82,7 @@ date: 04.07.2025
 ## пойти
 - set: prolog.birthday-came
 
-→ [[03-arrival]]
+→ [[transitions/03-birthday-entry]]
 
 ## не-идти
 - if: prolog.birthday-known

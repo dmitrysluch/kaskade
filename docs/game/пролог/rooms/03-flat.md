@@ -1,9 +1,11 @@
 ---
 id: 03-flat
 type: room
+persistent: ahlers.living-room
+stage: "03"
+entry: перед-столом
 label: квартира
 target: в комнату
-date: 04.07.2025
 items: [03-schrank, 03-shelf, 03-table]
 # Квартира — отдельный режим внимания до застолья. Пространство описывает
 # `03-arrival`; комната сразу открывает действия, чтобы её география не

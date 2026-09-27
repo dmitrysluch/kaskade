@@ -1,10 +1,12 @@
 ---
 id: 01-corridor
 type: room
+persistent: tu.auditorium-gallery
+stage: "01"
 label: коридор
 target: в коридор
-date: 14.10.2024
-exits: [01-hall]
+exits:
+  - persistent: tu.h1012
 items: [01-notice]
 ---
 
@@ -18,5 +20,5 @@ items: [01-notice]
 осмотреть: items
 ```
 
-→ уйти [[scenes/02-club]]
+→ уйти [[transitions/02-club-entry]]
   - advance
