@@ -1,4 +1,4 @@
-import { optionAvailable, pageAt, pagesOf, resolveTarget, sceneOf } from './state.ts';
+import { openWindow, optionAvailable, pageAt, pagesOf, resolveTarget, sceneOf } from './state.ts';
 import type { SystemCall, SystemCommand } from './state.ts';
 import { BACK, closeLabel, CLOSE, EXAMINE, FORWARD, LEAF } from '../../shared/pages.ts';
 import { emptyAttrs, type Doc, type GameContent, type Option, type SaveState } from '../../shared/types.ts';
@@ -82,7 +82,7 @@ function retarget(content: GameContent, save: SaveState, option: Option): Option
  * листаешь то, что открыто, и спорить командам не с чем.
  * На первой странице нет «назад», на последней — «вперёд».
  */
-function readingOptions(content: GameContent, save: SaveState, doc: Doc): CatalogOption[] {
+function leafOptions(content: GameContent, save: SaveState, doc: Doc): CatalogOption[] {
   const pages = pagesOf(content, doc.docId, save);
   const at = pages.findIndex((n) => n.id === pageAt(content, save, doc.docId)?.id);
 
@@ -102,20 +102,60 @@ function readingOptions(content: GameContent, save: SaveState, doc: Doc): Catalo
       }),
     );
   }
-
-  out.push(
-    plain({
-      label: closeLabel(doc.label),
-      kind: 'environment',
-      target: null,
-      attrs: emptyAttrs(),
-      verb: CLOSE,
-      object: doc.docId,
-      moves: false,
-    }),
-  );
   return out;
 }
+
+function closeOption(doc: Doc): CatalogOption {
+  return plain({
+    label: closeLabel(doc.label),
+    kind: 'environment',
+    target: null,
+    attrs: emptyAttrs(),
+    verb: CLOSE,
+    object: doc.docId,
+    moves: false,
+  });
+}
+
+function readingOptions(content: GameContent, save: SaveState, doc: Doc): CatalogOption[] {
+  return [...leafOptions(content, save, doc), closeOption(doc)];
+}
+
+/**
+ * Открытый контейнер: компьютер с окнами, ящик с бумагами (07-оболочка-тз,
+ * «Вложенные предметы — контейнер и его окна»).
+ *
+ * Список окон не строится здесь заново: это обычные опции узла контейнера,
+ * раскрытые тем же генератором `осмотреть: items`, что команды комнаты на её
+ * предметы. Значит и условия, и авторское перекрытие работают ровно так же,
+ * а окно с `if` появляется по флагу прямо во время сцены.
+ *
+ * Собственные действия — у открытого окна, а не у всех сразу: `скопировать
+ * расчёт` предлагается, когда расчёт на экране. Переключение окон при этом
+ * остаётся одной командой: список окон никуда не уходит, и «назад к списку»
+ * значило бы «никуда».
+ */
+function containerOptions(content: GameContent, save: SaveState, doc: Doc): CatalogOption[] {
+  const shown = doc.nodes.find((n) => n.id === EXAMINE) ?? doc.nodes.find((n) => n.id === '') ?? doc.nodes[0];
+  const out: CatalogOption[] = [];
+
+  for (const raw of shown?.options ?? []) {
+    if (raw.label === '') continue;
+    const option = retarget(content, save, raw);
+    if (!optionAvailable(content, save, option)) continue;
+    out.push(resolved(content, save, plain(option)));
+  }
+
+  const open = openWindow(content, save, doc);
+  if (open) {
+    out.push(...itemActions(content, save, open.docId).filter((o) => o.verb !== EXAMINE));
+    out.push(...leafOptions(content, save, open));
+  }
+
+  out.push(closeOption(doc));
+  return out;
+}
+
 
 /**
  * Действия предмета — те, что показываются **внутри экрана `предметы`**
@@ -201,21 +241,19 @@ function fromWords(content: GameContent, save: SaveState, phrase: string): Catal
 }
 
 /**
- * `reading` — `docId` открытого предмета. Пока он задан, комната из списка
- * уходит целиком: игрок читает, а не действует. Служебные команды остаются —
- * они часть оболочки, а не содержимого сцены.
+ * `save.openItem` — открытый уровнем предмет. Пока он задан, комната из списка
+ * уходит целиком: игрок читает или разбирается с вещью, а не действует в месте.
+ * Служебные команды остаются — они часть оболочки, а не содержимого сцены.
  */
-export function buildCatalog(
-  content: GameContent,
-  save: SaveState,
-  reading: string | null = null,
-): CatalogOption[] {
+export function buildCatalog(content: GameContent, save: SaveState): CatalogOption[] {
   const node = content.nodes[save.episodeState.at];
   const out: CatalogOption[] = [];
-  const book = reading ? content.docs[reading] : undefined;
+  const open = save.openItem ? content.docs[save.openItem] : undefined;
 
-  if (book) {
-    out.push(...readingOptions(content, save, book));
+  if (open) {
+    // Контейнер и книга — один уровень с разным содержимым: у книги листают
+    // один текст, у контейнера переключают окна.
+    out.push(...(open.items.length > 0 ? containerOptions : readingOptions)(content, save, open));
   } else if (node) {
     // Безусловные переходы каталогом не показываются: у них нет метки, потому что
     // игрок их не выбирает — узел уводит сам.

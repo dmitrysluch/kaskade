@@ -33,6 +33,8 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     activeStage: null,
     currentDate: null,
     lastTransitionId: null,
+    activeRoom: null,
+    openItem: null,
     roomStates: {},
     episodeState: { episode: 'p', at: `${R}#`, used: [] },
     ...patch,
@@ -84,7 +86,7 @@ function game() {
 }
 
 const labels = (g: ReturnType<typeof game>, s: SaveState, reading: string | null = null) =>
-  buildCatalog(g, s, reading)
+  buildCatalog(g, { ...s, openItem: reading })
     .filter((o) => !o.system)
     .map((o) => o.label);
 
@@ -124,7 +126,7 @@ test('одностраничный предмет читать нечем — р
   // Внутри такого предмета листать нечего: остаётся одна команда выхода,
   // и открывать ради неё отдельный уровень незачем — это решает App.
   assert.deepEqual(
-    buildCatalog(g, save(), ONE).filter((o) => !o.system).map((o) => o.label),
+    buildCatalog(g, save({ openItem: ONE })).filter((o) => !o.system).map((o) => o.label),
     ['закрыть записка'],
   );
 });
@@ -156,7 +158,7 @@ test('листание знает края книги', () => {
 test('служебные команды есть и внутри книги', () => {
   const g = game();
   const opened = enter(g, save(), `${BOOK}#обложка`, false).save;
-  const system = buildCatalog(g, opened, BOOK).filter((o) => o.system).map((o) => o.label);
+  const system = buildCatalog(g, { ...opened, openItem: BOOK }).filter((o) => o.system).map((o) => o.label);
 
   assert.deepEqual(system, ['справочник', 'дело', 'инвентарь', 'меню']);
 });
@@ -166,7 +168,7 @@ test('закрыть возвращает комнату, а закладку о
   const read = enter(g, save(), `${BOOK}#вклейка`, false).save;
 
   // `закрыть` ничего не исполняет: цели у неё нет, режим гасит оболочка.
-  const close = buildCatalog(g, read, BOOK).find((o) => o.label === 'закрыть учебник')!;
+  const close = buildCatalog(g, { ...read, openItem: BOOK }).find((o) => o.label === 'закрыть учебник')!;
   assert.equal(close.target, null);
   assert.equal(close.verb, 'закрыть');
 
@@ -251,7 +253,7 @@ test('страница с ложным условием не существуе�
 test('вперёд со страницы перед скрытой ведёт на следующую видимую', () => {
   const { g, P } = paper();
   const s = save({ itemStates: { paper: 'шапка' } });
-  const forward = buildCatalog(g, s, P).find((o) => o.label === 'вперёд')!;
+  const forward = buildCatalog(g, { ...s, openItem: P }).find((o) => o.label === 'вперёд')!;
 
   assert.equal(forward.target, `${P}#цель-б`);
 });

@@ -35,6 +35,8 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     activeStage: null,
     currentDate: null,
     lastTransitionId: null,
+    activeRoom: null,
+    openItem: null,
     roomStates: {},
     episodeState: { episode: 'p', at: `${ROOM}#`, used: [] },
     ...patch,
@@ -213,4 +215,30 @@ test('разметка не доезжает до экрана ни одной �
 
   const full = shown(overlayLines({ kind: 'инвентарь' }, g, withWord, 60, { pick: 0, open: null, act: 0 }));
   assert.equal(full.includes('[['), false);
+});
+
+test('карточка слова добирает только узнанные части', () => {
+  const g = content({
+    words: {
+      alers: {
+        id: 'alers',
+        label: 'АЛЕРС',
+        category: 'люди',
+        text: 'Фамилия профессора.',
+        details: [
+          { text: 'Слух от Тоби.', if: 'alers.toby' },
+          { text: 'Автор учебника.', if: 'alers.program' },
+        ],
+      },
+    },
+  });
+  const shown = (state: SaveState) =>
+    overlayLines({ kind: 'дело' }, g, state, 60)
+      .map((line) => line.map((seg) => seg.text).join(''))
+      .join('\n');
+
+  const base = save({ words: { alers: 'white' } });
+  assert.doesNotMatch(shown(base), /Слух от Тоби/);
+  assert.match(shown(save({ words: { alers: 'white' }, flags: { 'alers.toby': { value: true, at: null } } })), /Слух от Тоби/);
+  assert.doesNotMatch(shown(base), /Автор учебника/);
 });

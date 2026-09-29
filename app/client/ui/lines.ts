@@ -14,7 +14,7 @@ import {
   type Span,
 } from './text.ts';
 import { itemActions, type CatalogOption } from '../engine/catalog.ts';
-import type { OverlayCall, OverlayCommand, SessionEntity, StreamEntry, Term } from '../engine/state.ts';
+import { evalCondition, type OverlayCall, type OverlayCommand, type SessionEntity, type StreamEntry, type Term } from '../engine/state.ts';
 import { days, daysBetween } from '../../shared/dates.ts';
 import { speakerLabel, speakerOf } from '../../shared/speech.ts';
 import { entityClass, plainText, type EntityKind, type EntityMention } from '../../shared/entities.ts';
@@ -222,14 +222,36 @@ export function statusText(date: string | null, terms: Term[]): string {
 }
 
 /**
- * Статус — тускло и прижат вправо, по правому полю текста, а не по краю сетки:
- * он часть текстового блока, а не отдельная панель. Своей линейкой не отделяется —
- * он должен выглядеть как то, что может исчезнуть.
+ * Статус — тускло и по полям текста, а не по краю сетки: он часть текстового
+ * блока, а не отдельная панель. Своей линейкой не отделяется — он должен
+ * выглядеть как то, что может исчезнуть.
+ *
+ * Слева — где Марго находится, справа — дата и сроки (07-оболочка-тз, «Экран»).
+ * Место подрезается, дата — никогда: дата и срок Blue Card это собственная
+ * строка машины, а обрезанное число врёт. Место, которому осталась пара знаков,
+ * не подрезается, а исчезает: `ко…` не говорит ничего.
  */
-export function statusLine(text: string, cols: number): Seg[] {
-  if (text === '') return [];
-  const gap = Math.max(0, cols - MARGIN.right - text.length);
-  return [{ text: ' '.repeat(gap) }, { text, cls: 'echo' }];
+const PLACE_MIN = 6;
+
+export function statusLine(place: string, text: string, cols: number): Seg[] {
+  if (place === '' && text === '') return [];
+
+  const right = text === '' ? 0 : MARGIN.right + text.length;
+  const room = fit(place, cols - MARGIN.text - right - 1);
+  const gap = Math.max(0, cols - right - MARGIN.text - room.length);
+
+  // Место тускнеет вместе с датой: это одна машинная полоса, а не две.
+  const segs: Seg[] = [{ text: ' '.repeat(MARGIN.text) }];
+  if (room !== '') segs.push({ text: room, cls: 'echo' });
+  segs.push({ text: ' '.repeat(gap) });
+  if (text !== '') segs.push({ text, cls: 'echo' });
+  return segs;
+}
+
+/** Подрезка с многоточием. Короче `PLACE_MIN` — пусто: обрывок не читается. */
+function fit(text: string, room: number): string {
+  if (text === '' || room < PLACE_MIN) return '';
+  return text.length <= room ? text : `${text.slice(0, room - 1).trimEnd()}…`;
 }
 
 /**
@@ -472,6 +494,14 @@ const PANEL: Record<EntityKind, { title: string; empty: string; command: string 
 const CLOSE_HINT = 'Esc закрыть';
 const SWITCH_HINT = '← → другие';
 
+/** Карточка слова растёт от источников, но не раскрывает их заранее. */
+function wordText(word: GameContent['words'][string] | undefined, save: SaveState): string {
+  if (!word) return '';
+  return [word.text, ...(word.details ?? []).filter((part) => evalCondition(part.if, save)).map((part) => part.text)]
+    .filter((part) => part.trim() !== '')
+    .join('\n\n');
+}
+
 /** Что показывает панель: статья, карточка слова с происхождением, вступление предмета. */
 function entityCard(kind: EntityKind, id: string, content: GameContent, save: SaveState): Seg[][] {
   const out: Seg[][] = [];
@@ -494,7 +524,7 @@ function entityCard(kind: EntityKind, id: string, content: GameContent, save: Sa
       { text: state === 'white' ? '[белое]' : '[серое]', cls: state === 'white' ? 'dim' : 'locked' },
     ]);
     out.push([]);
-    out.push([{ text: plainText(word?.text ?? ''), cls: 'dim' }]);
+    out.push([{ text: plainText(wordText(word, save)), cls: 'dim' }]);
     return out;
   }
   return out;
@@ -719,7 +749,7 @@ export function overlayLines(
           max,
         ),
       );
-      push(plainText(word?.text ?? ''), 'dim');
+      push(plainText(wordText(word, save)), 'dim');
       out.push([]);
     }
     return out;

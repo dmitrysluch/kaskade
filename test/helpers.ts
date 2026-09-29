@@ -46,6 +46,7 @@ export function doc(docId: string, patch: Partial<Doc> = {}): Doc {
     label: id,
     target: id,
     targets: {},
+    parent: null,
     date: null,
     fm: {},
     nodes: [],

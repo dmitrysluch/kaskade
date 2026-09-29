@@ -40,7 +40,7 @@ function mobile(options = OPTIONS): string {
   return renderToStaticMarkup(
     <MobileScreen
       cols={MOBILE_COLS}
-      status={statusLine('12.10.2024', MOBILE_COLS)}
+      status={statusLine('', '12.10.2024', MOBILE_COLS)}
       stream={[[{ text: 'Общага на Франклинштрассе.' }]]}
       options={options}
       onPick={() => {}}
@@ -110,7 +110,7 @@ test('на большом экране кликать по-прежнему не
     <GameScreen
       cols={80}
       streamRows={6}
-      status={statusLine('12.10.2024', 80)}
+      status={statusLine('', '12.10.2024', 80)}
       stream={viewport([[{ text: 'Текст.' }]], 6, 0)}
       input={inputLine('осм')}
       list={commandLines(OPTIONS, null, '', 72, LIST_ROWS)}

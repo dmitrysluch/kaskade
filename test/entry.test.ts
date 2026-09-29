@@ -35,6 +35,8 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     activeStage: '00',
     currentDate: '12.10.2024',
     lastTransitionId: '00-start',
+    activeRoom: null,
+    openItem: null,
     roomStates: {},
     episodeState: { episode: 'p', at: `${DORM}#`, used: [] },
     ...patch,

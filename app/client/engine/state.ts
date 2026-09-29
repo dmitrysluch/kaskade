@@ -1,7 +1,8 @@
 import { plainText, resolveEntities, type EntityKind, type EntityMention } from '../../shared/entities.ts';
 import { addrIn, isStarred, persistentOfAddr, roomStateKey, stageOfAddr } from '../../shared/rooms.ts';
+import { EXAMINE } from '../../shared/pages.ts';
 import { said, voiceOf } from '../../shared/speech.ts';
-import type { GameContent, Node, NodeAddr, Option, SaveState } from '../../shared/types.ts';
+import type { Doc, GameContent, Node, NodeAddr, Option, SaveState } from '../../shared/types.ts';
 
 /**
  * Состояние и его изменение. Сохраняем состояние, а не сцену (07-оболочка-тз, «Сейв»):
@@ -67,15 +68,6 @@ export interface Session {
   save: SaveState;
   stream: StreamEntry[];
   overlay: OverlayCall | null;
-  /**
-   * Какой предмет сейчас читают: `docId` или `null`. Пока книга открыта, список
-   * команд состоит из неё одной — комната ждёт снаружи.
-   *
-   * В сейв не пишется намеренно: страницу помнит `itemStates`, а место, где
-   * игрок стоит, — комната. Перезагрузка возвращает в комнату с той же
-   * закладкой, и это честнее, чем воскрешать режим чтения из ниоткуда.
-   */
-  reading: string | null;
   history: string[];
 }
 
@@ -192,6 +184,11 @@ export function confirmTransition(content: GameContent, save: SaveState, docId: 
     activeStage: def.stage,
     currentDate: def.date,
     lastTransitionId: def.id,
+    // Новый контекст — новое место: комнату запишет вход в неё, а у сцены
+    // своего места нет, и статус честно молчит, пока игрок не войдёт в комнату.
+    activeRoom: null,
+    // Открытая книга остаётся в прежнем дне вместе с комнатой, где её читали.
+    openItem: null,
     episodeState: { ...save.episodeState, episode },
   };
   const target = resolveTarget(content, next, def.target);
@@ -201,6 +198,32 @@ export function confirmTransition(content: GameContent, save: SaveState, docId: 
     return { save, entries: [] };
   }
   return enter(content, next, def.target);
+}
+
+/**
+ * Какое окно открыто в контейнере (07-оболочка-тз, «Вложенные предметы»).
+ * `null` — ни одного: игрок только что открыл компьютер и ещё ничего не выбрал.
+ */
+export function openWindow(content: GameContent, save: SaveState, doc: Doc): Doc | null {
+  const id = save.itemStates[doc.id];
+  const open = id == null ? undefined : Object.values(content.docs).find((d) => d.id === id);
+  return open && open.parent === doc.docId ? open : null;
+}
+
+/**
+ * Что показано открытым уровнем: текущая страница книги, открытое окно
+ * контейнера или сам контейнер, если окно ещё не выбрано.
+ *
+ * Нужно перезагрузке: игрок закрыл вкладку, читая расчёт, — вернуть его надо
+ * к расчёту, а не к описанию комнаты, в которой он всё это время стоит.
+ */
+export function openScreen(content: GameContent, save: SaveState): Node | null {
+  const doc = save.openItem == null ? undefined : content.docs[save.openItem];
+  if (!doc) return null;
+
+  const shown = doc.items.length > 0 ? (openWindow(content, save, doc) ?? doc) : doc;
+  if (shown.pages.length > 0) return pageAt(content, save, shown.docId);
+  return shown.nodes.find((n) => n.id === EXAMINE) ?? shown.nodes.find((n) => n.id === '') ?? null;
 }
 
 /**
@@ -275,6 +298,17 @@ export function previewOf(content: GameContent, save: SaveState, option: Option)
     return voice === 'margo' ? said(line).trim() : null;
   }
   return null;
+}
+
+/**
+ * Где Марго находится — подпись для статуса (07-оболочка-тз, «Экран»).
+ *
+ * Пусто, пока она не вошла ни в одну комнату: на титрах, в BIOS и на карточке
+ * перехода места ещё нет, и выдумывать его неоткуда. Пусто и тогда, когда
+ * комнату убрали из контента: статус молчит, а не показывает адрес движка.
+ */
+export function placeLabel(content: GameContent, save: SaveState): string {
+  return (save.activeRoom == null ? undefined : content.docs[save.activeRoom]?.label) ?? '';
 }
 
 /** Срок с подписью и датой — то, что показывает статус. Только назначенные. */
@@ -445,8 +479,18 @@ function applyAttrs(content: GameContent, save: SaveState, node: Node, stamp: st
   // Страница — состояние предмета, и запоминается она здесь, а не в обработчике
   // команды: тогда состояние обновляется при любом входе — из комнаты, с рук,
   // из разговора — и переживает переходы само собой.
-  const item = node.attrs.page == null ? null : content.docs[sceneOf(node.addr)];
-  const itemStates = item ? { ...save.itemStates, [item.id]: node.id } : save.itemStates;
+  const doc = content.docs[sceneOf(node.addr)];
+  const item = node.attrs.page == null ? null : doc;
+  let itemStates = item ? { ...save.itemStates, [item.id]: node.id } : save.itemStates;
+  /*
+   * Открытое окно контейнера запоминается там же и по той же причине: компьютер,
+   * к которому вернулись, показывает то, что на нём было открыто
+   * (07-оболочка-тз, «Вложенные предметы»). Пишем при входе в окно, откуда бы
+   * он ни шёл, — чтобы состояние не зависело от того, какой командой окно
+   * открыли.
+   */
+  const container = doc?.parent == null ? null : content.docs[doc.parent];
+  if (doc && container) itemStates = { ...itemStates, [container.id]: doc.id };
 
   const used = node.attrs.once ? [...new Set([...save.episodeState.used, node.addr])] : save.episodeState.used;
 
@@ -636,6 +680,15 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
     if (moves || place === 'scene' || place === 'room') {
       state = { ...state, episodeState: { ...state.episodeState, at: node.addr } };
     }
+    /*
+     * Где Марго находится — это комната, и меняется оно только входом в другую
+     * комнату (07-оболочка-тз, «Экран»). Разговор у двери и открытая книга
+     * места не меняют: статус отвечает на «где я», а не «что сейчас на экране».
+     */
+    if (place === 'room') {
+      const room = sceneOf(node.addr);
+      if (state.activeRoom !== room) state = { ...state, activeRoom: room };
+    }
 
     /*
      * Полноэкранный кадр останавливает проход: ввод не принимается, дальше
@@ -693,7 +746,7 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
  */
 export function begin(content: GameContent, save: SaveState): Session {
   const r = enter(content, { ...save, started: true }, save.episodeState.at);
-  return { save: r.save, stream: r.entries, overlay: null, reading: null, history: [] };
+  return { save: r.save, stream: r.entries, overlay: null, history: [] };
 }
 
 export function freshSave(content: GameContent): SaveState {
@@ -719,6 +772,8 @@ export function freshSave(content: GameContent): SaveState {
     activeStage: null,
     currentDate: null,
     lastTransitionId: null,
+    activeRoom: null,
+    openItem: null,
     roomStates: {},
     episodeState: { episode: episode.id, at: episode.entry, used: [] },
   };

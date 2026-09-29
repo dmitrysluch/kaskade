@@ -61,7 +61,7 @@ function build(cols: number, rows: number, entries: string[], scroll = 0, rule =
     <GameScreen
       cols={cols}
       streamRows={streamRows}
-      status={statusLine('12.05.2026', cols)}
+      status={statusLine('', '12.05.2026', cols)}
       stream={viewport(stream, streamRows, scroll)}
       input={inputLine('спросить о парт')}
       list={commandLines([], null, '', width, LIST_ROWS)}

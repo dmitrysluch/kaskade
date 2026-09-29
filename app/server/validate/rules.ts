@@ -1230,6 +1230,77 @@ const ON_NODE: { key: keyof Attrs; empty: (a: Attrs) => boolean }[] = [
   { key: 'cost', empty: (a) => a.cost == null },
 ];
 
+/**
+ * Вложенные предметы (07-оболочка-тз, «Вложенные предметы — контейнер и его окна»).
+ *
+ * Контейнер — предмет со своими вложенными: компьютер с окнами, ящик с бумагами.
+ * Всё, что здесь проверяется, — способы написать два состояния вместо одного:
+ * страницы вместе с окнами, окно внутри окна, вещь, принадлежащая двум местам
+ * сразу. Каждый из них не падает, а тихо показывает игроку не то.
+ */
+const nestedItems: Rule = {
+  id: 'nested',
+  title: 'вложенные предметы: контейнер и его окна',
+  run(content) {
+    const found: Finding[] = [];
+    const say = (doc: Doc, message: string): Finding => ({
+      rule: 'nested',
+      severity: 'error',
+      file: doc.path,
+      message,
+    });
+
+    // Кто владеет вещью: комната или контейнер. Сравниваем по имени файла —
+    // ровно так же, как ссылку разрешает загрузчик.
+    const owners = new Map<string, Doc[]>();
+    for (const doc of Object.values(content.docs)) {
+      for (const ref of doc.items) {
+        const id = ref.split('#')[0]!.trim().split('/').pop()!;
+        const list = owners.get(id) ?? [];
+        list.push(doc);
+        owners.set(id, list);
+      }
+    }
+
+    for (const doc of Object.values(content.docs)) {
+      if (doc.type !== 'item') continue;
+
+      if (doc.items.length > 0 && doc.pages.length > 0) {
+        found.push(say(doc, 'у предмета есть и окна (`items`), и страницы (`page`) — два ответа на «что сейчас показано»'));
+      }
+
+      for (const ref of doc.items) {
+        const id = ref.split('#')[0]!.trim().split('/').pop()!;
+        const child = Object.values(content.docs).find((d) => d.id === id);
+        if (child && child.type !== 'item') {
+          found.push(say(doc, `вложенный "${id}" — заметка типа "${child.type}": внутри предмета бывают только предметы`));
+        }
+      }
+
+      if (doc.parent == null) continue;
+      const container = content.docs[doc.parent]!;
+
+      if (doc.items.length > 0) {
+        found.push(say(doc, `"${doc.id}" вложен в "${container.id}" и сам объявляет \`items\` — вложенность глубже одного уровня; если нужен ещё уровень, это комната`));
+      }
+
+      if (doc.pages.length === 0 && !doc.nodes.some((n) => n.id === EXAMINE)) {
+        found.push(say(doc, `"${doc.id}" вложен в "${container.id}", но не отвечает на "${EXAMINE}" — окно, которое нельзя открыть`));
+      }
+
+      // Комната того же помещения в другом срезе владельцем не считается — она
+      // тот же адрес; а вот вторая комната или второй контейнер уже спор.
+      const others = (owners.get(doc.id) ?? []).filter((d) => d.docId !== doc.parent);
+      if (others.length > 0) {
+        const list = [...new Set(others.map((d) => d.id))].join(', ');
+        found.push(say(doc, `"${doc.id}" вложен в "${container.id}" и перечислен ещё и здесь: ${list} — вещь принадлежит одному месту, иначе "закрыть" возвращает не туда`));
+      }
+    }
+
+    return found;
+  },
+};
+
 const transitionAttrs: Rule = {
   id: 'transition-attrs',
   title: 'атрибуты не на своём месте',
@@ -1336,6 +1407,7 @@ const waits: Rule = {
 export const RULES: Rule[] = [
   brokenGraph,
   mentions,
+  nestedItems,
   transitionAttrs,
   portable,
   pages,

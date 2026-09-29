@@ -7,7 +7,9 @@ import {
   dateAt,
   enter,
   freshSave,
+  openScreen,
   pagesOf,
+  placeLabel,
   previewOf,
   sceneOf,
   sessionEntities,
@@ -236,10 +238,13 @@ export function App() {
       // Продолжение: узел уже отыгран, его атрибуты применять второй раз нельзя —
       // просто показываем, где игрок стоит. На карточке перехода показывать
       // нечего: она и есть экран.
-      const node = content.nodes[save.episodeState.at];
+      // Открытый уровень переживает перезагрузку: тот, кто закрыл вкладку
+      // на расчёте, должен увидеть расчёт, а не описание комнаты, в которой он
+      // всё это время стоит (07-оболочка-тз, «Вложенные предметы»).
+      const node = openScreen(content, save) ?? content.nodes[save.episodeState.at];
       const onCard = content.docs[sceneOf(save.episodeState.at)]?.type === 'transition';
       const stream: StreamEntry[] = !onCard && node?.text ? [textEntry(content, save, node.text)] : [];
-      return { save, stream, overlay: null, reading: null, history: [] };
+      return { save, stream, overlay: null, history: [] };
     });
   }, [content]);
 
@@ -306,7 +311,7 @@ export function App() {
       : undefined;
 
   const catalog = useMemo(
-    () => (content && session ? buildCatalog(content, session.save, session.reading) : []),
+    () => (content && session ? buildCatalog(content, session.save) : []),
     [content, session],
   );
 
@@ -388,13 +393,23 @@ export function App() {
       // (`вернуть протокол`) в режим чтения не входит — читать после него нечего.
       const target = option.target ? content.nodes[option.target] : undefined;
       const item = option.target ? content.docs[sceneOf(option.target)] : undefined;
+      /*
+       * Контейнер открывает уровень сам по себе: у компьютера окна, а не
+       * страницы, и «осмотреть компьютер» — это уже вход в него.
+       *
+       * Окно внутри открытого контейнера уровень не подменяет, даже если у него
+       * свои страницы: окна переключают, а не вкладывают, иначе список окон
+       * исчезал бы ровно в тот момент, когда он нужен.
+       */
       const opens =
-        target?.attrs.page != null && item?.type === 'item' && pagesOf(content, item.docId, session.save).length > 1 ?
-          item.docId
+        item?.type !== 'item' ? null
+        : item.parent != null && item.parent === session.save.openItem ? session.save.openItem
+        : item.items.length > 0 ? item.docId
+        : target?.attrs.page != null && pagesOf(content, item.docId, session.save).length > 1 ? item.docId
         : null;
-      const reading =
+      const openItem =
         option.verb === CLOSE ? null
-        : opens ?? session.reading;
+        : opens ?? session.save.openItem;
 
       if (option.system) {
         const call = option.system;
@@ -406,17 +421,16 @@ export function App() {
         if (call.kind === 'меню') setMenu(true);
         setSession({
           ...session,
-          save: counted,
+          save: { ...counted, openItem },
           overlay: call.kind === 'меню' ? null : { ...call, kind: call.kind },
           stream: [...session.stream, echo],
-          reading,
           history,
         });
         setScroll(0);
         return;
       }
       if (!option.target) {
-        setSession({ ...session, save: counted, stream: [...session.stream, echo], reading, history });
+        setSession({ ...session, save: { ...counted, openItem }, stream: [...session.stream, echo], history });
         return;
       }
 
@@ -434,12 +448,11 @@ export function App() {
       const moved = sceneOf(r.save.episodeState.at) !== sceneOf(session.save.episodeState.at);
 
       setSession({
-        save: r.save,
-        stream: moved ? r.entries : [...session.stream, echo, ...r.entries],
-        overlay: null,
         // Уход в другое место закрывает книгу сам: читать её из соседней комнаты
         // нельзя, а специально гасить режим в контенте — лишняя обязанность.
-        reading: moved ? null : reading,
+        save: { ...r.save, openItem: moved ? null : openItem },
+        stream: moved ? r.entries : [...session.stream, echo, ...r.entries],
+        overlay: null,
         history,
       });
     },
@@ -642,7 +655,7 @@ export function App() {
   const transitionDone = useCallback(() => {
     if (!content || !session || !transition) return;
     const r = confirmTransition(content, session.save, transition.docId);
-    setSession({ save: r.save, stream: r.entries, overlay: null, reading: null, history: session.history });
+    setSession({ save: r.save, stream: r.entries, overlay: null, history: session.history });
     setScroll(0);
   }, [content, session, transition]);
 
@@ -1028,6 +1041,7 @@ export function App() {
         <MobileScreen
           cols={cols}
           status={statusLine(
+            placeLabel(bundle.content, session.save),
             statusText(dateAt(bundle.content, session.save), terms(bundle.content, session.save)),
             cols,
           )}
@@ -1048,6 +1062,7 @@ export function App() {
         cols={cols}
         streamRows={layout.streamRows}
         status={statusLine(
+          placeLabel(bundle.content, session.save),
           statusText(dateAt(bundle.content, session.save), terms(bundle.content, session.save)),
           cols,
         )}

@@ -160,7 +160,7 @@ test('даты принадлежат переходам, игровые сце�
 });
 
 test('блок options один на комнату, а предметы у каждого состояния свои', () => {
-  const вход = game.nodes['episodes/prolog/rooms-virt/tu.dorm-room:00#']!;
+  const вход = game.nodes['episodes/prolog/rooms-virt/tu.dorm-room:00#комната']!;
   const один = game.nodes['episodes/prolog/rooms-virt/tu.dorm-room:00#один']!;
 
   const verbs = (n: typeof вход) => [...new Set(n.options.flatMap((o) => (o.verb ? [o.verb] : [])))].sort();
@@ -192,8 +192,6 @@ test('пролог проходится до конца, и на каждом ш
   let result = enter(full, save, save.episodeState.at);
   save = result.save;
   const tried = new Map<string, Set<string>>();
-  /** Открытая книга: пока она открыта, список принадлежит ей одной. */
-  let reading: string | null = null;
 
   for (let step = 0; step < 200; step++) {
     // `конец` — единственный законный тупик: дальше пролога пока ничего нет.
@@ -230,7 +228,7 @@ test('пролог проходится до конца, и на каждом ш
       continue;
     }
 
-    const options = buildCatalog(full, save, reading).filter((o) => o.system === null && !o.locked);
+    const options = buildCatalog(full, save).filter((o) => o.system === null && !o.locked);
     assert.ok(options.length > 0, `тупик в узле ${save.episodeState.at}`);
 
     /*
@@ -240,7 +238,7 @@ test('пролог проходится до конца, и на каждом ш
      * обычно и делает то, ради чего его дали.
      */
     let chosen: CatalogOption;
-    if (reading != null) {
+    if (save.openItem != null) {
       chosen = options.find((o) => o.label === 'вперёд') ?? options[options.length - 1]!;
     } else {
       // Ходим как игрок: сначала то, что здесь ещё не пробовали, и только когда
@@ -248,7 +246,33 @@ test('пролог проходится до конца, и на каждом ш
       // последней, и без этого правила обход крутился бы в комнате вечно.
       const seen = tried.get(save.episodeState.at) ?? new Set<string>();
       tried.set(save.episodeState.at, seen);
-      chosen = options.find((o) => !seen.has(o.label)) ?? options[options.length - 1]!;
+      const stage00 = save.activeStage === '00';
+      const here = sceneOf(save.episodeState.at);
+      const bearing = !stage00 ? []
+        : save.words['word-only-case'] === 'white' ? ['лечь спать', 'завалить деда']
+        : save.inventory.includes('00-book') ?
+          here.endsWith('tu.dorm-room:00') ? ['изучать учебник']
+          : here.endsWith('tu.dorm-corridor:00') ? ['идти в комнату']
+          : here.endsWith('tu.yard:00') ? ['идти в жилой коридор']
+          : ['идти во двор']
+        : save.flags['prolog.book-found']?.value ? ['взять учебник']
+        : save.words['word-containment'] === 'white' ?
+          here.endsWith('tu.faculty-corridor:00') ? ['идти к лифту']
+          : here.endsWith('tu.elevator:00') ? ['идти в аудиторную галерею']
+          : here.endsWith('tu.auditorium-gallery:00') ? ['идти в библиотеку']
+          : ['искать контейнмент']
+        : save.words['word-alers'] === 'white' ?
+          here.endsWith('tu.dorm-room:00') ? ['идти в жилой коридор']
+          : here.endsWith('tu.dorm-corridor:00') ? ['идти во двор']
+          : here.endsWith('tu.yard:00') ? ['идти в столовую']
+          : here.endsWith('tu.canteen:00') ? ['идти к лифту']
+          : here.endsWith('tu.elevator:00') ? ['идти в кафедральный коридор']
+          : ['искать алерса']
+        : ['говорить с тоби', 'что за алерс'];
+      chosen =
+        bearing.flatMap((label) => options.filter((o) => o.label === label))[0]
+        ?? options.find((o) => !seen.has(o.label))
+        ?? options[options.length - 1]!;
       seen.add(chosen.label);
     }
 
@@ -257,17 +281,22 @@ test('пролог проходится до конца, и на каждом ш
     // как осмотр из комнаты.
     const page = chosen.target ? full.nodes[chosen.target] : undefined;
     const item = chosen.target ? full.docs[sceneOf(chosen.target)] : undefined;
-    reading =
+    const openItem =
       chosen.verb === CLOSE ? null
       : page?.attrs.page != null && item?.type === 'item' && pagesOf(full, item.docId, save).length > 1 ?
         item.docId
-      : reading;
+      : save.openItem;
+    save = { ...save, openItem };
 
     // У `закрыть` цели нет: она ничего не отыгрывает, только гасит режим.
     if (chosen.target) save = enter(full, save, chosen.target, chosen.moves).save;
   }
 
-  assert.fail(`пролог не сошёлся за 200 шагов, застрял на ${save.episodeState.at}`);
+  assert.fail(
+    `пролог не сошёлся за 200 шагов, застрял на ${save.episodeState.at}; ` +
+    `слова=${Object.keys(save.words).join(',')}; вещи=${save.inventory.join(',')}; ` +
+    `флаги=${Object.keys(save.flags).join(',')}`,
+  );
 });
 
 test('демо-срез: закрытая заметка не предлагается, но граф целый', () => {
@@ -453,7 +482,7 @@ test('начать заново — то же состояние, что пер�
   assert.deepEqual(again.save.splashes, []);
   assert.deepEqual(again.save.itemStates, {});
   assert.deepEqual(again.history, []);
-  assert.equal(again.reading, null);
+  assert.equal(again.save.openItem, null);
   assert.equal(again.overlay, null);
   // Обучающий экран показывается снова: заново — значит и для нового игрока тоже.
   assert.equal(again.save.taught, false);
@@ -518,17 +547,20 @@ test('предпросмотр проходит сквозь ремарку, н�
 
   // Узел, который начинает собеседник, предпросмотра не даёт: за этим ходом
   // слов Марго нет, и придумывать их нельзя.
-  const answers = Object.values(game.nodes).find((n) => /^>/.test(n.text.trim()))!;
+  const answers = Object.values(game.nodes).find((n) => {
+    const first = n.text.split('\n').find((line) => line.trim() !== '');
+    return first != null && voiceOf(first) === 'speech';
+  })!;
   assert.equal(previewOf(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#'), option({ target: answers.addr })), null);
 });
 
 test('список идёт в одном порядке: окружение, сюжет, advance, служебные', () => {
-  const save = at('episodes/prolog/rooms-virt/tu.dorm-room:00#один');
-  const withFlag: SaveState = {
-    ...save,
-    flags: { 'prolog.dorm-done': { value: true, at: '12.10.2024' } },
+  const base = at('episodes/prolog/rooms-virt/tu.auditorium-gallery:01#');
+  const save: SaveState = {
+    ...base,
+    flags: { 'prolog.lecture-done': { value: true, at: '14.10.2024' } },
   };
-  const kinds = buildCatalog(game, withFlag).map((o) =>
+  const kinds = buildCatalog(game, save).map((o) =>
     o.system ? 'system' : o.attrs.advance ? 'advance' : o.kind,
   );
 
@@ -621,24 +653,90 @@ test('разговор с Алерсом одноразовый: закрыв е
   assert.equal(empty.options.some((o) => o.label === 'поговорить с Алерсом'), false);
 });
 
-test('к Тоби можно вернуться, и находка второй раз не играет', () => {
-  // Комната зовёт разговор двумя командами, и они значат разное: `продолжить
-  // читать` заходит через книжную вклейку, `говорить с тоби` — прямо в хаб.
-  const читать = поговорить('episodes/prolog/rooms-virt/tu.dorm-room:00#', 'продолжить читать');
-  const говорить = поговорить('episodes/prolog/rooms-virt/tu.dorm-room:00#', 'говорить с тоби');
+test('к Тоби можно вернуться, а книга один раз перебивает вход', () => {
+  const room = 'episodes/prolog/rooms-virt/tu.dorm-room:00#комната';
+  const говорить = поговорить(room, 'говорить с тоби');
 
-  const first = enter(game, at(читать), читать);
-  assert.equal(first.save.episodeState.at, 'episodes/prolog/scenes/00-talk#находка');
+  const first = enter(game, at(говорить), говорить);
+  assert.equal(first.save.episodeState.at, 'episodes/prolog/scenes/00-talk#первый-разговор');
 
-  // Второй раз вклейка не играет: на ней условие `!prolog.talk-started`, и маршрут
-  // проваливается на следующий. Флаг ставит сам разговор; здесь важно не где,
-  // а что вклейка после этого не повторяется.
   const started = {
     ...first.save,
     flags: { ...first.save.flags, 'prolog.talk-started': { value: true, at: null } },
   };
-  assert.equal(enter(game, started, читать).save.episodeState.at, 'episodes/prolog/scenes/00-talk#хаб');
+  assert.equal(enter(game, started, говорить).save.episodeState.at, 'episodes/prolog/scenes/00-talk#хаб');
 
-  // А эта команда ведёт в хаб с первого раза.
-  assert.equal(enter(game, at(говорить), говорить).save.episodeState.at, 'episodes/prolog/scenes/00-talk#хаб');
+  // Возврат с книгой первым делом запускает оклик, а после флага больше его не повторяет.
+  const withBook: SaveState = { ...started, inventory: ['00-book'], episodeState: { ...started.episodeState, at: room } };
+  const greeted = enter(game, withBook, 'episodes/prolog/rooms-virt/tu.dorm-room:00#');
+  assert.equal(greeted.save.episodeState.at, 'episodes/prolog/scenes/00-talk#с-книгой');
+
+  const afterGreeting: SaveState = {
+    ...withBook,
+    flags: { ...withBook.flags, 'prolog.book-greeted': { value: true, at: null } },
+  };
+  assert.equal(
+    enter(game, afterGreeting, 'episodes/prolog/rooms-virt/tu.dorm-room:00#').save.episodeState.at,
+    room,
+  );
+
+  const afterToby: SaveState = {
+    ...afterGreeting,
+    flags: { ...afterGreeting.flags, 'prolog.toby-left': { value: true, at: null } },
+  };
+  assert.equal(
+    enter(game, afterToby, 'episodes/prolog/rooms-virt/tu.dorm-room:00#').save.episodeState.at,
+    'episodes/prolog/rooms-virt/tu.dorm-room:00#один',
+  );
+});
+
+test('доска и Тоби независимо открывают несущий маршрут 00', () => {
+  const gallery = 'episodes/prolog/rooms-virt/tu.auditorium-gallery:00#';
+  const board = enter(game, at(gallery), 'episodes/prolog/items/00-board#осмотреть', false).save;
+  assert.equal(board.words['word-alers'], 'white');
+  assert.equal(board.flags['prolog.alers-board']?.value, true);
+
+  const corridor: SaveState = {
+    ...board,
+    episodeState: { ...board.episodeState, at: 'episodes/prolog/rooms-virt/tu.faculty-corridor:00#' },
+  };
+  assert.ok(labels(corridor).includes('искать алерса'));
+
+  const program = enter(game, corridor, 'episodes/prolog/items/00-program#искать', false).save;
+  assert.equal(program.words['word-containment'], 'white');
+  assert.equal(program.flags['prolog.alers-program']?.value, true);
+
+  const library: SaveState = {
+    ...program,
+    episodeState: { ...program.episodeState, at: 'episodes/prolog/rooms-virt/tu.library:00#' },
+  };
+  assert.ok(labels(library).includes('искать контейнмент'));
+  const found = enter(game, library, 'episodes/prolog/items/00-catalog#искать', false).save;
+  assert.ok(labels({ ...found, episodeState: { ...found.episodeState, at: library.episodeState.at } }).includes('взять учебник'));
+
+  const talk = enter(
+    game,
+    at('episodes/prolog/rooms-virt/tu.dorm-room:00#комната'),
+    'episodes/prolog/scenes/00-talk#алерс',
+  ).save;
+  assert.equal(talk.words['word-alers'], 'white');
+  assert.equal(talk.flags['prolog.alers-toby']?.value, true);
+});
+
+test('финал 00 либо ведёт на лекцию, либо закрывает игру', () => {
+  const night = 'episodes/prolog/scenes/00-night#';
+  const base: SaveState = {
+    ...at(night),
+    words: { 'word-only-case': 'white' },
+    episodeState: { ...at(night).episodeState, at: night },
+  };
+
+  const going = enter(game, base, 'episodes/prolog/scenes/00-night#идти').save;
+  assert.equal(going.flags['prolog.course-added']?.value, true);
+  assert.equal(sceneOf(going.episodeState.at), 'episodes/prolog/transitions/01-monday');
+
+  const spared = enter(game, base, 'episodes/prolog/scenes/00-night#пожалеть').save;
+  assert.equal(spared.episodeState.at, 'episodes/prolog/scenes/00-night#конец');
+  assert.ok(game.nodes[spared.episodeState.at]!.attrs.tag.includes('titlecard'));
+  assert.equal(game.nodes[spared.episodeState.at]!.options.length, 0);
 });

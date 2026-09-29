@@ -479,6 +479,22 @@ export function loadContent(): GameContent {
    * файла вместо слитых.
    */
   const byBasename = fileIndex(parsed);
+  /*
+   * Кто в кого вложен (07-оболочка-тз, «Вложенные предметы»). Считается до
+   * сборки: окно должно знать свой контейнер раньше, чем движок впервые его
+   * откроет, — иначе «какое окно открыто» некуда записать.
+   *
+   * Неразрешимая ссылка здесь молчит: на ней и так наругается раскрытие
+   * генератора, и говорить об одном и том же дважды незачем.
+   */
+  const parents = new Map<string, string>();
+  for (const p of parsed.values()) {
+    if (p.raw.type !== 'item') continue;
+    for (const ref of p.items ?? []) {
+      const { docId } = findDoc(parsed, byBasename, p.docId, ref.split('#')[0]!.trim());
+      if (docId != null) parents.set(docId, p.docId);
+    }
+  }
   const transitionDefs = collectTransitions(parsed, byBasename);
   const plan = planStages(planDocs(parsed, byBasename), transitionDefs, episodes);
   if (plan.violations.length > 0) {
@@ -591,6 +607,7 @@ export function loadContent(): GameContent {
       exits: p.exits ?? [],
       items: p.items ?? [],
       inHand: p.info.inHand,
+      parent: parents.get(p.docId) ?? null,
       entry: p.entry,
       available: p.available ?? true,
       optionBlocks: p.raw.nodes
@@ -606,6 +623,7 @@ export function loadContent(): GameContent {
         label: p.info.label,
         category: String(p.raw.fm.category ?? 'прочее'),
         text: intro,
+        details: built.slice(1).map((node) => ({ text: node.text, if: node.attrs.if })),
       };
     }
     if (p.raw.type === 'reference') {
@@ -670,6 +688,7 @@ export function loadContent(): GameContent {
       exits: room.exits,
       items: room.items,
       inHand: [],
+      parent: null,
       entry: room.entry,
       available: room.available,
       optionBlocks: room.optionBlocks,
