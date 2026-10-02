@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Каскад — распутать мысль</title>
+  <style>
+    :root {
+      --bg: #111411;
+      --panel: #151915;
+      --ink: #dddcd0;
+      --muted: #a1aa9b;
+      --dim: #788371;
+      --rule: #30382e;
+      --accent: #c2d995;
+      --amber: #e1b273;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.65 var(--mono); }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+    button:disabled { opacity: .35; cursor: default; }
+    button, a, summary { -webkit-tap-highlight-color: transparent; }
+    [hidden] { display: none !important; }
+    .shell { max-width: 1320px; margin: auto; padding: 32px 48px 24px; }
+    .topbar { display: flex; justify-content: space-between; gap: 20px; align-items: center; border-bottom: 1px solid var(--rule); padding-bottom: 18px; }
+    .brand { color: var(--accent); letter-spacing: .18em; font-size: 12px; }
+    .brand span { color: var(--dim); letter-spacing: .05em; margin-left: 15px; }
+    .date { color: var(--muted); font-size: 11px; }
+    .intro { display: flex; justify-content: space-between; align-items: end; gap: 28px; margin: 40px 0 30px; }
+    .eyebrow { color: var(--dim); font-size: 10px; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { font-size: clamp(25px, 3.5vw, 38px); font-weight: 400; line-height: 1.3; letter-spacing: -.055em; margin: 9px 0 10px; }
+    .intro p { margin: 0; color: var(--muted); font-size: 12px; }
+    .stages { display: flex; gap: 5px; flex-shrink: 0; }
+    .stage-tab { padding: 9px 13px; background: transparent; border: 1px solid transparent; color: var(--dim); text-align: left; }
+    .stage-tab span { display: block; font-size: 10px; }
+    .stage-tab b { font-weight: 400; font-size: 15px; }
+    .stage-tab[aria-current="step"] { border-color: #536044; color: var(--accent); background: #1a2016; }
+    .stage-tab:hover { color: var(--ink); }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1.14fr) minmax(0, 1fr); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+    .sketch { padding: 22px 25px 18px 0; min-width: 0; }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 27px; }
+    .counter { color: var(--amber); font-size: 11px; white-space: nowrap; }
+    .counter.clear { color: var(--accent); }
+    .board-wrap { margin-top: 12px; position: relative; }
+    #board { width: 100%; height: auto; display: block; overflow: visible; touch-action: none; user-select: none; -webkit-user-select: none; outline: none; }
+    .edge { stroke: #929785; stroke-width: 1.65; vector-effect: non-scaling-stroke; pointer-events: none; }
+    .edge.affected { stroke-width: 2.7; }
+    .edge.dimmed { opacity: .27; }
+    .edge.clean { stroke: #9eaf85; }
+    .cross { pointer-events: none; }
+    .cross circle { fill: var(--bg); }
+    .cross path { stroke: var(--amber); stroke-width: 1.25; fill: none; vector-effect: non-scaling-stroke; }
+    .node { cursor: grab; outline: none; }
+    .node:active { cursor: grabbing; }
+    .node .halo { fill: transparent; stroke: transparent; stroke-width: 1; }
+    .node .disc { fill: var(--bg); stroke: #afb79f; stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+    .node text { fill: var(--ink); font: 13px var(--mono); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .node.selected .disc { fill: #263021; stroke: var(--accent); stroke-width: 2; }
+    .node.selected .halo { stroke: #728258; }
+    .node:hover .disc, .node:focus-visible .disc { stroke: #e7eedb; stroke-width: 2; }
+    .edge-tag { pointer-events: none; }
+    .edge-tag rect { fill: var(--bg); stroke-width: .6; }
+    .edge-tag text { font: 10px var(--mono); text-anchor: middle; dominant-baseline: central; }
+    .selection-info { min-height: 42px; font-size: 11px; color: var(--dim); display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+    .selection-info .key { display: inline-flex; align-items: center; gap: 5px; }
+    .selection-info .swatch { width: 16px; height: 2px; display: inline-block; }
+    .board-controls { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid var(--rule); padding-top: 14px; }
+    .subtle { border: 0; padding: 3px 0; color: var(--muted); background: none; font-size: 11px; }
+    .subtle:hover:not(:disabled) { color: var(--ink); }
+    .reading { border-left: 1px solid var(--rule); padding: 22px 0 22px 29px; min-width: 0; }
+    .document { padding: 18px 0 23px; }
+    .document + .document { border-top: 1px solid var(--rule); padding-top: 22px; }
+    .document-header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 17px; }
+    .document-title { font-size: 11px; color: var(--muted); }
+    .document-page { font-size: 10px; color: var(--dim); }
+    .words { font-size: clamp(16px, 1.55vw, 19px); line-height: 2.2; min-height: 112px; letter-spacing: -.035em; }
+    .word { display: inline-block; position: relative; padding: 0 3px; margin: 0 2px 0 -3px; border-radius: 2px; transition: color .12s, background .12s; }
+    .word.linked { background: color-mix(in srgb, var(--word-color) 11%, transparent); color: var(--word-color); box-shadow: inset 0 -1px var(--word-color); }
+    .word.linked::after { content: attr(data-wire); color: var(--word-color); font-size: 8px; line-height: 1; position: absolute; right: 2px; top: -2px; letter-spacing: 0; }
+    .word.changed { animation: word-change .35s ease-out; }
+    @keyframes word-change { from { background: #b7c5a331; } to { background: transparent; } }
+    .word.circled { color: var(--amber); outline: 1px solid var(--amber); outline-offset: 3px; border-radius: 48%; }
+    .source { margin-top: 13px; font-size: 10px; color: var(--dim); }
+    .margin { border-top: 1px dashed var(--rule); margin-top: 4px; padding-top: 17px; min-height: 66px; }
+    .margin-label { color: var(--dim); font-size: 10px; margin-right: 12px; }
+    #margin-note { color: var(--accent); font-size: 12px; }
+    #margin-note.final { color: var(--amber); }
+    .bottom { display: flex; justify-content: space-between; align-items: center; gap: 22px; padding: 21px 0; min-height: 96px; }
+    .status-title { font-size: 13px; color: var(--ink); margin-bottom: 4px; }
+    .status-detail { color: var(--muted); font-size: 11px; max-width: 700px; }
+    .primary { flex-shrink: 0; border: 1px solid #6c7b55; background: #222a1b; color: var(--accent); padding: 12px 18px; font-size: 12px; }
+    .primary:hover { background: #2e3925; }
+    .footer { display: flex; justify-content: space-between; gap: 20px; color: var(--dim); font-size: 10px; border-top: 1px solid var(--rule); padding-top: 18px; }
+    .footer p { margin: 0; }
+    kbd { font: inherit; color: var(--muted); }
+    .footer details { max-width: 400px; text-align: right; }
+    summary { cursor: pointer; color: var(--muted); }
+    details p { padding-top: 10px; text-align: left; }
+    #announce { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    @media (max-width: 980px) {
+      .shell { padding: 24px; }
+      .intro { align-items: start; }
+      .stage-tab { padding: 8px 10px; }
+      .stage-tab span { font-size: 9px; }
+      .sketch { padding-right: 18px; }
+      .reading { padding-left: 20px; }
+      .words { font-size: 16px; }
+    }
+    @media (max-width: 700px) {
+      .shell { padding: 20px 18px; }
+      .brand span { display: none; }
+      .date { font-size: 9px; }
+      .intro { display: block; margin: 28px 0 22px; }
+      .intro p { font-size: 11px; }
+      .stages { margin-top: 22px; }
+      .stage-tab { flex: 1; }
+      .workspace { grid-template-columns: 1fr; }
+      .sketch { padding: 18px 0; }
+      .reading { border-left: 0; border-top: 1px solid var(--rule); padding: 20px 0 6px; }
+      .words { min-height: 74px; }
+      .bottom { align-items: start; flex-direction: column; }
+      .footer { flex-direction: column; }
+      .footer details { text-align: left; max-width: none; }
+      .selection-info { min-height: 30px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">КАСКАД<span>/ ЭТЮД 00</span></div>
+      <div class="date"><span id="date-label">12 ОКТЯБРЯ 2024</span> · <span id="time-label">16:40</span></div>
+    </header>
+    <section class="intro">
+      <div>
+        <div class="eyebrow">Суббота, которую съела книга</div>
+        <h1>Распутать мысль.</h1>
+        <p>Двигай точки. Освобождай нити. Собирай текст.</p>
+      </div>
+      <nav class="stages" aria-label="Этапы прототипа">
+        <button class="stage-tab" data-stage="0" aria-current="step"><b>01</b><span>Обозначения</span></button>
+        <button class="stage-tab" data-stage="1"><b>02</b><span>Проверка</span></button>
+        <button class="stage-tab" data-stage="2"><b>03</b><span>Шкала</span></button>
+      </nav>
+    </section>
+    <div class="workspace">
+      <section class="sketch" aria-label="Поле распутывания">
+        <div class="panel-head">
+          <span class="eyebrow">Черновик / <span id="node-count">10 точек · 12 нитей</span></span>
+          <span class="counter" id="counter"></span>
+        </div>
+        <div class="board-wrap">
+          <svg id="board" viewBox="0 0 620 460" tabindex="-1" aria-labelledby="board-title board-desc">
+            <title id="board-title">Распутай линии</title>
+            <desc id="board-desc">Перетаскивай точки мышью или пальцем. С клавиатуры: выбери точку клавишей Tab и двигай стрелками. Соединения должны перестать пересекаться.</desc>
+            <defs>
+              <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="10" cy="10" r=".75" fill="#30392c"/></pattern>
+            </defs>
+            <rect x="10" y="10" width="600" height="440" rx="2" fill="url(#dots)"/>
+            <g id="edges"></g>
+            <g id="crosses"></g>
+            <g id="edge-tags"></g>
+            <g id="nodes"></g>
+          </svg>
+        </div>
+        <div class="selection-info" id="selection-info">Выбери точку — увидишь её нити и слова.</div>
+        <div class="board-controls">
+          <button class="subtle" id="undo" disabled>↶ Отменить ход</button>
+          <button class="subtle" id="shuffle">↻ Другой клубок</button>
+        </div>
+      </section>
+      <section class="reading" aria-label="Текст учебника и справочника">
+        <div class="panel-head"><span class="eyebrow">На столе</span><span class="eyebrow" id="page-status">Слова пока не складываются</span></div>
+        <div id="documents"></div>
+        <div class="margin"><span class="margin-label">На полях</span><span id="margin-note">_</span></div>
+      </section>
+    </div>
+    <section class="bottom" aria-label="Результат этапа">
+      <div><div class="status-title" id="status-title"></div><div class="status-detail" id="status-detail"></div></div>
+      <button class="primary" id="next" hidden>Следующая страница →</button>
+    </section>
+    <footer class="footer">
+      <div>
+        <p><kbd>Мышь / палец</kbd> — тянуть · <kbd>Tab</kbd> — точка · <kbd>Стрелки</kbd> — двигать · <kbd>Esc</kbd> — отпустить</p>
+        <button class="subtle" id="solve">Показать решение</button>
+      </div>
+      <details>
+        <summary>Как устроен прототип</summary>
+        <p>Каждой нити соответствует место в каждом блоке текста. Пересечение двух нитей меняет слова местами. Связи постоянны на весь этап; у каждого блока своя перестановка. Цвет и номер показывают соответствие, пока точка выбрана.</p>
+        <p>Текст каждый раз собирается из оригинала по текущим пересечениям. Этапы сверху можно открывать в любом порядке.</p>
+      </details>
+    </footer>
+    <div id="announce" role="status" aria-live="polite"></div>
+  </main>
+  <script>
+    'use strict';
+
+    const $ = id => document.getElementById(id);
+    const NS = 'http://www.w3.org/2000/svg';
+    const COLORS = ['#8bd8e5', '#e8ad78', '#c7a5ed', '#d4da85'];
+    const LETTERS = 'ABCDEFGHIJ';
+    const WIDTH = 620, HEIGHT = 460, RADIUS = 16;
+    const STAGES = [
+      {
+        time: '16:40', name: 'Обозначения', page: '§ 2.1 · с. 34',
+        edges: [[0,1], [1,2], [2,3], [3,4], [4,5], [5,6], [6,7], [7,8], [8,9], [9,0], [0,3], [3,6]],
+        solution: [{x:310,y:45}, {x:451,y:80}, {x:538,y:174}, {x:538,y:286}, {x:451,y:380}, {x:310,y:415}, {x:169,y:380}, {x:82,y:286}, {x:82,y:174}, {x:169,y:80}],
+        blocks: [
+          { title: 'Учебник', page: 'Расчётные режимы', source: 'Schmidt / Ahlers · восьмое издание',
+            words: ['Проектным', 'считается', 'событие,', 'для которого', 'исходные состояния', 'и отказы', 'заранее', 'включены', 'в перечень', 'проверяемых', 'расчётных', 'режимов.'] },
+          { title: 'Обозначения', page: 'Примечание к таблице', source: 'Тот же индекс, другой контекст',
+            words: ['Один и тот же', 'нижний индекс', 'в первой таблице', 'обозначает', 'состояние системы,', 'а дальше —', 'номер режима;', 'значение', 'определяется', 'контекстом', 'конкретной', 'формулы.'] }
+        ],
+        opening: 'Для начала — разобраться в обозначениях.',
+        complete: 'Обозначения разобраны.',
+        detail: 'Ты переписываешь два обозначения на полях. За окном начинается вечер.',
+        note: 'Разные величины. Надо было обозначить по-разному.',
+        minCrossings: 12, maxCrossings: 18, minDisplaced: 10
+      },
+      {
+        time: '19:15', name: 'Проверка', page: '§ 4.3 · с. 112',
+        edges: [[0,1], [1,2], [2,3], [3,4], [5,6], [6,7], [7,8], [8,9], [0,5], [1,6], [3,8], [4,9]],
+        solution: [{x:70,y:90}, {x:190,y:90}, {x:310,y:90}, {x:430,y:90}, {x:550,y:90}, {x:70,y:370}, {x:190,y:370}, {x:310,y:370}, {x:430,y:370}, {x:550,y:370}],
+        blocks: [
+          { title: 'Учебник', page: 'Проверка вывода', source: 'Schmidt / Ahlers · расчётная глава',
+            words: ['После подстановки', 'граничных условий', 'выражение', 'для давления', 'переходит', 'в известное', 'решение;', 'размерность', 'каждого слагаемого', 'при этом', 'остаётся', 'одинаковой.'] },
+          { title: 'Черновик', page: 'Повторный расчёт', source: 'Два способа, один результат',
+            words: ['Независимый пересчёт', 'через баланс энергии', 'даёт', 'тот же', 'коэффициент;', 'расхождение', 'между методами', 'не превышает', 'точности', 'использованных', 'табличных', 'значений.'] }
+        ],
+        opening: 'Этот вывод выглядит слишком аккуратно.',
+        complete: 'Всё сходится.',
+        detail: 'Ты зажигаешь настольную лампу. Собственный текст так и остался недописанным.',
+        note: 'Верно.', minCrossings: 12, maxCrossings: 18, minDisplaced: 9
+      },
+      {
+        time: '00:12', name: 'Шкала', page: '§ 1.2 · с. 12',
+        edges: [[0,1], [1,2], [2,3], [3,4], [4,5], [5,6], [6,7], [7,8], [8,0], [9,0], [9,3], [9,6]],
+        solution: [{x:310,y:45}, {x:464,y:75}, {x:548,y:166}, {x:518,y:290}, {x:394,y:410}, {x:226,y:410}, {x:102,y:290}, {x:72,y:166}, {x:156,y:75}, {x:310,y:230}],
+        blocks: [
+          { title: 'Учебник', page: 'Шкала событий', source: 'Schmidt / Ahlers · первая глава',
+            words: ['По международной', 'шкале INES', 'седьмой уровень', 'соответствует', 'крупному выбросу', 'радиоактивных веществ', 'с широкими', 'последствиями;', 'это', 'единственный', 'случай', 'в истории.'] },
+          { title: 'Справочник', page: 'Шкала INES', source: 'Перечень событий · 2024',
+            words: ['Чернобыльская АЭС,', '26 апреля', '1986 года:', 'уровень 7.', 'АЭС Фукусима-1,', '11 марта', '2011 года:', 'уровень 7.', 'Оба события', 'включены', 'в действующий', 'перечень INES.'] }
+        ],
+        opening: 'За полночь. Ты возвращаешься к первой главе.',
+        complete: 'Подожди.',
+        detail: 'Строка в книге и два события в справочнике. Всё перед глазами.',
+        note: '…', minCrossings: 14, maxCrossings: 20, minDisplaced: 10
+      }
+    ];
+
+    // No runtime dependencies, network requests, or external assets.
+    function clone(points) { return points.map(p => ({...p})); }
+    function svgEl(tag, attrs = {}) {
+      const el = document.createElementNS(NS, tag);
+      for (const [name, value] of Object.entries(attrs)) el.setAttribute(name, value);
+      return el;
+    }
+    function rng(seed) {
+      return () => {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    function shuffled(items, random) {
+      const copy = items.slice();
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+    function cross(a, b, c) { return (b.x-a.x)*(c.y-a.y) - (b.y-a.y)*(c.x-a.x); }
+    function segmentDistance(p, a, b) {
+      const dx=b.x-a.x, dy=b.y-a.y, length=dx*dx+dy*dy;
+      const t=length ? Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/length)) : 0;
+      return Math.hypot(p.x-a.x-t*dx, p.y-a.y-t*dy);
+    }
+    function intersection(a,b,c,d) {
+      const ac=cross(a,b,c), ad=cross(a,b,d), ca=cross(c,d,a), cb=cross(c,d,b);
+      if (!(ac*ad < 0 && ca*cb < 0)) return null;
+      const dx=b.x-a.x, dy=b.y-a.y, ex=d.x-c.x, ey=d.y-c.y;
+      const t=((c.x-a.x)*ey-(c.y-a.y)*ex)/(dx*ey-dy*ex);
+      return {x:a.x+t*dx,y:a.y+t*dy};
+    }
+    function analyze(points, edges) {
+      const crossings=[];
+      // Canonical lexicographic order is essential: transpositions don't commute.
+      for (let i=0;i<edges.length;i++) for (let j=i+1;j<edges.length;j++) {
+        const [a,b]=edges[i], [c,d]=edges[j];
+        if (a===c || a===d || b===c || b===d) continue;
+        const hit=intersection(points[a],points[b],points[c],points[d]);
+        if (hit) crossings.push({i,j,...hit});
+      }
+      // A node on an unrelated line, stacked nodes, and overlapping lines must
+      // not count as an untangled solution. Collinear overlaps include a node
+      // on an unrelated edge, so they are covered by the same check.
+      const blocked=new Set();
+      for (let i=0;i<points.length;i++) {
+        for (let j=i+1;j<points.length;j++) {
+          if (Math.hypot(points[i].x-points[j].x,points[i].y-points[j].y)<RADIUS*2+5) { blocked.add(i); blocked.add(j); }
+        }
+        for (const [a,b] of edges) {
+          if (i!==a && i!==b && segmentDistance(points[i],points[a],points[b])<RADIUS+2) blocked.add(i);
+        }
+      }
+      return {crossings,blocked};
+    }
+    function permute(words, mapping, crossings) {
+      const result=words.slice();
+      for (const {i,j} of crossings) {
+        const a=mapping[i], b=mapping[j];
+        [result[a],result[b]]=[result[b],result[a]];
+      }
+      return result;
+    }
+    function displacedCount(edgeCount, crossings) {
+      const slots=Array.from({length:edgeCount},(_,i)=>i);
+      return permute(slots,slots,crossings).filter((slot,i)=>slot!==i).length;
+    }
+    function makePuzzle(stage, seed) {
+      const random=rng(seed);
+      const mappings=stage.blocks.map(() => shuffled(stage.edges.map((_,i)=>i),random));
+      let points, fallback=null, fallbackScore=-1;
+      for (let attempt=0;attempt<2000;attempt++) {
+        points=shuffled(stage.solution,random).map(p=>({x:p.x+(random()-.5)*36,y:p.y+(random()-.5)*36}));
+        const {crossings,blocked}=analyze(points,stage.edges);
+        const inRange=crossings.length>=stage.minCrossings&&crossings.length<=stage.maxCrossings;
+        const displaced=displacedCount(stage.edges.length,crossings);
+        if (!blocked.size&&inRange&&displaced>fallbackScore) { fallback=points; fallbackScore=displaced; }
+        if (!blocked.size&&inRange&&displaced>=stage.minDisplaced) return {points,mappings};
+      }
+      if (!fallback) throw new Error('Не удалось создать распутываемое поле.');
+      return {points:fallback,mappings};
+    }
+
+    let state, drag=null, frame=0, keyboardOrigin=null;
+    let edgeEls=[], nodeEls=[], tagEls=[], wordEls=[];
+    function loadStage(index, seed=1907+index*111) {
+      cancelDrag();
+      const stage=STAGES[index], puzzle=makePuzzle(stage,seed);
+      state={index,seed,stage,points:puzzle.points,mappings:puzzle.mappings,selected:null,history:[],solved:false,marked:false};
+      keyboardOrigin=null;
+      $('node-count').textContent=`${stage.solution.length} точек · ${stage.edges.length} нитей`;
+      $('date-label').textContent=index===2?'13 ОКТЯБРЯ 2024':'12 ОКТЯБРЯ 2024';
+      $('time-label').textContent=stage.time;
+      document.querySelectorAll('.stage-tab').forEach((tab,i)=>{
+        if (i===index) tab.setAttribute('aria-current','step'); else tab.removeAttribute('aria-current');
+      });
+      $('edges').replaceChildren(); $('nodes').replaceChildren(); $('edge-tags').replaceChildren(); $('crosses').replaceChildren();
+      edgeEls=stage.edges.map(()=>{ const line=svgEl('line',{class:'edge'}); $('edges').append(line); return line; });
+      tagEls=stage.edges.map((_,i)=>{
+        const group=svgEl('g',{class:'edge-tag',visibility:'hidden'});
+        group.append(svgEl('rect',{x:-12,y:-8,width:24,height:16,rx:2}));
+        const text=svgEl('text'); text.textContent=String(i+1).padStart(2,'0'); group.append(text);
+        $('edge-tags').append(group); return group;
+      });
+      nodeEls=state.points.map((_,i)=>{
+        const group=svgEl('g',{class:'node','data-node':i,tabindex:'0',role:'button','aria-label':`Точка ${LETTERS[i]}. Двигайте стрелками.`});
+        group.append(svgEl('circle',{class:'halo',r:25}),svgEl('circle',{class:'disc',r:RADIUS}));
+        const text=svgEl('text'); text.textContent=LETTERS[i]; group.append(text);
+        group.addEventListener('focus',()=>{ if (!drag && !state.solved) { state.selected=i; render(); } });
+        group.addEventListener('blur',()=>{ if (!drag) { finishKeyboardMove(); state.selected=null; render(); } });
+        group.addEventListener('keydown',event=>onNodeKey(event,i));
+        group.addEventListener('keyup',event=>{ if (event.key.startsWith('Arrow')) finishKeyboardMove(); });
+        $('nodes').append(group); return group;
+      });
+      $('documents').replaceChildren();
+      wordEls=stage.blocks.map((block,b)=>{
+        const article=document.createElement('article'); article.className='document';
+        const head=document.createElement('div'); head.className='document-header';
+        const title=document.createElement('span'); title.className='document-title'; title.textContent=block.title;
+        const page=document.createElement('span'); page.className='document-page'; page.textContent=block.page;
+        head.append(title,page);
+        const words=document.createElement('div'); words.className='words'; words.id=`words-${b}`;
+        const spans=block.words.map((_,i)=>{
+          const span=document.createElement('span'); span.className='word'; span.dataset.slot=i;
+          words.append(span,document.createTextNode(' ')); return span;
+        });
+        const source=document.createElement('div'); source.className='source'; source.textContent=block.source;
+        article.append(head,words,source); $('documents').append(article); return spans;
+      });
+      render();
+    }
+    function selectedEdges() {
+      return state.selected===null ? [] : state.stage.edges.map(([a,b],i)=>a===state.selected||b===state.selected?i:-1).filter(i=>i>=0);
+    }
+    function queueRender() {
+      if (!frame) frame=requestAnimationFrame(()=>{frame=0;render();});
+    }
+    function render() {
+      if (!state) return;
+      const {stage,points}=state;
+      const {crossings,blocked}=analyze(points,stage.edges);
+      const active=selectedEdges();
+      const colors=new Map(active.map((edge,i)=>[edge,COLORS[i%COLORS.length]]));
+      for (let i=0;i<stage.edges.length;i++) {
+        const [a,b]=stage.edges[i], line=edgeEls[i], color=colors.get(i);
+        line.setAttribute('x1',points[a].x); line.setAttribute('y1',points[a].y);
+        line.setAttribute('x2',points[b].x); line.setAttribute('y2',points[b].y);
+        line.setAttribute('class',`edge${color?' affected':active.length?' dimmed':state.solved?' clean':''}`);
+        if (color) line.style.stroke=color; else line.style.removeProperty('stroke');
+        const tag=tagEls[i]; tag.setAttribute('visibility',color?'visible':'hidden');
+        if (color) {
+          tag.setAttribute('transform',`translate(${(points[a].x+points[b].x)/2} ${(points[a].y+points[b].y)/2})`);
+          tag.children[0].setAttribute('stroke',color); tag.children[1].setAttribute('fill',color);
+        }
+      }
+      // Draw selected threads on top, keeping IDs and their original order stable.
+      for (const i of active) $('edges').append(edgeEls[i]);
+      const marks=crossings.map(({x,y})=>{
+        const group=svgEl('g',{class:'cross',transform:`translate(${x} ${y})`});
+        group.append(svgEl('circle',{r:6}),svgEl('path',{d:'M-2.5 -2.5L2.5 2.5M2.5 -2.5L-2.5 2.5'}));
+        return group;
+      });
+      $('crosses').replaceChildren(...marks);
+      nodeEls.forEach((node,i)=>{
+        node.setAttribute('transform',`translate(${points[i].x} ${points[i].y})`);
+        node.setAttribute('class',`node${state.selected===i?' selected':''}`);
+        node.setAttribute('tabindex',state.solved?'-1':'0');
+        node.setAttribute('aria-disabled',state.solved?'true':'false');
+        node.children[1].style.stroke=blocked.has(i)?'var(--amber)':'';
+      });
+      stage.blocks.forEach((block,b)=>{
+        const result=permute(block.words,state.mappings[b],crossings);
+        const inverse=new Map(state.mappings[b].map((slot,edge)=>[slot,edge]));
+        wordEls[b].forEach((span,slot)=>{
+          const edge=inverse.get(slot), color=colors.get(edge);
+          const changed=span.textContent!==''&&span.textContent!==result[slot];
+          span.textContent=result[slot];
+          span.className=`word${color?' linked':''}${changed&&!color?' changed':''}${state.marked&&b===0&&result[slot]==='единственный'?' circled':''}`;
+          span.style.setProperty('--word-color',color||'transparent');
+          span.dataset.wire=String(edge+1).padStart(2,'0');
+          span.title=color?`Нить ${String(edge+1).padStart(2,'0')}`:'';
+        });
+      });
+      const clear=crossings.length===0&&blocked.size===0;
+      $('counter').className=`counter${clear?' clear':''}`;
+      $('counter').textContent=state.solved?'РАСПУТАНО':`ПЕРЕСЕЧЕНИЙ: ${String(crossings.length).padStart(2,'0')}`;
+      $('page-status').textContent=state.solved?'Текст восстановлен':clear?'Отпусти точку':'Слова пока не складываются';
+      $('undo').disabled=!state.history.length||Boolean(drag);
+      $('solve').disabled=state.solved;
+      $('selection-info').replaceChildren();
+      if (active.length) {
+        const label=document.createElement('span'); label.textContent=`Точка ${LETTERS[state.selected]}`; $('selection-info').append(label);
+        for (const edge of active) {
+          const key=document.createElement('span'); key.className='key'; key.style.color=colors.get(edge);
+          const swatch=document.createElement('i'); swatch.className='swatch'; swatch.style.background=colors.get(edge);
+          key.append(swatch,document.createTextNode(String(edge+1).padStart(2,'0'))); $('selection-info').append(key);
+        }
+      } else $('selection-info').textContent=state.solved?'Нити свободны. Можно читать.':'Выбери точку — увидишь её нити и слова.';
+      $('margin-note').textContent=state.marked?'2. Их два.':state.solved?stage.note:'_';
+      $('margin-note').className=state.marked?'final':'';
+      $('status-title').textContent=state.marked?'Их два.':state.solved?stage.complete:stage.opening;
+      $('status-detail').textContent=state.marked?'Ты обводишь строку и ставишь на поле двойку. С этой книгой можно идти на лекцию.':state.solved?stage.detail:blocked.size?'Разведи точки: они должны быть отдельно друг от друга и от чужих нитей.':clear?'Отпусти точку, чтобы закончить страницу.':'Освободи все нити от пересечений. Цвета связывают выбранные нити с местами в тексте.';
+      $('next').hidden=!state.solved;
+      $('next').textContent=state.index<2?'Следующая страница →':state.marked?'Начать сначала ↺':'Обвести «единственный»';
+    }
+    function remember(points) {
+      state.history.push(clone(points));
+      if (state.history.length>100) state.history.shift();
+    }
+    function checkSolved() {
+      const {crossings,blocked}=analyze(state.points,state.stage.edges);
+      if (!crossings.length&&!blocked.size) {
+        state.solved=true; state.selected=null;
+        $('announce').textContent=`Этап ${state.index+1} завершён. ${state.stage.complete}`;
+      }
+    }
+    function clampPoint(p) {
+      return {x:Math.max(34,Math.min(WIDTH-34,p.x)),y:Math.max(34,Math.min(HEIGHT-34,p.y))};
+    }
+    function pointerPosition(event) {
+      const p=$('board').createSVGPoint(); p.x=event.clientX; p.y=event.clientY;
+      return p.matrixTransform($('board').getScreenCTM().inverse());
+    }
+    function cancelDrag() {
+      if (!drag) return;
+      const pointerId=drag.id;
+      if (state) { state.points=clone(drag.origin); state.selected=null; }
+      drag=null;
+      if ($('board').hasPointerCapture(pointerId)) $('board').releasePointerCapture(pointerId);
+    }
+    $('board').addEventListener('pointerdown',event=>{
+      const node=event.target.closest('[data-node]');
+      if (!node||state.solved||drag||event.button!==0) return;
+      event.preventDefault(); finishKeyboardMove(); $('board').focus({preventScroll:true});
+      const index=Number(node.dataset.node), p=pointerPosition(event);
+      state.selected=index;
+      drag={id:event.pointerId,index,origin:clone(state.points),offset:{x:state.points[index].x-p.x,y:state.points[index].y-p.y}};
+      $('board').setPointerCapture(event.pointerId); render();
+    });
+    $('board').addEventListener('pointermove',event=>{
+      if (!drag||event.pointerId!==drag.id) return;
+      const p=pointerPosition(event);
+      state.points[drag.index]=clampPoint({x:p.x+drag.offset.x,y:p.y+drag.offset.y});
+      queueRender();
+    });
+    $('board').addEventListener('pointerup',event=>{
+      if (!drag||event.pointerId!==drag.id) return;
+      const {origin,index,id}=drag;
+      const p=pointerPosition(event);
+      state.points[index]=clampPoint({x:p.x+drag.offset.x,y:p.y+drag.offset.y});
+      if (Math.hypot(origin[index].x-state.points[index].x,origin[index].y-state.points[index].y)>1) remember(origin);
+      drag=null; state.selected=null;
+      if ($('board').hasPointerCapture(id)) $('board').releasePointerCapture(id);
+      checkSolved(); render();
+    });
+    $('board').addEventListener('pointercancel',()=>{cancelDrag();render();});
+    $('board').addEventListener('lostpointercapture',()=>{if(drag){cancelDrag();render();}});
+    window.addEventListener('blur',()=>{cancelDrag();finishKeyboardMove();if(state){state.selected=null;render();}});
+    function finishKeyboardMove() {
+      if (!keyboardOrigin||!state) return;
+      remember(keyboardOrigin); keyboardOrigin=null; checkSolved(); render();
+    }
+    function onNodeKey(event,index) {
+      if (event.key==='Escape'||event.key==='Enter'||event.key===' ') {
+        event.preventDefault(); finishKeyboardMove(); state.selected=null; $('board').focus({preventScroll:true}); render(); return;
+      }
+      const directions={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
+      if (!directions[event.key]||state.solved) return;
+      event.preventDefault();
+      if (!keyboardOrigin) keyboardOrigin=clone(state.points);
+      state.selected=index;
+      const [dx,dy]=directions[event.key], step=event.shiftKey?24:8;
+      state.points[index]=clampPoint({x:state.points[index].x+dx*step,y:state.points[index].y+dy*step}); render();
+    }
+    document.addEventListener('keydown',event=>{
+      if (event.key==='Escape'&&drag) {event.preventDefault();cancelDrag();render();}
+    });
+    $('undo').addEventListener('click',()=>{
+      if (!state.history.length||drag) return;
+      state.points=state.history.pop(); state.solved=false; state.marked=false; state.selected=null;
+      checkSolved(); render();
+    });
+    $('shuffle').addEventListener('click',()=>loadStage(state.index,(Math.random()*0xffffffff)>>>0));
+    $('solve').addEventListener('click',()=>{
+      if (state.solved) return;
+      cancelDrag(); finishKeyboardMove(); remember(state.points); state.points=clone(state.stage.solution);
+      state.selected=null; checkSolved(); render();
+    });
+    $('next').addEventListener('click',()=>{
+      if (!state.solved) return;
+      if (state.index<2) loadStage(state.index+1);
+      else if (!state.marked) {state.marked=true;render();$('announce').textContent='Их два.';}
+      else loadStage(0);
+    });
+    document.querySelectorAll('.stage-tab').forEach(tab=>tab.addEventListener('click',()=>loadStage(Number(tab.dataset.stage))));
+    loadStage(0);
+  </script>
+</body>
+</html>

@@ -4,6 +4,7 @@ type: room
 persistent: tu.auditorium-gallery
 stage: "01"
 available: true
+items: [01-notice]
 exits:
   - persistent: tu.yard
   - persistent: tu.library

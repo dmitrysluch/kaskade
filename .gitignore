@@ -6,3 +6,4 @@ dist/
 # а контент (заметки) как раз версионируется.
 content/.obsidian/
 .DS_Store
+graph_engine_poc/

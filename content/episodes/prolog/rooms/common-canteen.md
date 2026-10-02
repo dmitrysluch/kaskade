@@ -6,7 +6,6 @@ available: true
 label: столовая
 target: в столовую
 exits:
-  - persistent: tu.yard
   - persistent: tu.elevator
 ---
 

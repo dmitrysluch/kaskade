@@ -7,7 +7,6 @@ label: двор
 target: во двор
 exits:
   - persistent: tu.dorm-corridor
-  - persistent: tu.canteen
   - persistent: tu.auditorium-gallery
   - persistent: tu.library
 ---

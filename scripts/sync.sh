@@ -5,6 +5,7 @@
 #   пролог/scenes  →  content/episodes/prolog/scenes
 #   пролог/rooms   →  content/episodes/prolog/rooms
 #   пролог/items   →  content/episodes/prolog/items
+#   пролог/minigames → content/episodes/prolog/minigames
 #   пролог/transitions → content/episodes/prolog/transitions   карточки перехода
 #   пролог/words   →  content/words          общие на всю игру
 #   reference      →  content/reference      справочник, общий на всю игру
@@ -38,6 +39,7 @@ PAIRS=(
   "$GAME/пролог/scenes|$REPO/content/episodes/prolog/scenes"
   "$GAME/пролог/rooms|$REPO/content/episodes/prolog/rooms"
   "$GAME/пролог/items|$REPO/content/episodes/prolog/items"
+  "$GAME/пролог/minigames|$REPO/content/episodes/prolog/minigames"
   "$GAME/пролог/transitions|$REPO/content/episodes/prolog/transitions"
   "$GAME/пролог/words|$REPO/content/words"
   "$GAME/reference|$REPO/content/reference"
