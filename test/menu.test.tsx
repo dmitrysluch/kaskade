@@ -16,7 +16,7 @@ import { PICK_MARK } from '../app/client/ui/lines.ts';
 const noop = () => {};
 
 function render(): string {
-  return renderToStaticMarkup(<Menu onClose={noop} onManual={noop} onRestart={noop} />)
+  return renderToStaticMarkup(<Menu onClose={noop} onManual={noop} onRestart={noop} untimed={false} onUntimed={noop} />)
     .replace(/<[^>]+>/g, '')
     .replace(/&#x27;/g, "'");
 }
@@ -30,7 +30,7 @@ test('меню предлагает выход, инструкцию и сбро
 });
 
 test('открытое меню стоит на безопасном пункте, а не на сбросе', () => {
-  const markup = renderToStaticMarkup(<Menu onClose={noop} onManual={noop} onRestart={noop} />);
+  const markup = renderToStaticMarkup(<Menu onClose={noop} onManual={noop} onRestart={noop} untimed={false} onUntimed={noop} />);
 
   // Выбран ровно один пункт, и это первый — «продолжить».
   const picked = markup.split('<li').filter((li) => li.startsWith(' class="pick"'));

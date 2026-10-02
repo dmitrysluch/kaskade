@@ -205,6 +205,14 @@ function containerOptions(content: GameContent, save: SaveState, doc: Doc): Cata
     out.push(resolved(content, save, plain(option)));
   }
 
+  /*
+   * Собственные действия самого контейнера. Исполнимое действие всегда
+   * показывается в интерфейсе предмета (07-оболочка-тз, «Предметы»), а
+   * интерфейс компьютера — это его открытый экран: больше их показать негде.
+   * `осмотреть` сюда не идёт — им контейнер и открыли.
+   */
+  out.push(...itemActions(content, save, doc.docId).filter((o) => o.verb !== EXAMINE));
+
   const open = openWindow(content, save, doc);
   if (open) {
     out.push(...itemActions(content, save, open.docId).filter((o) => o.verb !== EXAMINE));

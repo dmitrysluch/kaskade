@@ -257,7 +257,18 @@ test('пролог проходится до конца, и на каждом ш
      */
     let chosen: CatalogOption;
     if (save.openItem != null) {
-      chosen = options.find((o) => o.label === 'вперёд') ?? options[options.length - 1]!;
+      /*
+       * Открытую книгу читают до конца и закрывают; у контейнера листать нечего,
+       * поэтому там пробуем непробованное — иначе окна компьютера и его
+       * собственные действия обход не увидит никогда.
+       */
+      const inside = tried.get(save.openItem) ?? new Set<string>();
+      tried.set(save.openItem, inside);
+      chosen =
+        options.find((o) => o.label === 'вперёд')
+        ?? options.find((o) => !inside.has(o.label) && o.verb !== CLOSE)
+        ?? options[options.length - 1]!;
+      inside.add(chosen.label);
     } else {
       // Ходим как игрок: сначала то, что здесь ещё не пробовали, и только когда
       // всё исчерпано — команда, закрывающая место (`advance`). Она стоит в каталоге
@@ -301,8 +312,10 @@ test('пролог проходится до конца, и на каждом ш
     const item = chosen.target ? full.docs[sceneOf(chosen.target)] : undefined;
     const openItem =
       chosen.verb === CLOSE ? null
-      : page?.attrs.page != null && item?.type === 'item' && pagesOf(full, item.docId, save).length > 1 ?
-        item.docId
+      : item?.type !== 'item' ? save.openItem
+      : item.parent != null && item.parent === save.openItem ? save.openItem
+      : item.items.length > 0 ? item.docId
+      : page?.attrs.page != null && pagesOf(full, item.docId, save).length > 1 ? item.docId
       : save.openItem;
     save = { ...save, openItem };
 
