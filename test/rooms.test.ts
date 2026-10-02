@@ -35,6 +35,7 @@ function part(docId: string, patch: Partial<RoomPart> = {}): RoomPart {
     targets: {},
     entry: null,
     available: null,
+    log: null,
     exits: undefined,
     items: undefined,
     ...patch,

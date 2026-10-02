@@ -29,6 +29,7 @@ export interface RoomPart {
   targets: Record<string, string>;
   entry: string | null;
   available: boolean | null;
+  log: boolean | null;
   /** `undefined` — список не объявлен: значимо, потому что `[]` значит «выходов нет». */
   exits: string[] | undefined;
   items: string[] | undefined;
@@ -54,6 +55,8 @@ export interface MergedRoom {
   targets: Record<string, string>;
   entry: string | null;
   available: boolean;
+  /** Хранит ли собранная комната свой поток после ухода. */
+  log: boolean;
   exits: string[];
   items: string[];
   nodes: MergedNode[];
@@ -130,6 +133,9 @@ export function mergeRoom(episode: string, persistent: string, stage: string, co
     targets: { ...common?.targets, ...version?.targets },
     entry: pick(version, (p) => p.entry) ?? pick(common, (p) => p.entry),
     available: version?.available ?? common?.available ?? true,
+    // `log` общей комнаты наследуется всеми срезами, значение версии его
+    // перекрывает ([[13-навигация-и-комнаты-тз]], «Объединение»).
+    log: version?.log ?? common?.log ?? false,
     exits: version?.exits ?? common?.exits ?? [],
     items: [...new Set([...(common?.items ?? []), ...(version?.items ?? [])])],
     nodes,

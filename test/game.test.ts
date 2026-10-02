@@ -543,9 +543,13 @@ test('предпросмотр берёт реплику Марго целево
     );
   }
 
-  // За действием без реплики Марго предпросмотра нет.
-  const look = game.nodes['episodes/prolog/rooms-virt/tu.dorm-room:00#']!.options.find((o) => o.verb === 'осмотреть')!;
-  assert.equal(previewOf(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#'), look), null);
+  /*
+   * За действием без реплики Марго предпросмотра нет. Берём ходьбу: у комнаты
+   * своих слов нет вовсе. Осмотр для этого уже не годится — в описаниях
+   * предметов теперь живут мысли Марго, и они её речь.
+   */
+  const go = game.nodes['episodes/prolog/rooms-virt/tu.dorm-room:00#комната']!.options.find((o) => o.verb === 'идти')!;
+  assert.equal(previewOf(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#комната'), go), null);
 });
 
 test('предпросмотр проходит сквозь ремарку, но не сквозь чужую реплику', () => {

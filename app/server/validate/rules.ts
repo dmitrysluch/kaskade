@@ -2,6 +2,7 @@ import { verbOf } from '../content/options.ts';
 import { kindOf, parseEntities } from '../../shared/entities.ts';
 import { parseDate } from '../../shared/dates.ts';
 import { targetsIn } from '../../shared/rooms.ts';
+import { REENTRY } from '../../shared/logs.ts';
 import { closeLabel, EXAMINE } from '../../shared/pages.ts';
 import { MINIGAME_FIELDS } from '../content/minigames.ts';
 import { analyze, POINTS, shifted, THREADS, type Cell } from '../../shared/untangle.ts';
@@ -94,6 +95,13 @@ const brokenGraph: Rule = {
       // на него никто не «переходит», его показывают.
       if (doc.type !== 'scene' && doc.type !== 'room') continue;
       if (auxiliary(doc)) continue;
+      /*
+       * `## reentry` нодой графа не является ([[07-оболочка-тз]], «Лог контекста
+       * и повторный вход»): на него нельзя ссылаться, он никуда не ведёт, и
+       * показывает его сам движок при возвращении. Правилам входов и тупиков
+       * тут судить нечего — за его содержимым следит правило `log`.
+       */
+      if (node.id === REENTRY) continue;
 
       if (!reached.has(node.addr)) {
         found.push({
@@ -1470,6 +1478,124 @@ const minigames: Rule = {
   },
 };
 
+/**
+ * Лог контекста и повторный вход (07-оболочка-тз, «Лог контекста и повторный
+ * вход»).
+ *
+ * `## reentry` — не нода графа: на неё нельзя ссылаться, она не становится
+ * адресом и ничего не исполняет. Написанный в ней `set` молчал бы убедительно,
+ * поэтому это ошибка, а не предупреждение.
+ *
+ * Отдельно — предупреждение о пустом потоке: в место, куда можно вернуться,
+ * игрок однажды войдёт второй раз и увидит строку ввода над пустотой.
+ */
+const contextLog: Rule = {
+  id: 'log',
+  title: 'лог контекста и повторный вход',
+  run(content) {
+    const found: Finding[] = [];
+
+    for (const doc of Object.values(content.docs)) {
+      const place = doc.type === 'scene' || doc.type === 'room';
+      const declared = doc.fm.log;
+
+      if (declared != null && (!place || typeof declared !== 'boolean')) {
+        found.push({
+          rule: 'log',
+          severity: 'error',
+          file: doc.path,
+          message:
+            !place ?
+              `\`log\` в заметке типа "${doc.type}" — своего потока у неё нет: он бывает у сцены и у комнаты`
+            : `log: ${String(declared)} — это \`true\` или \`false\``,
+        });
+      }
+
+      const reentry = doc.nodes.find((n) => n.id === REENTRY);
+      if (reentry == null) continue;
+
+      if (!place) {
+        found.push({
+          rule: 'log',
+          severity: 'error',
+          ...where(reentry),
+          message: `"${REENTRY}" в заметке типа "${doc.type}" — повторный вход бывает в сцену и в комнату`,
+        });
+      }
+
+      // Текст — и только текст: ни атрибутов, ни эффектов, ни опций, ни маршрутов.
+      const attrs = ON_NODE.filter(({ empty }) => !empty(reentry.attrs)).map(({ key }) => key);
+      if (reentry.attrs.if != null) attrs.push('if');
+      if (attrs.length > 0 || reentry.options.length > 0 || reentry.pending.length > 0) {
+        found.push({
+          rule: 'log',
+          severity: 'error',
+          ...where(reentry),
+          message:
+            `"${REENTRY}" предъявляет текст, но игровой нодой не является: ` +
+            `${[...attrs.map((a) => `\`${a}\``), reentry.options.length > 0 ? 'опции или маршруты' : '']
+              .filter(Boolean)
+              .join(', ')} здесь не работают`,
+        });
+      }
+
+      for (const node of allNodes(content)) {
+        const links = [
+          ...node.options.flatMap((o) => (o.target == null ? [] : [o.target])),
+          ...(node.attrs.goto == null ? [] : [node.attrs.goto]),
+        ];
+        if (!links.some((t) => t === reentry.addr)) continue;
+        found.push({
+          rule: 'log',
+          severity: 'error',
+          ...where(node),
+          message: `ссылка на "${REENTRY}" заметки ${doc.id}: этот фрагмент показывает сам движок при возвращении`,
+        });
+      }
+    }
+
+    /*
+     * Пустой поток при возвращении. «Доказуемо повторно достижимый» — это место,
+     * в которое ведёт больше одной связи **снаружи**: такое игрок однажды
+     * откроет второй раз. Собственные переходы внутри заметки не считаются:
+     * они не выход и не вход.
+     */
+    const incoming = new Map<string, number>();
+    for (const node of allNodes(content)) {
+      const here = docOfNode(content, node).docId;
+      const seen = new Set<string>();
+      for (const target of [
+        ...node.options.flatMap((o) => (o.target ? [o.target] : [])),
+        ...(node.attrs.goto ? [node.attrs.goto] : []),
+      ]) {
+        for (const addr of targetsIn(content, node.addr, target)) {
+          const to = addr.slice(0, addr.indexOf('#') === -1 ? addr.length : addr.indexOf('#'));
+          if (to === here || seen.has(to)) continue;
+          seen.add(to);
+          incoming.set(to, (incoming.get(to) ?? 0) + 1);
+        }
+      }
+    }
+
+    for (const doc of Object.values(content.docs)) {
+      if (doc.type !== 'scene' && doc.type !== 'room') continue;
+      if (doc.log || doc.nodes.some((n) => n.id === REENTRY)) continue;
+      if ((incoming.get(doc.docId) ?? 0) < 2) continue;
+      const count = incoming.get(doc.docId)!;
+      found.push({
+        rule: 'log',
+        severity: 'warn',
+        file: doc.path,
+        message:
+          `сюда ведёт ${count} ${count % 10 >= 2 && count % 10 <= 4 && count % 100 < 10 ? 'входа' : 'входов'}, ` +
+          'но ни `log: true`, ни `## reentry` нет — при возвращении игрок увидит строку ввода над пустым потоком',
+      });
+    }
+
+    return found;
+  },
+};
+
 const transitionAttrs: Rule = {
   id: 'transition-attrs',
   title: 'атрибуты не на своём месте',
@@ -1577,6 +1703,7 @@ export const RULES: Rule[] = [
   brokenGraph,
   mentions,
   nestedItems,
+  contextLog,
   minigames,
   transitionAttrs,
   portable,

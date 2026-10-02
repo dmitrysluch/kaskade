@@ -19,6 +19,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     chapter: 'prolog',
     itemStates: {},
     minigames: {},
+    logs: {},
     dates: { blueCard: '31.12.2026' },
     taught: true,
     hinted: true,

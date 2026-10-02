@@ -38,6 +38,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     dates: {},
     itemStates: {},
     minigames: {},
+    logs: {},
     taught: true,
     hinted: true,
     started: true,

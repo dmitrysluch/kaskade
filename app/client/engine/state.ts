@@ -1,39 +1,27 @@
 import { plainText, resolveEntities, type EntityKind, type EntityMention } from '../../shared/entities.ts';
 import { addrIn, isStarred, persistentOfAddr, roomStateKey, stageOfAddr } from '../../shared/rooms.ts';
+import { logged, logKey, REENTRY } from '../../shared/logs.ts';
 import { EXAMINE } from '../../shared/pages.ts';
 import { said, voiceOf } from '../../shared/speech.ts';
-import type { Doc, GameContent, MinigameDef, Node, NodeAddr, Option, SaveState } from '../../shared/types.ts';
+import type {
+  Doc,
+  GameContent,
+  MinigameDef,
+  Node,
+  NodeAddr,
+  Option,
+  SaveState,
+  StreamEntry,
+} from '../../shared/types.ts';
+
+// Запись потока переехала в общие типы: она часть сейва (07-оболочка-тз, «Лог
+// контекста»). Здесь — реэкспорт, чтобы оболочка и тесты не правили импорты.
+export type { StreamEntry };
 
 /**
  * Состояние и его изменение. Сохраняем состояние, а не сцену (07-оболочка-тз, «Сейв»):
  * слова, флаги, вещи на руках и адрес, где игрок стоит.
  */
-
-export interface StreamEntry {
-  /**
-   * `grant` — выданное слово: механика должна быть видна, иначе её как бы нет.
-   * `time` — разрыв во времени перед кадром: подпись, а не строка прозы.
-   */
-  kind: 'text' | 'echo' | 'card' | 'grant' | 'time';
-  /** Текст без разметки — ровно то, что увидит игрок. */
-  text: string;
-  /**
-   * Размеченные сущности, доступные **в момент вывода** (07-оболочка-тз, «Явно
-   * размеченные сущности»). Считаются один раз, здесь, а не при каждой отрисовке:
-   * «слово подсвечено, если карточка уже есть» — про тот момент, когда текст
-   * показали. Иначе абзац из начала игры загорался бы задним числом, стоит
-   * игроку получить слово через два часа, и подсветка перестала бы значить
-   * «это можно набрать прямо сейчас».
-   */
-  mentions?: EntityMention[];
-  /**
-   * Что выдала эта строка (`kind: 'grant'`). Нужно панели по `2`: слово, которое
-   * Марго только что получила, в тексте не размечено — его никто не упоминал,
-   * его **дали**. А игрок, нажимающий `2` сразу после выдачи, спрашивает именно
-   * про него.
-   */
-  granted?: { kind: EntityKind | 'item'; id: string; label: string };
-}
 
 /** Служебные команды, которые открывают оверлей с содержимым игры. */
 export type OverlayCommand = 'справочник' | 'дело' | 'инвентарь';
@@ -66,7 +54,6 @@ export interface OverlayCall extends SystemCall {
 
 export interface Session {
   save: SaveState;
-  stream: StreamEntry[];
   overlay: OverlayCall | null;
   history: string[];
 }
@@ -630,6 +617,26 @@ function remember(content: GameContent, save: SaveState, node: Node): SaveState 
   return { ...save, roomStates: { ...save.roomStates, [key]: node.id } };
 }
 
+/**
+ * Поток активного контекста — то, что рисует оболочка (07-оболочка-тз, «Лог
+ * контекста и повторный вход»). У карточки перехода и поля мини-игры своего
+ * потока нет: они занимают экран целиком.
+ */
+export function streamOf(content: GameContent, save: SaveState): StreamEntry[] {
+  const key = logKey(content, save);
+  return key == null ? [] : (save.logs[key] ?? []);
+}
+
+/**
+ * Дописать блоки в поток активного контекста. Так в лог попадает эхо команды:
+ * его печатает оболочка, а не узел, но предъявлено оно было там же.
+ */
+export function appendLog(content: GameContent, save: SaveState, entries: StreamEntry[]): SaveState {
+  const key = logKey(content, save);
+  if (key == null || entries.length === 0) return save;
+  return { ...save, logs: { ...save.logs, [key]: [...(save.logs[key] ?? []), ...entries] } };
+}
+
 export interface EnterResult {
   save: SaveState;
   entries: StreamEntry[];
@@ -645,6 +652,10 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
   let state = save;
   let current: string | null = addr;
   let hops = 0;
+  // Откуда уходим и хранит ли этот контекст свой поток: решать это надо до
+  // прохода, пока позиция ещё прежняя ([[07-оболочка-тз]], «Лог контекста»).
+  const from = logKey(content, save);
+  const kept = logged(content, save);
 
   while (current != null) {
     const addr = resolveTarget(content, state, current);
@@ -759,7 +770,56 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
     if (++hops > 100) throw new Error(`зациклился безусловный переход в ${addr}`);
   }
 
-  return { save: state, entries };
+  return { save: context(content, save, state, { from, kept, entries }), entries };
+}
+
+/**
+ * Лог контекста после прохода (07-оболочка-тз, «Лог контекста и повторный вход»).
+ *
+ * Четыре случая из таблицы ТЗ получаются из двух фактов — сменился ли контекст
+ * и есть ли уже ключ у нового:
+ *
+ *   - контекст тот же: дописываем в активный буфер, он есть всегда;
+ *   - вернулись в контекст с `log: true`: восстанавливаем прежний поток;
+ *   - вернулись в контекст без `log`: поток чистый, но ключ уже был — значит
+ *     вход повторный, и `## reentry` своё слово скажет;
+ *   - пришли впервые: чистый поток и никакой реакции.
+ *
+ * Ключ покинутого контекста не удаляется, даже когда буфер выбрасывается: он
+ * и есть пометка «здесь уже были». Иначе второй вход выглядел бы первым.
+ */
+function context(
+  content: GameContent,
+  before: SaveState,
+  after: SaveState,
+  walk: { from: string | null; kept: boolean; entries: StreamEntry[] },
+): SaveState {
+  const to = logKey(content, after);
+  const changed = walk.from !== to;
+  const logs = { ...after.logs };
+
+  if (changed && walk.from != null && !walk.kept) logs[walk.from] = [];
+  if (to == null) return { ...after, logs };
+
+  const visited = before.logs[to] != null;
+  const base = !changed || logged(content, after) ? (before.logs[to] ?? []) : [];
+
+  /*
+   * Повторный вход — возвращение из другой сцены или комнаты. Реакция идёт
+   * **до** того, что скажет само место: сначала Тоби оборачивается к вошедшей,
+   * и только потом комната снова себя описывает.
+   *
+   * Перезагрузка вкладки новым входом не является: там прохода нет вовсе,
+   * оболочка просто показывает сохранённый поток.
+   */
+  const node = changed && visited ? content.nodes[`${sceneOf(after.episodeState.at)}#${REENTRY}`] : undefined;
+  const reaction = node?.text ? [textEntry(content, after, interpolate(node.text, after))] : [];
+  // Реакция становится частью того, что показано этим входом: и в логе,
+  // и в `entries`, которые вернутся вызвавшему.
+  if (reaction.length > 0) walk.entries.unshift(...reaction);
+
+  logs[to] = [...base, ...walk.entries];
+  return { ...after, logs };
 }
 
 /**
@@ -773,7 +833,7 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
  */
 export function begin(content: GameContent, save: SaveState): Session {
   const r = enter(content, { ...save, started: true }, save.episodeState.at);
-  return { save: r.save, stream: r.entries, overlay: null, history: [] };
+  return { save: r.save, overlay: null, history: [] };
 }
 
 export function freshSave(content: GameContent): SaveState {
@@ -788,6 +848,7 @@ export function freshSave(content: GameContent): SaveState {
     chapter: 'prolog',
     itemStates: {},
     minigames: {},
+    logs: {},
     taught: false,
     hinted: false,
     // Начальные сроки — из episode.yaml; дальше их двигают узлы.

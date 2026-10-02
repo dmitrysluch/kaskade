@@ -8,7 +8,7 @@ import { ROOT } from '../app/server/content/paths.ts';
 import { debugSave } from '../app/client/adm/play.ts';
 import { allFlags } from '../app/client/adm/flags.ts';
 import { buildCatalog } from '../app/client/engine/catalog.ts';
-import { begin } from '../app/client/engine/state.ts';
+import { begin, streamOf } from '../app/client/engine/state.ts';
 import { loadContent } from '../app/server/content/load.ts';
 import { movesFrom, sceneGraph, shortestPath, storyMap, walkSteps } from '../app/shared/graph.ts';
 import { SceneMap } from '../app/client/adm/Scene.tsx';
@@ -425,7 +425,7 @@ test('отладочный вход: сейв встаёт на узел и иг
   // и применяет его атрибуты.
   const session = begin(c, save);
   assert.equal(session.save.episodeState.at, addr);
-  assert.ok(session.stream.some((e) => e.text.includes('Прочитайте и верните')));
+  assert.ok(streamOf(c, session.save).some((e) => e.text.includes('Прочитайте и верните')));
   assert.ok(session.save.inventory.includes('02-protocol'), 'give узла отыгран');
 });
 

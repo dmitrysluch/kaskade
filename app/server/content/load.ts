@@ -66,6 +66,8 @@ interface Parsed {
   entry: string | null;
   /** Закрыто ли помещение в этом срезе; `null` — автор не решал. */
   available: boolean | null;
+  /** Хранить ли поток после ухода; `null` — автор не решал, значит общее. */
+  log: boolean | null;
 }
 
 /**
@@ -316,6 +318,7 @@ function assembleRooms(
     targets: p.info.targets,
     entry: p.entry,
     available: p.available,
+    log: p.log,
     exits: p.exits,
     items: p.items,
   });
@@ -453,6 +456,7 @@ export function loadContent(): GameContent {
       stage: raw.fm.stage == null ? null : String(raw.fm.stage).trim(),
       entry: raw.fm.entry == null ? null : anchor(String(raw.fm.entry)),
       available: raw.fm.available == null ? null : raw.fm.available !== false,
+      log: raw.fm.log == null ? null : raw.fm.log === true,
       info: {
         docId,
         type: raw.type,
@@ -617,6 +621,7 @@ export function loadContent(): GameContent {
       items: p.items ?? [],
       inHand: p.info.inHand,
       parent: parents.get(p.docId) ?? null,
+      log: p.log === true,
       entry: p.entry,
       available: p.available ?? true,
       optionBlocks: p.raw.nodes
@@ -701,6 +706,7 @@ export function loadContent(): GameContent {
       items: room.items,
       inHand: [],
       parent: null,
+      log: room.log,
       entry: room.entry,
       available: room.available,
       optionBlocks: room.optionBlocks,

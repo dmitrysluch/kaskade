@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildCatalog, itemActions, SYSTEM_COMMANDS, type CatalogOption } from './engine/catalog.ts';
 import { commonPrefix, exact, matches } from './engine/completion.ts';
 import {
+  appendLog,
   begin,
   confirmTransition,
   dateAt,
@@ -13,6 +14,7 @@ import {
   previewOf,
   sceneOf,
   sessionEntities,
+  streamOf,
   terms,
   textEntry,
   waitRoute,
@@ -243,10 +245,22 @@ export function App() {
       // Открытый уровень переживает перезагрузку: тот, кто закрыл вкладку
       // на расчёте, должен увидеть расчёт, а не описание комнаты, в которой он
       // всё это время стоит (07-оболочка-тз, «Вложенные предметы»).
+      /*
+       * Поток приезжает из сейва (07-оболочка-тз, «Лог контекста»): перезагрузка
+       * обязана вернуть тот же экран, а не новую реакцию персонажа.
+       *
+       * Пусто он бывает у мигрированного сейва, в котором лога для активного
+       * контекста ещё нет. Тогда показываем то, что сказало бы место сейчас:
+       * пустой поток над строкой ввода честнее не делает никого.
+       */
       const node = openScreen(content, save) ?? content.nodes[save.episodeState.at];
       const onCard = content.docs[sceneOf(save.episodeState.at)]?.type === 'transition';
-      const stream: StreamEntry[] = !onCard && node?.text ? [textEntry(content, save, node.text)] : [];
-      return { save, stream, overlay: null, history: [] };
+      const kept = streamOf(content, save);
+      const restored =
+        kept.length > 0 ? save
+        : !onCard && node?.text ? appendLog(content, save, [textEntry(content, save, node.text)])
+        : save;
+      return { save: restored, overlay: null, history: [] };
     });
   }, [content]);
 
@@ -288,6 +302,15 @@ export function App() {
   );
 
   const node = content && session ? content.nodes[session.save.episodeState.at] : undefined;
+  /**
+   * Поток активного контекста (07-оболочка-тз, «Лог контекста и повторный
+   * вход»). Он живёт в сейве, а не в сессии: перезагрузка обязана вернуть тот
+   * же экран, а возвращение в комнату с `log: true` — то, что в ней уже было.
+   */
+  const transcript = useMemo(
+    () => (content && session ? streamOf(content, session.save) : []),
+    [content, session],
+  );
   const isCard = node?.attrs.tag.includes('titlecard') ?? false;
   /**
    * Игрок стоит на карточке перехода ([[14-переходы-и-даты-тз]]). Отдельного
@@ -357,12 +380,12 @@ export function App() {
     // На телефоне поток прокручивается пальцем и окна в строках не имеет:
     // высота там пляшет вместе с адресной строкой браузера.
     const streamRows = Math.max(3, rows - STATUS_ROWS - LOWER_ROWS);
-    const stream = session ? streamLines(session.stream, text, focus, episode?.speakers ?? {}) : [];
+    const stream = streamLines(transcript, text, focus, episode?.speakers ?? {});
     return { text, streamRows, stream, maxScroll: Math.max(0, stream.length - streamRows) };
-  }, [cols, rows, session, content, focus, episode]);
+  }, [cols, rows, transcript, focus, episode]);
 
   // Новый текст всегда возвращает к низу: игрок читает то, что только что произошло.
-  useEffect(() => setScroll(0), [session?.stream]);
+  useEffect(() => setScroll(0), [transcript]);
 
   const run = useCallback(
     (option: CatalogOption) => {
@@ -433,16 +456,15 @@ export function App() {
         if (call.kind === 'меню') setMenu(true);
         setSession({
           ...session,
-          save: { ...counted, openItem },
+          save: appendLog(content, { ...counted, openItem }, [echo]),
           overlay: call.kind === 'меню' ? null : { ...call, kind: call.kind },
-          stream: [...session.stream, echo],
           history,
         });
         setScroll(0);
         return;
       }
       if (!option.target) {
-        setSession({ ...session, save: { ...counted, openItem }, stream: [...session.stream, echo], history });
+        setSession({ ...session, save: appendLog(content, { ...counted, openItem }, [echo]), history });
         return;
       }
 
@@ -452,18 +474,19 @@ export function App() {
         if (used?.type === 'item') setLastItem(used.id);
       }
 
-      const r = enter(content, counted, option.target, option.moves);
-
-      // Смена места начинает страницу заново: прокрутка листает текущую сцену,
-      // а не всю игру. Эхо команды при этом остаётся на прошлой странице — то,
-      // что произошло, и так видно по новому экрану.
+      /*
+       * Эхо дописывается **до** прохода: предъявлено оно было там, где игрок
+       * набрал команду, и в логе обязано остаться на той странице. Дальше поток
+       * ведёт движок — он же решает, восстановить лог нового места или начать
+       * с чистого ([[07-оболочка-тз]], «Лог контекста»).
+       */
+      const r = enter(content, appendLog(content, counted, [echo]), option.target, option.moves);
       const moved = sceneOf(r.save.episodeState.at) !== sceneOf(session.save.episodeState.at);
 
       setSession({
         // Уход в другое место закрывает книгу сам: читать её из соседней комнаты
         // нельзя, а специально гасить режим в контенте — лишняя обязанность.
         save: { ...r.save, openItem: moved ? null : openItem },
-        stream: moved ? r.entries : [...session.stream, echo, ...r.entries],
         overlay: null,
         history,
       });
@@ -507,7 +530,7 @@ export function App() {
       if (!session) return;
       // Между записями поток ставит пустую строку — первая строка записи идёт
       // сразу за ней.
-      const before = streamLines(session.stream.slice(0, at), layout.text, null, episode?.speakers ?? {}).length;
+      const before = streamLines(transcript.slice(0, at), layout.text, null, episode?.speakers ?? {}).length;
       const top = before === 0 ? 0 : before + 1;
       setScroll(Math.max(0, Math.min(layout.maxScroll, layout.stream.length - layout.streamRows - top)));
     },
@@ -535,7 +558,7 @@ export function App() {
         return;
       }
 
-      const list = sessionEntities(session.stream, kind);
+      const list = sessionEntities(transcript, kind);
       const index = Math.max(0, list.length - 1);
       keep(index);
       const current = list[index];
@@ -561,7 +584,7 @@ export function App() {
         return;
       }
 
-      const list = sessionEntities(session.stream, panel.kind);
+      const list = sessionEntities(transcript, panel.kind);
       if (list.length === 0) return;
       const index = (panel.index + step + list.length) % list.length;
       setPanel({ ...panel, index });
@@ -657,7 +680,7 @@ export function App() {
     if (!next) return;
     const r = enter(content, session.save, next);
     // После титров всегда новое место — карточка для того и стоит.
-    setSession({ ...session, save: r.save, stream: r.entries });
+    setSession({ ...session, save: r.save });
   }, [content, session, node]);
 
   /**
@@ -667,7 +690,7 @@ export function App() {
   const transitionDone = useCallback(() => {
     if (!content || !session || !transition) return;
     const r = confirmTransition(content, session.save, transition.docId);
-    setSession({ save: r.save, stream: r.entries, overlay: null, history: session.history });
+    setSession({ save: r.save, overlay: null, history: session.history });
     setScroll(0);
   }, [content, session, transition]);
 
@@ -694,7 +717,7 @@ export function App() {
     if (!content || !session || !field) return;
     const r = completeMinigame(content, session.save, field);
     setSpot(null);
-    setSession({ save: r.save, stream: r.entries, overlay: null, history: session.history });
+    setSession({ save: r.save, overlay: null, history: session.history });
     setScroll(0);
   }, [content, session, field]);
 
@@ -819,12 +842,7 @@ export function App() {
     // Ожидание закончено и из сейва уходит: его условия за пределами этого
     // узла не читаются, а второго активного ожидания быть не должно.
     const r = enter(content, { ...session.save, wait: null }, next);
-    const moved = sceneOf(r.save.episodeState.at) !== sceneOf(session.save.episodeState.at);
-    setSession({
-      ...session,
-      save: r.save,
-      stream: moved ? r.entries : [...session.stream, ...r.entries],
-    });
+    setSession({ ...session, save: r.save });
   }, [content, session, accepting, input]);
 
   useEffect(() => {
@@ -1160,7 +1178,7 @@ export function App() {
             inventoryLines(bundle.content, session.save, panel.index, cols, LOWER_ROWS - 1)
           : contextLines(
               panel.kind,
-              sessionEntities(session.stream, panel.kind),
+              sessionEntities(transcript, panel.kind),
               panel.index,
               bundle.content,
               session.save,
