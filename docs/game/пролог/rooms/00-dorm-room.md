@@ -28,7 +28,7 @@ items: [00-computer, 00-schedule, 00-blister]
 
 → говорить с тоби [[scenes/00-talk]]
 → изучать учебник [[scenes/00-study]]
-  - if: "has:00-book, !word:word-only-case"
+  - if: "has:00-book, !prolog.study-only-case"
 → лечь спать [[scenes/00-night]]
   - if: word:word-only-case
 
@@ -36,19 +36,10 @@ items: [00-computer, 00-schedule, 00-blister]
 
 Тоби ушёл, дверь оставил открытой, из коридора тянет чужой едой.
 
-→ выйти в окно [[#выйти-в-окно]]
-  - if: "prolog.toby-left, prolog.stoicism-suicide"
 → изучать учебник [[scenes/00-study]]
-  - if: "has:00-book, !word:word-only-case"
+  - if: "has:00-book, !prolog.study-only-case"
 → лечь спать [[scenes/00-night]]
   - if: word:word-only-case
-
-## выйти-в-окно
-
-<!-- TODO: написать текст реплики. -->
-
-→ [[#один]]
-
 ## начало
 - once
 - give: 00-card

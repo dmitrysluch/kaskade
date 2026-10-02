@@ -45,4 +45,4 @@ threads:
 
 Ты закладываешь страницу. За окном начинаются сумерки.
 
-→ [[rooms-virt/tu.dorm-room]]
+→ [[scenes/00-show-toby]]
