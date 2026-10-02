@@ -5,6 +5,7 @@ import { ContentError, anchor, parseMarkdown, type RawDoc } from './markdown.ts'
 import { ANY_STAGE, formatRoomRef, parseRoomRef, roomRefOf, virtDocId } from '../../shared/rooms.ts';
 import { validateNavigationSource } from './navigation.ts';
 import { mergeRoom, type MergedRoom, type RoomPart } from './rooms.ts';
+import { parseMinigame } from './minigames.ts';
 import { planStages, type Out, type PlanDoc, type StagePlan } from './stages.ts';
 import { docGenerators, expandNode, type ExpandContext, type TargetInfo } from './options.ts';
 import { parseRenderer, readYaml, str, strArray, strMap } from './yaml.ts';
@@ -13,6 +14,7 @@ import type {
   Doc,
   EpisodeDef,
   GameContent,
+  MinigameDef,
   Node,
   ReferenceDef,
   RendererDef,
@@ -539,6 +541,7 @@ export function loadContent(): GameContent {
    * должно во что-то разрешаться, а у строки в словаре нет ни id, ни категории.
    */
   const reference: Record<string, ReferenceDef> = {};
+  const minigames: Record<string, MinigameDef> = {};
 
   for (const p of parsed.values()) {
     /*
@@ -580,7 +583,13 @@ export function loadContent(): GameContent {
         date,
         line: node.line,
         attrs: node.attrs,
-        text: node.text,
+        /*
+         * У мини-игры вступление — это её документы ([[07a-мини-игра]]), и
+         * печатать их в поток нельзя: они живут на её поле и перемешаны.
+         * Поэтому текст уходит в `minigames`, а узел остаётся пустым: он нужен
+         * только как адрес, на котором движок останавливается.
+         */
+        text: p.raw.type === 'minigame' && node.id === '' ? '' : node.text,
         options,
         pending,
         generators,
@@ -617,6 +626,9 @@ export function loadContent(): GameContent {
 
     const intro = built[0]?.text ?? '';
 
+    if (p.raw.type === 'minigame') {
+      minigames[p.docId] = parseMinigame(p.raw, id, p.docId, p.info.label);
+    }
     if (p.raw.type === 'word') {
       words[id] = {
         id,
@@ -731,6 +743,7 @@ export function loadContent(): GameContent {
     words,
     reference,
     transitions,
+    minigames,
     stages,
     docStages: {
       ...Object.fromEntries([...plan.docStages].filter(([id]) => docs[id]).map(([id, stages]) => [id, [...stages]])),

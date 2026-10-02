@@ -3,6 +3,8 @@ import { kindOf, parseEntities } from '../../shared/entities.ts';
 import { parseDate } from '../../shared/dates.ts';
 import { targetsIn } from '../../shared/rooms.ts';
 import { closeLabel, EXAMINE } from '../../shared/pages.ts';
+import { MINIGAME_FIELDS } from '../content/minigames.ts';
+import { analyze, POINTS, shifted, THREADS, type Cell } from '../../shared/untangle.ts';
 import { speakerOf } from '../../shared/speech.ts';
 import { SPEAKER_WIDTH } from '../../client/ui/lines.ts';
 import type { Attrs, Doc, GameContent, Node, Option } from '../../shared/types.ts';
@@ -1301,6 +1303,173 @@ const nestedItems: Rule = {
   },
 };
 
+/**
+ * Мини-игра «Распутать мысль» ([[07a-мини-игра]], «Валидация контента»).
+ *
+ * Поле нельзя проверить руками: пересечения считаются геометрически, а
+ * перестановку текста задаёт семя. Поэтому здесь проверяется ровно то, что
+ * автор не увидит глазами — непланарное `solution`, слабая стартовая
+ * перестановка, полоса короче двенадцати слов, — и то, что молча сломает
+ * проход: завершение без маршрута и внешняя ссылка прямо в него.
+ */
+const minigames: Rule = {
+  id: 'minigame',
+  title: 'мини-игра: схема, геометрия и текст',
+  run(content) {
+    const found: Finding[] = [];
+
+    for (const def of Object.values(content.minigames)) {
+      const doc = content.docs[def.docId]!;
+      const say = (message: string, severity: Finding['severity'] = 'error') => {
+        found.push({ rule: 'minigame', severity, file: doc.path, message });
+      };
+
+      if (!doc.docId.includes('/minigames/')) {
+        say('заметка `type: minigame` лежит не в папке `minigames/` — папка и тип обязаны совпадать');
+      }
+      for (const key of Object.keys(doc.fm)) {
+        if (!MINIGAME_FIELDS.has(key)) say(`неизвестное поле "${key}" — у мини-игры фиксированный набор полей`);
+      }
+      for (const [key, empty] of [
+        ['label', def.label === '' || def.label === def.id],
+        ['subtype', def.subtype === ''],
+        ['seed', def.seed === 0 && doc.fm.seed == null],
+        ['complete', def.complete === ''],
+      ] as const) {
+        if (empty) say(`поле \`${key}\` обязательно`);
+      }
+      if (def.subtype !== '' && def.subtype !== 'untangle') {
+        say(`subtype: ${def.subtype} — единственный подтип первой версии это \`untangle\``);
+      }
+      if (def.grid.columns <= 0 || def.grid.rows <= 0) {
+        say('grid: `columns` и `rows` — целые положительные числа');
+      }
+
+      const ids = Object.keys(def.points).map(Number).sort((a, b) => a - b);
+      if (ids.length !== POINTS || ids.some((id, i) => id !== i)) {
+        say(`точек ${ids.length} с ID ${ids.join(',')} — в первой версии их ровно ${POINTS} с ID 0..${POINTS - 1}`);
+      }
+      const inside = (c: Cell | undefined) =>
+        c != null && c[0] >= 0 && c[1] >= 0 && c[0] < def.grid.columns && c[1] < def.grid.rows;
+      for (const id of ids) {
+        const p = def.points[id]!;
+        if (!inside(p.start)) say(`точка ${id}: start [${p.start.join(', ')}] вне сетки`);
+        if (p.solution == null) say(`точка ${id}: нет проверочной координаты \`solution\``);
+        else if (!inside(p.solution)) say(`точка ${id}: solution [${p.solution.join(', ')}] вне сетки`);
+      }
+
+      const threadIds = def.threads.map((t) => t.id);
+      if (def.threads.length !== THREADS || threadIds.some((id, i) => id !== i)) {
+        say(`нитей ${def.threads.length} с ID ${threadIds.join(',')} — их ровно ${THREADS} с ID 0..${THREADS - 1}`);
+      }
+      const pairs = new Set<string>();
+      const degree = new Map<number, number>();
+      for (const t of def.threads) {
+        const [a, b] = t.points;
+        if (a === b) say(`нить ${t.id} — петля: оба конца в точке ${a}`);
+        if (def.points[a] == null || def.points[b] == null) say(`нить ${t.id} ведёт в точку, которой нет`);
+        const key = [a, b].sort((x, y) => x - y).join('-');
+        if (pairs.has(key)) say(`нить ${t.id} повторяет уже объявленную связь ${key}`);
+        pairs.add(key);
+        for (const p of [a, b]) degree.set(p, (degree.get(p) ?? 0) + 1);
+      }
+      for (const [point, count] of [...degree].sort((x, y) => x[0] - y[0])) {
+        if (count > 4) say(`у точки ${point} ${count} нити — больше четырёх цветов подсветке неоткуда взять`);
+      }
+
+      /** Раскладка, названная автором: `start` или `solution`. */
+      const layout = (which: 'start' | 'solution'): Record<number, Cell> =>
+        Object.fromEntries(
+          ids.flatMap((id) => {
+            const c = which === 'start' ? def.points[id]!.start : def.points[id]!.solution;
+            return c == null ? [] : [[id, c] as const];
+          }),
+        );
+
+      const start = analyze(layout('start'), def.threads);
+      for (const [name, a] of [['start', start], ['solution', analyze(layout('solution'), def.threads)]] as const) {
+        for (const [p, q] of a.collisions) say(`${name}: точки ${p} и ${q} стоят в одной клетке`);
+        for (const { point, thread } of a.onThread) say(`${name}: точка ${point} лежит на нити ${thread}`);
+        if (name === 'solution') {
+          for (const [x, y] of a.crossings) say(`solution: нити ${x} и ${y} пересекаются — это не планарная раскладка`);
+          for (const [x, y] of a.overlaps) say(`solution: нити ${x} и ${y} накладываются`);
+        }
+      }
+      if (start.crossings.length === 0) {
+        say('в `start` нет ни одного пересечения — распутывать нечего');
+      }
+
+      for (const problem of def.problems) say(problem);
+      if (def.documents.length === 0) {
+        say('до первого `##` нет ни одного документа `###` — мини-игре нечего перемешивать');
+      }
+      for (const document of def.documents) {
+        const full = document.paragraphs.some((words) => words.length >= THREADS);
+        if (!full) {
+          say(`документ «${document.label}»: ни одного абзаца из ${THREADS} слов — полной полосы не выходит`);
+        }
+      }
+      const moved = shifted(def.id, def.seed, def.documents, start.crossings);
+      if (def.documents.length > 0 && moved < 9) {
+        say(`стартовая перестановка сдвигает ${moved} из ${THREADS} позиций — это читается как опечатка, а не как шум`);
+      }
+
+      // Завершение: узел в этом же файле, ровно один безымянный маршрут.
+      const done = doc.nodes.find((n) => n.id === def.complete);
+      if (!done) say(`узла "${def.complete}" из \`complete\` в файле нет`);
+      else {
+        const routes = done.options.filter((o) => o.label === '');
+        if (routes.length !== 1) {
+          say(`узел завершения "${def.complete}": ${routes.length} безымянных маршрутов, нужен ровно один`);
+        }
+        if (routes[0]?.target != null) {
+          /*
+           * Цель бывает звёздной (`rooms-virt/tu.dorm-room` без среза): срез
+           * подставит оболочка, поэтому проверяем по срезам, где поле играется.
+           * Пустой список значит «поле недостижимо» — об этом ругается
+           * отдельная находка, и повторять её здесь незачем.
+           */
+          const resolved = targetsIn(content, done.addr, routes[0].target);
+          if (resolved.some((addr) => content.nodes[addr] == null)) {
+            say(`маршрут завершения ведёт в несуществующий узел`);
+          }
+        }
+      }
+
+      // Пройти завершение можно только решив поле: ссылаться на него нельзя.
+      for (const node of allNodes(content)) {
+        if (docOfNode(content, node).docId === def.docId) continue;
+        const links = [
+          ...node.options.flatMap((o) => (o.target == null ? [] : [o.target])),
+          ...(node.attrs.goto == null ? [] : [node.attrs.goto]),
+        ];
+        if (links.some((t) => t === `${def.docId}#${def.complete}`)) {
+          found.push({
+            rule: 'minigame',
+            severity: 'error',
+            ...where(node),
+            message: `прямая ссылка на завершение мини-игры "${def.id}" — пройти его можно только решив поле`,
+          });
+        }
+      }
+
+      // Само поле обязано быть достижимо: иначе написанного в игре нет.
+      const reached = new Set<string>(content.episodes.map((e) => e.entry));
+      for (const node of allNodes(content)) {
+        for (const target of [
+          ...node.options.flatMap((o) => (o.target ? [o.target] : [])),
+          ...(node.attrs.goto ? [node.attrs.goto] : []),
+        ]) {
+          for (const addr of targetsIn(content, node.addr, target)) reached.add(addr);
+        }
+      }
+      if (!reached.has(`${def.docId}#`)) say('в поле мини-игры нет ни одного входа из графа эпизода');
+    }
+
+    return found;
+  },
+};
+
 const transitionAttrs: Rule = {
   id: 'transition-attrs',
   title: 'атрибуты не на своём месте',
@@ -1408,6 +1577,7 @@ export const RULES: Rule[] = [
   brokenGraph,
   mentions,
   nestedItems,
+  minigames,
   transitionAttrs,
   portable,
   pages,

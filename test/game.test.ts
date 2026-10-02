@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { loadContent } from '../app/server/content/load.ts';
 import { validate } from '../app/server/validate/index.ts';
 import { buildCatalog, type CatalogOption } from '../app/client/engine/catalog.ts';
+import { completeMinigame, fieldHere, fieldOf } from '../app/client/engine/minigame.ts';
 import { begin, confirmTransition, dateAt, enter, evalCondition, freshSave, interpolate, previewOf, pagesOf, sceneOf, terms, waitRoute } from '../app/client/engine/state.ts';
 import { overlayLines, statusText } from '../app/client/ui/lines.ts';
 import type { SaveState } from '../app/shared/types.ts';
@@ -193,7 +194,7 @@ test('пролог проходится до конца, и на каждом ш
   save = result.save;
   const tried = new Map<string, Set<string>>();
 
-  for (let step = 0; step < 200; step++) {
+  for (let step = 0; step < 400; step++) {
     // `конец` — единственный законный тупик: дальше пролога пока ничего нет.
     if (save.episodeState.at.endsWith('#конец')) return;
 
@@ -211,6 +212,23 @@ test('пролог проходится до конца, и на каждом ш
         save = enter(full, { ...save, wait: null }, next).save;
         continue;
       }
+    }
+
+    /*
+     * Поле мини-игры ([[07a-мини-игра]]) обход проходит авторским решением:
+     * `solution` для этого и хранится — валидатору и тестам. Распутывать граф
+     * перебором здесь нечестно и незачем: проверяется проход пролога, а не
+     * планарность, и её уже проверил валидатор.
+     */
+    const field = fieldHere(full, save);
+    if (field) {
+      const solution = Object.fromEntries(
+        Object.entries(field.points).flatMap(([id, p]) => (p.solution ? [[Number(id), p.solution] as const] : [])),
+      );
+      const placed = { ...save, minigames: { ...save.minigames, [field.id]: { points: solution, solved: true, completionApplied: false } } };
+      assert.ok(fieldOf(field, placed).solved, `авторское решение не распутывает ${field.id}`);
+      save = completeMinigame(full, placed, field).save;
+      continue;
     }
 
     const node = full.nodes[save.episodeState.at]!;
@@ -261,7 +279,7 @@ test('пролог проходится до конца, и на каждом ш
           : here.endsWith('tu.elevator:00') ? ['идти в аудиторную галерею']
           : here.endsWith('tu.auditorium-gallery:00') ? ['идти в библиотеку']
           : ['искать контейнмент']
-        : save.words['word-alers'] === 'white' ?
+        : save.words['word-ahlers'] === 'white' ?
           here.endsWith('tu.dorm-room:00') ? ['идти в жилой коридор']
           : here.endsWith('tu.dorm-corridor:00') ? ['идти во двор']
           : here.endsWith('tu.yard:00') ? ['идти в столовую']
@@ -293,7 +311,7 @@ test('пролог проходится до конца, и на каждом ш
   }
 
   assert.fail(
-    `пролог не сошёлся за 200 шагов, застрял на ${save.episodeState.at}; ` +
+    `пролог не сошёлся за 400 шагов, застрял на ${save.episodeState.at}; ` +
     `слова=${Object.keys(save.words).join(',')}; вещи=${save.inventory.join(',')}; ` +
     `флаги=${Object.keys(save.flags).join(',')}`,
   );
@@ -667,9 +685,12 @@ test('к Тоби можно вернуться, а книга один раз �
   assert.equal(enter(game, started, говорить).save.episodeState.at, 'episodes/prolog/scenes/00-talk#хаб');
 
   // Возврат с книгой первым делом запускает оклик, а после флага больше его не повторяет.
+  // Сам оклик — проходной узел: он доигрывает и уводит в хаб разговора, поэтому
+  // проверяем не позицию на нём, а что он прозвучал.
   const withBook: SaveState = { ...started, inventory: ['00-book'], episodeState: { ...started.episodeState, at: room } };
   const greeted = enter(game, withBook, 'episodes/prolog/rooms-virt/tu.dorm-room:00#');
-  assert.equal(greeted.save.episodeState.at, 'episodes/prolog/scenes/00-talk#с-книгой');
+  assert.equal(greeted.save.flags['prolog.book-greeted']?.value, true);
+  assert.equal(greeted.save.episodeState.at, 'episodes/prolog/scenes/00-talk#хаб');
 
   const afterGreeting: SaveState = {
     ...withBook,
@@ -692,19 +713,33 @@ test('к Тоби можно вернуться, а книга один раз �
 
 test('доска и Тоби независимо открывают несущий маршрут 00', () => {
   const gallery = 'episodes/prolog/rooms-virt/tu.auditorium-gallery:00#';
-  const board = enter(game, at(gallery), 'episodes/prolog/items/00-board#осмотреть', false).save;
-  assert.equal(board.words['word-alers'], 'white');
-  assert.equal(board.flags['prolog.alers-board']?.value, true);
+  /*
+   * Доска — контейнер (07-оболочка-тз, «Вложенные предметы»): слово даёт не она,
+   * а листок с графиком пересдач. Поэтому открываем доску и выбираем окно
+   * ровно так, как это делает оболочка.
+   */
+  const BOARD = 'episodes/prolog/items/00-board';
+  const opened = { ...enter(game, at(gallery), `${BOARD}#осмотреть`, false).save, openItem: BOARD };
+  const resits = buildCatalog(game, opened).find((o) => o.object?.endsWith('00-board-resits'))!;
+  assert.ok(resits, 'доска не предлагает график пересдач');
 
+  const board = enter(game, opened, resits.target!, resits.moves).save;
+  assert.equal(board.words['word-ahlers'], 'white');
+  assert.equal(board.flags['prolog.ahlers-board']?.value, true);
+  // Открытое окно запомнилось: вернувшись к доске, игрок увидит тот же листок.
+  assert.equal(board.itemStates['00-board'], '00-board-resits');
+
+  // Доску закрыли: пока она открыта, список принадлежит ей одной.
   const corridor: SaveState = {
     ...board,
+    openItem: null,
     episodeState: { ...board.episodeState, at: 'episodes/prolog/rooms-virt/tu.faculty-corridor:00#' },
   };
   assert.ok(labels(corridor).includes('искать алерса'));
 
   const program = enter(game, corridor, 'episodes/prolog/items/00-program#искать', false).save;
   assert.equal(program.words['word-containment'], 'white');
-  assert.equal(program.flags['prolog.alers-program']?.value, true);
+  assert.equal(program.flags['prolog.ahlers-program']?.value, true);
 
   const library: SaveState = {
     ...program,
@@ -719,8 +754,8 @@ test('доска и Тоби независимо открывают несущ�
     at('episodes/prolog/rooms-virt/tu.dorm-room:00#комната'),
     'episodes/prolog/scenes/00-talk#алерс',
   ).save;
-  assert.equal(talk.words['word-alers'], 'white');
-  assert.equal(talk.flags['prolog.alers-toby']?.value, true);
+  assert.equal(talk.words['word-ahlers'], 'white');
+  assert.equal(talk.flags['prolog.ahlers-toby']?.value, true);
 });
 
 test('финал 00 либо ведёт на лекцию, либо закрывает игру', () => {

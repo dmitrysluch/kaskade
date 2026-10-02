@@ -461,14 +461,14 @@ test('отладочный вход берёт отмеченное: флаги,
 
   const save = debugSave(c, addr, {
     flags: [known],
-    words: ['word-alers'],
+    words: ['word-ahlers'],
     inventory: ['03-box'],
   });
 
   // Флаг помнит дату сцены, где его ставят: иначе `{{флаг.at}}` покажет прочерк
   // там, где игрок увидит число.
   assert.deepEqual(save.flags[known.name], { value: true, at: known.at });
-  assert.equal(save.words['word-alers'], 'white');
+  assert.equal(save.words['word-ahlers'], 'white');
   assert.deepEqual(save.inventory, ['03-box']);
 
   // И состояние работает: отмеченный флаг открывает то, что за ним заперто.

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import express from 'express';
 import chokidar from 'chokidar';
 import { WebSocketServer } from 'ws';
-import { buildBundle, type Bundle } from './bundle.ts';
+import { buildBundle, withoutSolutions, type Bundle } from './bundle.ts';
 import { CONTENT, ROOT } from './content/paths.ts';
 
 /**
@@ -36,7 +36,9 @@ let bundle: Bundle = buildBundle();
 report(bundle);
 
 app.get('/api/content', (_req, res) => {
-  res.json(bundle);
+  // Авторские решения мини-игр уезжают только туда, где есть `/adm`: игре они
+  // не нужны, а в сетевой вкладке игрока им делать нечего.
+  res.json(ADM ? bundle : withoutSolutions(bundle));
 });
 
 // Стоит до раздачи клиента: иначе адрес отдаст оболочку игры, а та по пути
@@ -70,7 +72,7 @@ http.on('upgrade', (req, socket, head) => {
 });
 
 function broadcast() {
-  const message = JSON.stringify({ type: 'content', bundle });
+  const message = JSON.stringify({ type: 'content', bundle: ADM ? bundle : withoutSolutions(bundle) });
   for (const client of wss.clients) {
     if (client.readyState === client.OPEN) client.send(message);
   }

@@ -195,7 +195,7 @@ export interface GameScreenProps {
 }
 
 /** Строка без рамки: поля уже внутри сегментов, здесь только обрезка по сетке. */
-function Line({ segs, cols, cls }: { segs: Seg[]; cols: number; cls?: string }) {
+export function Line({ segs, cols, cls }: { segs: Seg[]; cols: number; cls?: string }) {
   return (
     <div className={cls}>
       <Cell segs={segs} w={cols} />

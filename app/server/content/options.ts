@@ -68,7 +68,7 @@ export interface ExpandContext {
  * и получает категорию `story`. Карточка перехода — тоже место: игрок на ней
  * стоит, пока не подтвердит.
  */
-const PLACES: DocType[] = ['scene', 'room', 'transition'];
+const PLACES: DocType[] = ['scene', 'room', 'transition', 'minigame'];
 
 /** Глагол — первое слово фразы: `спросить о` объявляется в verbs как `спросить`. */
 export function verbOf(phrase: string): string {

@@ -2,7 +2,7 @@ import { plainText, resolveEntities, type EntityKind, type EntityMention } from 
 import { addrIn, isStarred, persistentOfAddr, roomStateKey, stageOfAddr } from '../../shared/rooms.ts';
 import { EXAMINE } from '../../shared/pages.ts';
 import { said, voiceOf } from '../../shared/speech.ts';
-import type { Doc, GameContent, Node, NodeAddr, Option, SaveState } from '../../shared/types.ts';
+import type { Doc, GameContent, MinigameDef, Node, NodeAddr, Option, SaveState } from '../../shared/types.ts';
 
 /**
  * Состояние и его изменение. Сохраняем состояние, а не сцену (07-оболочка-тз, «Сейв»):
@@ -198,6 +198,11 @@ export function confirmTransition(content: GameContent, save: SaveState, docId: 
     return { save, entries: [] };
   }
   return enter(content, next, def.target);
+}
+
+/** Поле мини-игры по адресу узла. `null` — обычная заметка ([[07a-мини-игра]]). */
+export function minigameAt(content: GameContent, addr: string): MinigameDef | null {
+  return content.minigames[sceneOf(addr)] ?? null;
 }
 
 /**
@@ -658,6 +663,28 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
       break;
     }
 
+    /*
+     * Поле мини-игры ([[07a-мини-игра]]) останавливает проход так же и по той
+     * же причине: позиция игрока и есть поле. Эффекты принадлежат узлу
+     * завершения, а он исполняется только после победы и нового `Enter`.
+     *
+     * Уже пройденное поле не показывается второй раз: если такой файл снова
+     * стал целью графа, движок сразу идёт его маршрутом завершения — без
+     * текста и без повторных выдач. В нормальном прохождении этот вход закрыт
+     * сюжетным флагом, который поставило само завершение.
+     */
+    const field = minigameAt(content, node.addr);
+    if (field && node.id === '') {
+      if (!state.minigames[field.id]?.completionApplied) {
+        state = { ...state, episodeState: { ...state.episodeState, at: node.addr } };
+        break;
+      }
+      const done = content.nodes[`${field.docId}#${field.complete}`];
+      current = done == null ? null : (nextRoute(content, state, done)?.target ?? null);
+      if (++hops > 100) throw new Error(`зациклился безусловный переход в ${addr}`);
+      continue;
+    }
+
     // Чем штампуется флаг: датой места, где игрок стоит. У предмета своей даты
     // нет — «когда» отвечает комната, в которой его взяли, а не он сам.
     const stamp = dateAt(content, state);
@@ -677,7 +704,7 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
      * говорят уже в сцене.
      */
     const place = content.docs[sceneOf(node.addr)]?.type;
-    if (moves || place === 'scene' || place === 'room') {
+    if (moves || place === 'scene' || place === 'room' || place === 'minigame') {
       state = { ...state, episodeState: { ...state.episodeState, at: node.addr } };
     }
     /*
@@ -760,6 +787,7 @@ export function freshSave(content: GameContent): SaveState {
     splashes: [],
     chapter: 'prolog',
     itemStates: {},
+    minigames: {},
     taught: false,
     hinted: false,
     // Начальные сроки — из episode.yaml; дальше их двигают узлы.

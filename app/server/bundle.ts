@@ -24,3 +24,26 @@ export function buildBundle(): Bundle {
     return { ok: false, errors: [(e as Error).message] };
   }
 }
+
+/**
+ * Сборка для игрока: авторские решения мини-игр остаются на сервере
+ * ([[07a-мини-игра]], «Авторский формат»).
+ *
+ * `solution` нужна валидатору и `/adm`, а победу проверяет геометрия, поэтому
+ * клиенту она не нужна вовсе. Прятать её от того, кто откроет консоль, этим
+ * не получится — граф эпизода и так уезжает целиком, — но подсмотреть готовую
+ * раскладку в сетевой вкладке у игрока не выйдет.
+ */
+export function withoutSolutions(bundle: Bundle): Bundle {
+  if (!bundle.ok) return bundle;
+  const minigames = Object.fromEntries(
+    Object.entries(bundle.content.minigames).map(([docId, def]) => [
+      docId,
+      {
+        ...def,
+        points: Object.fromEntries(Object.entries(def.points).map(([id, p]) => [id, { start: p.start }])),
+      },
+    ]),
+  );
+  return { ok: true, content: { ...bundle.content, minigames } };
+}

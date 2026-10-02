@@ -10,7 +10,9 @@
  */
 export type NodeAddr = string;
 
-export type DocType = 'scene' | 'room' | 'item' | 'word' | 'person' | 'reference' | 'transition';
+import type { Cell, Grid, MinigameDoc, Thread } from './untangle.ts';
+
+export type DocType = 'scene' | 'room' | 'item' | 'word' | 'person' | 'reference' | 'transition' | 'minigame';
 
 /** Зарезервированные ключи атрибутов узла (07-оболочка-тз, «Узлы, атрибуты, переходы»). */
 export interface Attrs {
@@ -387,6 +389,36 @@ export interface TransitionDef {
   target: NodeAddr;
 }
 
+/**
+ * Мини-игра «Распутать мысль» ([[07a-мини-игра]]).
+ *
+ * Поле — одна заметка `type: minigame`: геометрия в YAML целыми клетками,
+ * тексты обычным Markdown. Узел завершения живёт в том же файле и исполняется
+ * только после победы, поэтому прямые ссылки на него запрещены.
+ */
+export interface MinigameDef {
+  id: string;
+  docId: string;
+  label: string;
+  /** Правило, которое исполняет движок. Единственный подтип первой версии. */
+  subtype: string;
+  grid: Grid;
+  /** Стабилизирует соответствие нитей текстовым позициям. */
+  seed: number;
+  /** ID локального узла, который исполняется после победы и нового `Enter`. */
+  complete: string;
+  /**
+   * Начальная и известная автору решённая координата каждой точки. `solution`
+   * нужна валидатору и `/adm`: единственным ответом она не является, победу
+   * не проверяет и в клиентскую сборку не уезжает.
+   */
+  points: Record<number, { start: Cell; solution?: Cell }>;
+  threads: Thread[];
+  documents: MinigameDoc[];
+  /** Что не так с текстом документов — разбор нашёл, валидатор скажет. */
+  problems: string[];
+}
+
 /** Срез мира эпизода: дата у всех его переходов одна. */
 export interface StageDef {
   stage: string;
@@ -410,6 +442,11 @@ export interface GameContent {
   reference: Record<string, ReferenceDef>;
   /** Карточки перехода по id: они устанавливают срез и дату. */
   transitions: Record<string, TransitionDef>;
+  /**
+   * Мини-игры по docId: от адреса узла до поля — один шаг, а в сейве они
+   * лежат по `id`, как предметы.
+   */
+  minigames: Record<string, MinigameDef>;
   /**
    * Срезы мира по эпизоду, в порядке появления. Набор задаётся не автором
    * отдельным списком, а самими переходами: срез существует тогда, когда в него
@@ -517,6 +554,16 @@ export interface SaveState {
    * книгу, а не выкинуть игрока в комнату с непонятно откуда взятым текстом.
    */
   openItem: string | null;
+  /**
+   * Поля мини-игр по `id` ([[07a-мини-игра]], «Состояние и сейв»).
+   *
+   * Координаты после каждого принятого шага, `solved` после победы и
+   * `completionApplied` после первого исполнения узла завершения. Выбранная
+   * точка, подсветка, пересечения и переставленный текст — производные: они
+   * считаются заново из координат и контента, иначе одна и та же геометрия
+   * однажды дала бы два разных текста.
+   */
+  minigames: Record<string, { points: Record<number, Cell>; solved: boolean; completionApplied: boolean }>;
   /**
    * Незаконченное физическое ожидание — не более одного за раз. Хранится
    * прожитое активное время, а не момент начала: настенные часы в счёт не идут,

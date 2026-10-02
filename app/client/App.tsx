@@ -20,7 +20,9 @@ import {
   type StreamEntry,
   type SystemCommand,
 } from './engine/state.ts';
+import { completeMinigame, fieldHere, fieldOf, moveMinigame } from './engine/minigame.ts';
 import { clearSave, loadSave, persistSave } from './engine/save.ts';
+import { UntangleScreen } from './ui/Untangle.tsx';
 import { rendererFor } from './renderers/registry.ts';
 import { useMetrics } from './ui/metrics.ts';
 import {
@@ -301,6 +303,16 @@ export function App() {
    * обычными цветами говорящих и без рамки.
    */
   const isMontage = node?.attrs.tag.includes('montage') ?? false;
+
+  /**
+   * Поле мини-игры ([[07a-мини-игра]]). Как и карточка перехода, оно — сама
+   * позиция игрока: перезагрузка возвращает то же поле, а эффекты узла
+   * завершения ждут победы и нового `Enter`.
+   */
+  const field = content && session ? fieldHere(content, session.save) : null;
+  const untangle = content && session && field ? fieldOf(field, session.save) : null;
+  /** Выбранная точка поля — состояние экрана, а не игры: в сейв не уезжает. */
+  const [spot, setSpot] = useState<number | null>(null);
 
   // Лицо показывается сплэшем во весь кадр и ровно один раз за игру: узел,
   // который его уже отыграл, второй раз не показывает ничего.
@@ -659,6 +671,33 @@ export function App() {
     setScroll(0);
   }, [content, session, transition]);
 
+  /**
+   * Шаг по полю. Решает движок: отклонённый ход (за сетку, в занятую клетку,
+   * по решённому полю) сюда не возвращается и ничего не меняет.
+   */
+  const minigameMove = useCallback(
+    (dx: number, dy: number) => {
+      if (!content || !session || !field || spot == null) return;
+      const next = moveMinigame(field, session.save, spot, dx, dy);
+      if (next) setSession({ ...session, save: next });
+    },
+    [content, session, field, spot],
+  );
+
+  /**
+   * `Enter` на распутанном поле: одной операцией ставится `completionApplied`,
+   * применяются атрибуты узла завершения и игра входит в него. До этого игрок
+   * сидит на решённой странице и читает — эффекты не выдаются вместе с
+   * последним движением точки.
+   */
+  const minigameDone = useCallback(() => {
+    if (!content || !session || !field) return;
+    const r = completeMinigame(content, session.save, field);
+    setSpot(null);
+    setSession({ save: r.save, stream: r.entries, overlay: null, history: session.history });
+    setScroll(0);
+  }, [content, session, field]);
+
   const splashDone = useCallback(() => {
     setSession((prev) =>
       prev && node
@@ -679,7 +718,7 @@ export function App() {
    * и личное дело — одна сцена, разрывать её инструкцией хуже, а перед комнатой
    * у инструкции максимальная свежесть.
    */
-  const teaching = Boolean(session) && !session!.save.taught && !isCard && !transition && !splash;
+  const teaching = Boolean(session) && !session!.save.taught && !isCard && !transition && !splash && !field;
   const [reopened, setReopened] = useState(false);
   const manual = teaching || reopened;
 
@@ -736,6 +775,7 @@ export function App() {
     Boolean(session) &&
     !isCard &&
     !isMontage &&
+    !field &&
     !transition &&
     !splash &&
     !manual &&
@@ -804,6 +844,20 @@ export function App() {
       // У меню свои стрелки, свой Enter и свой Esc; обучающий экран закрывается
       // тем же новым Enter, что и полноэкранный кадр (useAdvance выше).
       if (menu || manual) return;
+
+      /*
+       * Пока на экране поле мини-игры, клавиатура принадлежит ему целиком
+       * ([[07a-мини-игра]], «Управление»): цифра выбирает точку, а не открывает
+       * меню, и стрелки двигают точку, а не листают команды. Оболочке остаётся
+       * экран управления — его `?` обязан работать всегда.
+       */
+      if (field) {
+        if (key === MANUAL_KEY) {
+          event.preventDefault();
+          setReopened(true);
+        }
+        return;
+      }
 
       /*
        * Цифра работает хоткеем только на пустой строке. После первого знака она
@@ -962,6 +1016,29 @@ export function App() {
       );
     }
     if (manual) return <Manual first={!session.save.taught} touch={TOUCH} onDone={manualDone} />;
+    // Поле занимает место потока и ввода целиком; статус с местом и датой
+    // остаётся сверху ([[07a-мини-игра]], «Рендерер»).
+    if (field && untangle) {
+      return (
+        <UntangleScreen
+          def={field}
+          points={untangle.points}
+          analysis={untangle.analysis}
+          selected={spot}
+          cols={cols}
+          status={statusLine(
+            placeLabel(bundle.content, session.save),
+            statusText(dateAt(bundle.content, session.save), terms(bundle.content, session.save)),
+            cols,
+          )}
+          touch={TOUCH}
+          onSelect={setSpot}
+          onMove={minigameMove}
+          onMenu={() => setMenu(true)}
+          onDone={minigameDone}
+        />
+      );
+    }
     // Лицо и запись на одном узле — личное дело: лицо, под ним рамка. Держится
     // столько же, сколько сплэш: разглядеть надо и то, и другое.
     if (splash && isCard) {

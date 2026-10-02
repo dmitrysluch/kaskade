@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { movesFrom, shortestPath, storyMap, walkSteps, type PathStep } from '../../shared/graph.ts';
 import { edgePath, place, type BoxSize } from './layout.ts';
 import { SceneMap } from './Scene.tsx';
+import { Minigames } from './Minigame.tsx';
 import { StartDialog } from './Start.tsx';
 import type { GameContent } from '../../shared/types.ts';
 
@@ -286,6 +287,9 @@ export function AdmView({ content }: { content: GameContent }) {
       )}
 
       {play && <StartDialog content={content} addr={play} onClose={() => setPlay(null)} />}
+
+      {/* Поля мини-игр: обе раскладки, стартовая путаница и авторское решение. */}
+      <Minigames content={content} episode={episode} />
 
       <section className="adm-path">
         <h2>Путь</h2>

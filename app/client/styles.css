@@ -541,3 +541,107 @@ body {
 .menu-items .tap {
   padding: 0.55em 0;
 }
+
+/*
+ * Мини-игра «Распутать мысль» ([[07a-мини-игра]], «Рендерер»).
+ *
+ * Единственный экран игры, нарисованный не знаками сетки: линии обязаны
+ * двигаться между дискретными положениями непрерывно. Поэтому здесь CSS
+ * впервые раскладывает блоки — но правила оболочки те же: коробки по периметру
+ * нет, области разделяют воздух и одна вертикальная линейка, а цвета приходят
+ * из палитры рендерера.
+ */
+.mini {
+  display: flex;
+  gap: 3ch;
+  height: calc(100% - var(--line));
+  padding: var(--line) 4ch calc(var(--line) * 2);
+  overflow: hidden;
+}
+
+.mini-left {
+  display: flex;
+  flex: 1 1 55%;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mini-right {
+  flex: 1 1 45%;
+  min-width: 0;
+  padding-left: 3ch;
+  border-left: 1px solid var(--rule, var(--dim));
+  overflow-y: auto;
+}
+
+.mini-head,
+.mini-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 2ch;
+  min-height: var(--line);
+}
+
+/* Поле забирает всё, что осталось между счётчиком и подписью управления. */
+.mini-field {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  margin: var(--line) 0;
+}
+
+.mini-cross {
+  fill: var(--dim);
+}
+
+.mini-solved {
+  color: var(--margo, var(--accent));
+}
+
+/* Пересечений нет, а раскладка всё ещё не планарная: цвет предупреждения. */
+.mini-warn {
+  color: var(--accent);
+}
+
+.mini-doc + .mini-doc {
+  margin-top: var(--line);
+  padding-top: var(--line);
+  border-top: 1px solid var(--rule, var(--dim));
+}
+
+.mini-label {
+  font: inherit;
+  font-weight: normal;
+  letter-spacing: 0.1ch;
+}
+
+.mini-doc p {
+  margin-top: calc(var(--line) * 0.5);
+  /* Перемешанный текст читают по словам: переносить его как прозу можно. */
+  white-space: normal;
+}
+
+/* Номер нити рядом с цветом: цвет не остаётся единственным каналом связи. */
+.mini-tag {
+  font-size: 0.7em;
+  opacity: 0.8;
+  padding-right: 0.2ch;
+}
+
+.mini-enter {
+  margin-top: var(--line);
+}
+
+/* Узкое окно: документы уезжают под поле, клетка остаётся квадратной. */
+@media (max-width: 70em) {
+  .mini {
+    flex-direction: column;
+  }
+
+  .mini-right {
+    padding-left: 0;
+    padding-top: var(--line);
+    border-left: 0;
+    border-top: 1px solid var(--rule, var(--dim));
+  }
+}
