@@ -211,6 +211,7 @@ test('сплэш, который не влезает в кадр, находит
         palette: { bg: '#000', fg: '#fff', dim: '#888', accent: '#0f0' },
         frame: 'light',
         rule: 'light',
+        timer: 'blocks',
         font: { family: 'mono', size: 16, rows: 34, line: 1 },
         effects: [],
         ambience: null,

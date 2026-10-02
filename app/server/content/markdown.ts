@@ -89,10 +89,15 @@ const ATTR_KEYS = new Set([
   'timeLabel',
   // Физическое ожидание: `- wait: lab-result 90s`.
   'wait',
+  // Молчание под давлением: `- timeout: 9s` на переходе ([[07b-надавить-тз]]).
+  'timeout',
 ]);
 
 /** `lab-result 90s` — устойчивый локальный id и целое положительное число секунд. */
 const WAIT = /^([a-z][a-z0-9-]*)\s+(\d+)s$/i;
+
+/** `9s` — целое положительное число секунд, и ничего кроме. */
+const SECONDS = /^(\d+)s$/;
 
 /** Ключи, которые можно писать несколько раз: `- set: a` двумя строками. */
 const MULTI_KEYS = new Set(['set', 'unset', 'give', 'take', 'tag', 'items', 'exits']);
@@ -184,6 +189,12 @@ function parseAttrs(file: string, lines: { text: string; line: number }[]): Attr
         const seconds = Number(m[2]);
         if (seconds <= 0) throw new ContentError(file, 'ожидание длиной ноль секунд — не ожидание', line);
         attrs.wait = { id: m[1]!, ms: seconds * 1000 };
+      } else if (key === 'timeout') {
+        const m = SECONDS.exec(String(value).trim());
+        if (!m) throw new ContentError(file, `timeout пишется как «9s», а не "${String(value)}"`, line);
+        const seconds = Number(m[1]);
+        if (seconds <= 0) throw new ContentError(file, 'молчание длиной ноль секунд не ограничивает ничего', line);
+        attrs.timeout = seconds * 1000;
       } else if (key === 'cost' || key === 'page') {
         const n = Number(value);
         if (!Number.isFinite(n)) throw new ContentError(file, `${key} должен быть числом, а не "${value}"`, line);

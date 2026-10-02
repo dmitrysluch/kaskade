@@ -28,11 +28,16 @@ export function Menu({
   onClose,
   onManual,
   onRestart,
+  untimed,
+  onUntimed,
   touch = false,
 }: {
   onClose: () => void;
   onManual: () => void;
   onRestart: () => void;
+  /** Включено ли «без ограничений по времени» ([[07b-надавить-тз]]). */
+  untimed: boolean;
+  onUntimed: (value: boolean) => void;
   /** Мобильная версия: пункт выбирают касанием, стрелок и Enter там нет. */
   touch?: boolean;
 }) {
@@ -51,6 +56,15 @@ export function Menu({
     : [
         { label: 'продолжить', run: onClose },
         { label: 'управление', run: onManual },
+        /*
+         * Единственная настройка игры, и она про доступность: раунд «надавить»
+         * перестаёт исполнять молчание сам ([[07b-надавить-тз]]). Из списка
+         * при этом не исчезает ничего — промолчать по-прежнему можно руками.
+         */
+        {
+          label: `без ограничений по времени: ${untimed ? 'да' : 'нет'}`,
+          run: () => onUntimed(!untimed),
+        },
         { label: 'начать заново', run: () => setConfirm(true) },
       ];
 

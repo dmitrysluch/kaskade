@@ -53,9 +53,14 @@ export interface MobileScreenProps {
   /** Служебная полоса: те же команды, но их трогают. */
   system: { label: string; run: () => void }[];
   rule: string;
+  /**
+   * Шкала времени раунда «надавить» ([[07b-надавить-тз]]): на телефоне она
+   * стоит прямо над кнопками ответов — там, куда смотрят, когда выбирают.
+   */
+  timer?: Seg[];
 }
 
-export function MobileScreen({ cols, status, stream, options, onPick, system, rule }: MobileScreenProps) {
+export function MobileScreen({ cols, status, stream, options, onPick, system, rule, timer }: MobileScreenProps) {
   const streamRef = useRef<HTMLDivElement | null>(null);
 
   // Новый текст всегда внизу: игрок читает то, что только что произошло.
@@ -75,6 +80,8 @@ export function MobileScreen({ cols, status, stream, options, onPick, system, ru
       </div>
 
       <Row segs={[{ text: rule.repeat(cols), cls: 'rule' }]} cols={cols} />
+
+      {timer && timer.length > 0 && <Row segs={timer} cols={cols} />}
 
       <div className="mobile-list">
         {options.map((option, i) => (

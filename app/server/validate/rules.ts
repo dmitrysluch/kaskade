@@ -2,6 +2,7 @@ import { verbOf } from '../content/options.ts';
 import { kindOf, parseEntities } from '../../shared/entities.ts';
 import { parseDate } from '../../shared/dates.ts';
 import { targetsIn } from '../../shared/rooms.ts';
+import { PRESSURE } from '../../client/engine/pressure.ts';
 import { REENTRY } from '../../shared/logs.ts';
 import { closeLabel, EXAMINE } from '../../shared/pages.ts';
 import { MINIGAME_FIELDS } from '../content/minigames.ts';
@@ -1596,6 +1597,158 @@ const contextLog: Rule = {
   },
 };
 
+/**
+ * Раунд «надавить» ([[07b-надавить-тз]], «Валидатор»).
+ *
+ * Движок не судит, какая реплика сильная: результат задаёт обычный граф.
+ * Поэтому проверяется только форма — та, из которой механика собирается, и
+ * та, которую легко написать неправильно: один таймер, видимая метка молчания,
+ * никаких условий внутри испытания и никакого входа в середину
+ * последовательности мимо первого раунда.
+ *
+ * Содержательную часть — отражает ли ответ слова собеседника — проверяет автор
+ * по [[16-диалоги-под-давлением]].
+ */
+const pressureRounds: Rule = {
+  id: 'pressure',
+  title: 'раунд «надавить»: форма испытания',
+  run(content) {
+    const found: Finding[] = [];
+    const rounds = allNodes(content).filter((n) => n.attrs.tag.includes(PRESSURE));
+    const isRound = new Set(rounds.map((n) => n.addr));
+
+    const say = (node: Node, message: string, severity: Finding['severity'] = 'error') => {
+      found.push({ rule: 'pressure', severity, ...where(node), message });
+    };
+
+    for (const node of rounds) {
+      const doc = docOfNode(content, node);
+      if (doc.type !== 'scene') {
+        say(node, `tag: ${PRESSURE} в заметке типа "${doc.type}" — давление живёт внутри сцены`);
+      }
+
+      const timed = node.options.filter((o) => o.attrs.timeout != null);
+      if (timed.length !== 1) {
+        say(node, `переходов с \`timeout\` ${timed.length}, нужен ровно один: молчание у раунда одно`);
+      }
+
+      const silence = timed[0];
+      if (silence) {
+        const seconds = silence.attrs.timeout! / 1000;
+        if (silence.label === '') {
+          say(node, 'молчание без метки: игрок вправе выбрать его сам, а значит обязан его видеть');
+        }
+        if (silence.target == null || content.nodes[silence.target] == null) {
+          say(node, 'молчание ведёт в несуществующий узел');
+        }
+        if (seconds < 5 || seconds > 20) {
+          say(node, `${seconds} с на ответ — вне разумного интервала 5–20 секунд`, 'warn');
+        }
+        // Молчание — такой же исход, как остальные: из него обязан быть выход.
+        const target = silence.target == null ? undefined : content.nodes[silence.target];
+        if (target && !hasExit(target) && target.id !== 'конец') {
+          say(node, 'из молчания некуда идти: ветка отступления обязана продолжать игру', 'warn');
+        }
+      }
+
+      /*
+       * Внутри испытания нет условных ответов: все варианты выводятся только
+       * из реплики собеседника и доступны всякий раз одинаково. Белое слово
+       * может открыть вход в последовательность, но не подсвеченную реплику
+       * внутри неё — иначе давление превращается в поиск цветной кнопки.
+       */
+      for (const option of node.options) {
+        const wrong = [
+          option.attrs.if != null ? '`if`' : '',
+          option.attrs.once ? '`once`' : '',
+          option.attrs.cost != null ? '`cost`' : '',
+          option.attrs.advance ? '`advance`' : '',
+        ].filter(Boolean);
+        if (wrong.length > 0) {
+          say(
+            node,
+            `у ответа «${option.label || '(маршрут)'}» стоит ${wrong.join(', ')} — ` +
+            'внутри раунда ответы не зависят ни от условий, ни от прошлого; необратимость отмечается на входе',
+          );
+        }
+      }
+
+      const unnamed = node.options.filter((o) => o.label === '');
+      if (unnamed.length > 0 || node.attrs.goto != null) {
+        say(node, 'в раунде есть автоматический маршрут: отсчёт обязан решать молчание, а не движок');
+      }
+      if (node.attrs.wait != null) {
+        say(node, '`wait` в раунде: двух таймеров на одном узле быть не может');
+      }
+      const modes = node.attrs.tag.filter((t) => t === 'montage' || t === 'titlecard' || t === 'monolog' || t.startsWith('splash:'));
+      if (modes.length > 0) {
+        say(node, `${PRESSURE} несовместим с ${modes.map((m) => `\`${m}\``).join(', ')}: там нет ни списка, ни ввода`);
+      }
+      if (auxiliary(docOfNode(content, node))) {
+        say(node, `${PRESSURE} в фоновой сцене: её узлы не порождают опций`);
+      }
+
+      const answers = node.options.filter((o) => o.label !== '' && o.attrs.timeout == null);
+      if (answers.length < 2) {
+        say(node, `ответов кроме молчания ${answers.length}: испытание без выбора испытанием не является`);
+      }
+
+      // Метка — почти дословная реплика: перебирать скрытые продолжения
+      // ограниченное время нечестно.
+      for (const option of answers) {
+        if (option.label.length > LABEL_MAX) {
+          say(node, `ответ «${option.label}» длиннее ${LABEL_MAX} знаков — в строку списка он не влезет`, 'warn');
+        }
+      }
+    }
+
+    /*
+     * Вход в середину последовательности. Второй и последующие раунды
+     * достижимы только из раунда: внешняя ссылка обходит авторский вход и
+     * первый таймер, и игрок попадает под отсчёт, не выбрав давления.
+     */
+    for (const node of allNodes(content)) {
+      if (isRound.has(node.addr)) continue;
+      for (const target of [
+        ...node.options.flatMap((o) => (o.target ? [o.target] : [])),
+        ...(node.attrs.goto ? [node.attrs.goto] : []),
+      ]) {
+        if (!isRound.has(target)) continue;
+        const inner = rounds.some((r) => r.options.some((o) => o.target === target));
+        if (inner) {
+          found.push({
+            rule: 'pressure',
+            severity: 'error',
+            ...where(node),
+            message:
+              `ссылка в середину давления (${target.slice(target.indexOf('#') + 1)}): ` +
+              'раунд после первого достигается только из раунда, иначе отсчёт начинается без выбора',
+          });
+        }
+      }
+    }
+
+    // Длина последовательности: четыре раунда — предел внимания, дальше
+    // проверка характера превращается в экзамен.
+    const chain = new Map<string, number>();
+    for (const node of rounds) {
+      const scene = docOfNode(content, node).docId;
+      chain.set(scene, (chain.get(scene) ?? 0) + 1);
+    }
+    for (const [scene, count] of chain) {
+      if (count <= 4) continue;
+      found.push({
+        rule: 'pressure',
+        severity: 'warn',
+        file: content.docs[scene]!.path,
+        message: `${count} раундов давления в одной сцене — дольше четырёх это уже экзамен, а не характер`,
+      });
+    }
+
+    return found;
+  },
+};
+
 const transitionAttrs: Rule = {
   id: 'transition-attrs',
   title: 'атрибуты не на своём месте',
@@ -1704,6 +1857,7 @@ export const RULES: Rule[] = [
   mentions,
   nestedItems,
   contextLog,
+  pressureRounds,
   minigames,
   transitionAttrs,
   portable,

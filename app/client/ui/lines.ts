@@ -322,6 +322,39 @@ export const ADVANCE_LEGEND = 'продолжает историю; к теку�
 export const NEEDS_LEGEND = 'нужно';
 
 /**
+ * Шкала времени раунда «надавить» ([[07b-надавить-тз]], «Представление»).
+ *
+ * Остаток нельзя кодировать одним цветом: шкала убывает геометрически и рядом
+ * с ней стоит текстовая метка — секунды словом. Счёта побед у неё нет и быть
+ * не может: движок не знает, кто кого переиграл.
+ */
+export const TIMERS: Record<string, { full: string; empty: string; width: number }> = {
+  blocks: { full: '▰', empty: '▱', width: 20 },
+  dots: { full: '•', empty: '·', width: 24 },
+};
+
+export function timerGlyphs(name: string): { full: string; empty: string; width: number } {
+  const found = TIMERS[name];
+  if (found == null) throw new Error(`нет шкалы времени "${name}"; есть: ${Object.keys(TIMERS).join(', ')}`);
+  return found;
+}
+
+/** Строка шкалы: убывающая полоса и секунды словом. */
+export function timerSegs(left: number, total: number, glyphs: { full: string; empty: string; width: number }): Seg[] {
+  const share = total <= 0 ? 0 : Math.max(0, Math.min(1, left / total));
+  // Пока осталось хоть что-то, видна хотя бы одна клетка: пустая шкала значит
+  // «время вышло», и врать об этом за полсекунды до конца нельзя.
+  const filled = left > 0 ? Math.max(1, Math.round(share * glyphs.width)) : 0;
+  const seconds = Math.ceil(left / 1000);
+
+  return [
+    { text: glyphs.full.repeat(filled), cls: 'timer' },
+    { text: glyphs.empty.repeat(glyphs.width - filled), cls: 'timer-gone' },
+    { text: `  ${seconds} с`, cls: 'timer' },
+  ];
+}
+
+/**
  * Короткая форма предупреждения — когда в строке помет стоит ещё и требование.
  * Полная объясняет знак `▶` тому, кто видит его впервые, но обе пометы в одну
  * строку не влезают, а знак в списке к этому моменту уже сказал главное.
@@ -442,6 +475,7 @@ export function detailLines(
   preview: string | null,
   advance: boolean,
   needs: Needs | null,
+  timer: { left: number; total: number; glyphs: { full: string; empty: string; width: number } } | null,
   max: number,
   rows: number,
 ): Seg[][] {
@@ -452,6 +486,26 @@ export function detailLines(
    * Требование печатается словами в том же цвете, которым команда покрашена
    * в списке: цвет сказал «нужна вещь», строка называет, какая именно.
    */
+  /*
+   * Шкала времени забирает вторую строку целиком: в раунде «надавить» нет ни
+   * `advance`, ни условных ответов, спорить с ней нечему. Первая строка
+   * остаётся предпросмотром — он там нужнее всего, потому что выбирать
+   * приходится быстро.
+   */
+  if (timer) {
+    const lines: Seg[][] = [];
+    if (preview) {
+      // Строка одна: под шкалу уходит вторая. Многоточие ставим только там,
+      // где реплика действительно не влезла.
+      const all = wrap(`Марго: ${preview}`, max);
+      const head = all.length > 1 ? ellipsis(all[0]!, max) : all[0]!;
+      lines.push([{ text: pad() }, { text: head, cls: 'preview' }]);
+    }
+    lines.push([{ text: pad() }, ...timerSegs(timer.left, timer.total, timer.glyphs)]);
+    while (lines.length < rows) lines.push([]);
+    return lines.slice(0, rows);
+  }
+
   const notes: Seg[] = [];
   if (advance) notes.push({ text: needs ? ADVANCE_SHORT : ADVANCE_LEGEND, cls: 'dim' });
   if (needs) {

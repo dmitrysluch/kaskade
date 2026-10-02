@@ -23,6 +23,8 @@ import {
   type SystemCommand,
 } from './engine/state.ts';
 import { completeMinigame, fieldHere, fieldOf, moveMinigame } from './engine/minigame.ts';
+import { pressureClock, roundHere, silenceRoute, tickPressure } from './engine/pressure.ts';
+import { setUntimed, untimed } from './engine/settings.ts';
 import { clearSave, loadSave, persistSave } from './engine/save.ts';
 import { UntangleScreen } from './ui/Untangle.tsx';
 import { rendererFor } from './renderers/registry.ts';
@@ -50,6 +52,8 @@ import {
   portraitLines,
   statusLine,
   statusText,
+  timerGlyphs,
+  timerSegs,
   streamLines,
   systemLine,
   transitionCard,
@@ -167,6 +171,8 @@ export function App() {
    * ему незачем.
    */
   const [menu, setMenu] = useState(false);
+  /** «Без ограничений по времени» ([[07b-надавить-тз]], «Доступность»). */
+  const [noLimit, setNoLimit] = useState(untimed);
   /**
    * Версия найденного сейва, если открыть его нельзя. Экран спрашивает
    * подтверждение, и только оно стирает запись: «наполовину сброшенная игра» —
@@ -828,6 +834,40 @@ export function App() {
   useWaitClock(counting, liveWait);
 
   /*
+   * Раунд «надавить» ([[07b-надавить-тз]]): время считают те же часы, что
+   * физическое ожидание, и по той же причине — активное время игры. Справочник,
+   * «Дело», меню и свёрнутая вкладка его останавливают: игра проверяет, как
+   * игрок связывает услышанное, а не память на id карточек.
+   *
+   * Частично набранная команда таймер **не** останавливает: иначе первая буква
+   * превращалась бы в паузу.
+   */
+  const round = content && session ? roundHere(content, session.save) : null;
+  const clock = content && session ? pressureClock(content, session.save) : null;
+  const pressing = accepting && !noLimit && round != null && clock != null && clock.left > 0;
+
+  const livePressure = useCallback((passed: number) => {
+    setSession((prev) => (prev ? { ...prev, save: tickPressure(prev.save, passed) } : prev));
+  }, []);
+
+  useWaitClock(pressing, livePressure);
+
+  /*
+   * Время вышло — исполняется авторская ветка молчания, и без эха команды:
+   * игрок ничего не вводил. Незавершённый набор при этом стирается, иначе он
+   * останется висеть над чужой сценой.
+   */
+  useEffect(() => {
+    if (!content || !session || !accepting || noLimit) return;
+    const next = silenceRoute(content, session.save);
+    if (next == null) return;
+    setInput('');
+    setPick(null);
+    const r = enter(content, session.save, next);
+    setSession({ ...session, save: r.save });
+  }, [content, session, accepting, noLimit]);
+
+  /*
    * Время вышло — уводит безымянный маршрут.
    *
    * Ввод при этом не отнимают: набранную команду игрок дописывает и исполняет,
@@ -1030,7 +1070,17 @@ export function App() {
      */
     if (menu) {
       return (
-        <Menu onClose={() => setMenu(false)} onManual={menuManual} onRestart={restart} touch={TOUCH} />
+        <Menu
+          onClose={() => setMenu(false)}
+          onManual={menuManual}
+          onRestart={restart}
+          untimed={noLimit}
+          onUntimed={(value) => {
+            setUntimed(value);
+            setNoLimit(value);
+          }}
+          touch={TOUCH}
+        />
       );
     }
     if (manual) return <Manual first={!session.save.taught} touch={TOUCH} onDone={manualDone} />;
@@ -1148,6 +1198,9 @@ export function App() {
           onPick={run}
           system={systemTaps}
           rule={ruleGlyph(renderer.rule)}
+          {...(clock && !noLimit ?
+            { timer: [{ text: ' '.repeat(MARGIN.text) }, ...timerSegs(clock.left, clock.total, timerGlyphs(renderer.timer))] }
+          : {})}
         />
       );
     }
@@ -1168,6 +1221,10 @@ export function App() {
           picked ? previewOf(bundle.content, session.save, picked) : null,
           picked?.attrs.advance ?? false,
           picked?.needs ?? null,
+          // Шкала времени раунда «надавить». Без ограничений по времени её нет
+          // вовсе: показывать убывающую полосу, которая ничего не решает, —
+          // обман ([[07b-надавить-тз]], «Доступность»).
+          clock && !noLimit ? { ...clock, glyphs: timerGlyphs(renderer.timer) } : null,
           layout.text,
           DETAIL_ROWS,
         )}
@@ -1212,6 +1269,12 @@ export function App() {
     return inRoom ? episode.tutorial.hint : null;
   })();
 
+  const announce =
+    clock == null || noLimit ? ''
+    : clock.left <= clock.total / 4 ? 'время кончается'
+    : clock.left <= clock.total / 2 ? 'половина времени'
+    : 'ответ ограничен по времени';
+
   const screen = (
     <div
       className="screen"
@@ -1222,6 +1285,13 @@ export function App() {
     >
       {body}
       {hint && <Hint text={hint} />}
+      {/*
+        Раунд «надавить» для screen reader ([[07b-надавить-тз]], «Доступность»):
+        один раз объявляется, что ответ ограничен по времени, и дальше ровно два
+        предупреждения — на половине и на последней четверти. Читать секунды
+        непрерывно запрещено: это не часы, а разговор.
+      */}
+      <div className="sr" aria-live="polite">{announce}</div>
     </div>
   );
 

@@ -38,6 +38,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     hinted: true,
     started: true,
     wait: null,
+    pressure: null,
     activeStage: null,
     currentDate: null,
     lastTransitionId: null,
@@ -179,7 +180,7 @@ test('в деталях требование печатается словами
   const needs = { kind: 'item' as const, id: '00-book', label: 'учебник' };
   const rows = 2;
 
-  const lines = detailLines('— Сверю с перечнем.', false, needs, 60, rows);
+  const lines = detailLines('— Сверю с перечнем.', false, needs, null, 60, rows);
   assert.equal(lines.length, rows, 'высота области не меняется');
   assert.match(lines[1]!.map((s) => s.text).join(''), /нужно: учебник/);
   assert.equal(lines[1]!.some((s) => s.cls === 'needs-item'), true);
@@ -187,17 +188,17 @@ test('в деталях требование печатается словами
   // Предупреждение и требование живут в одной строке. Вдвоём полная подпись
   // `advance` не влезает, поэтому она становится короткой: знак `▶` в списке
   // к этому моменту уже сказал главное.
-  const both = detailLines('— Ладно.', true, needs, 60, rows);
+  const both = detailLines('— Ладно.', true, needs, null, 60, rows);
   const note = both[1]!.map((s) => s.text).join('');
   assert.match(note, /необратимо/);
   assert.match(note, /нужно: учебник/);
   assert.ok(note.length <= 60 + 4, note);
 
   // Один `advance` печатается подписью целиком: объяснять знак больше нечем.
-  assert.match(detailLines('— Ладно.', true, null, 60, rows)[1]!.map((s) => s.text).join(''), /нельзя вернуться/);
+  assert.match(detailLines('— Ладно.', true, null, null, 60, rows)[1]!.map((s) => s.text).join(''), /нельзя вернуться/);
 
   // Слово называется своим именем и получает свой цвет.
-  const word = detailLines(null, false, { kind: 'word', id: 'word-only-case', label: 'ЕДИНСТВЕННЫЙ СЛУЧАЙ' }, 60, rows);
+  const word = detailLines(null, false, { kind: 'word', id: 'word-only-case', label: 'ЕДИНСТВЕННЫЙ СЛУЧАЙ' }, null, 60, rows);
   assert.equal(word[0]!.some((s) => s.cls === 'needs-word'), true);
   assert.match(word[0]!.map((s) => s.text).join(''), /нужно: ЕДИНСТВЕННЫЙ СЛУЧАЙ/);
 });

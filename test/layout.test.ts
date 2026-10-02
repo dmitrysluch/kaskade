@@ -403,7 +403,7 @@ test('вариантов больше, чем строк: окно едет за
 
 test('детали показывают реплику Марго целиком, а предупреждение — под ней', () => {
   const rows = 3;
-  const plain = detailLines('— Нет. Осколки деления распадаются сами.', false, null, 60, rows);
+  const plain = detailLines('— Нет. Осколки деления распадаются сами.', false, null, null, 60, rows);
   assert.equal(plain.length, rows);
   assert.equal(
     plain[0]!.map((s) => s.text).join('').trim(),
@@ -412,19 +412,19 @@ test('детали показывают реплику Марго целиком
   assert.equal(plain[1]!.length, 0);
 
   // У advance-команды предупреждение идёт следом, в той же области.
-  const warned = detailLines('— Ладно.', true, null, 60, rows);
+  const warned = detailLines('— Ладно.', true, null, null, 60, rows);
   assert.match(warned[1]!.map((s) => s.text).join(''), /нельзя вернуться/);
 
   // Без реплики область пустая, но высоту держит.
-  assert.equal(detailLines(null, false, null, 60, rows).length, rows);
-  assert.equal(detailLines(null, false, null, 60, rows).every((l) => l.length === 0), true);
+  assert.equal(detailLines(null, false, null, null, 60, rows).length, rows);
+  assert.equal(detailLines(null, false, null, null, 60, rows).every((l) => l.length === 0), true);
 });
 
 test('длинную реплику обрезает многоточие, а не пересказ', () => {
   const long =
     '— Оболочка рассчитана на проектную аварию — аварию, условия которой перечислены ' +
     'в проекте. Авария, условия которой в проекте не перечислены, называется запроектной.';
-  const shown = detailLines(long, false, null, 40, 2);
+  const shown = detailLines(long, false, null, null, 40, 2);
   const text = shown.map((l) => l.map((s) => s.text).join('').trim());
 
   // Голова фразы дословна: это и есть гарантия, ради которой предпросмотр живёт.
@@ -443,12 +443,12 @@ test('длинную реплику обрезает многоточие, а н
 
   // Короткая реплика многоточия не получает.
   assert.equal(
-    detailLines('— Ладно.', false, null, 40, 2)[0]!.map((s) => s.text).join('').includes('…'),
+    detailLines('— Ладно.', false, null, null, 40, 2)[0]!.map((s) => s.text).join('').includes('…'),
     false,
   );
 
   // Предупреждение advance отнимает строку, и обрезка это учитывает.
-  const warned = detailLines(long, true, null, 40, 2).map((l) => l.map((s) => s.text).join('').trim());
+  const warned = detailLines(long, true, null, null, 40, 2).map((l) => l.map((s) => s.text).join('').trim());
   assert.match(warned[0]!, /…$/);
   assert.match(warned[1]!, /нельзя вернуться/);
 });

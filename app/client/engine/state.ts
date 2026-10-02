@@ -1,5 +1,6 @@
 import { plainText, resolveEntities, type EntityKind, type EntityMention } from '../../shared/entities.ts';
 import { addrIn, isStarred, persistentOfAddr, roomStateKey, stageOfAddr } from '../../shared/rooms.ts';
+import { armPressure } from './pressure.ts';
 import { logged, logKey, REENTRY } from '../../shared/logs.ts';
 import { EXAMINE } from '../../shared/pages.ts';
 import { said, voiceOf } from '../../shared/speech.ts';
@@ -770,7 +771,13 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
     if (++hops > 100) throw new Error(`зациклился безусловный переход в ${addr}`);
   }
 
-  return { save: context(content, save, state, { from, kept, entries }), entries };
+  /*
+   * Таймер раунда «надавить» взводится здесь, а не в оболочке: он принадлежит
+   * узлу, на котором проход остановился ([[07b-надавить-тз]], «Runtime»).
+   * Остаток при этом не перезаводится, если игрок стоит там же, — перезагрузка
+   * и ответ предмета новой попытки не дают.
+   */
+  return { save: armPressure(content, context(content, save, state, { from, kept, entries })), entries };
 }
 
 /**
@@ -857,6 +864,7 @@ export function freshSave(content: GameContent): SaveState {
     ),
     started: false,
     wait: null,
+    pressure: null,
     // Контекст пуст: до первой карточки перехода у игры нет ни даты, ни среза.
     activeStage: null,
     currentDate: null,

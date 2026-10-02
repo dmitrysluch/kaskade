@@ -39,6 +39,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     hinted: true,
     started: true,
     wait: null,
+    pressure: null,
     activeStage: null,
     currentDate: null,
     lastTransitionId: null,

@@ -81,11 +81,17 @@ export function parseRenderer(file: string, id: string, raw: unknown): RendererD
     throw new ContentError(file, `рендерер "${id}": нет линейки "${rule}"; есть light, heavy, double, dashed, none`);
   }
 
+  const timer = String(r.timer ?? 'blocks');
+  if (!['blocks', 'dots'].includes(timer)) {
+    throw new ContentError(file, `рендерер "${id}": нет шкалы времени "${timer}"; есть blocks, dots`);
+  }
+
   return {
     id,
     palette,
     frame,
     rule,
+    timer,
     font: {
       family: String(font.family ?? 'IBM Plex Mono'),
       size: Number(font.size ?? 16),
