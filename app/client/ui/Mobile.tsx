@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ADVANCE_MARK, PICK_MARK } from './lines.ts';
+import { ADVANCE_MARK, needsClass, PICK_MARK } from './lines.ts';
 import { MARGIN, pad, type Seg } from './text.ts';
 import type { CatalogOption } from '../engine/catalog.ts';
 
@@ -80,7 +80,13 @@ export function MobileScreen({ cols, status, stream, options, onPick, system, ru
         {options.map((option, i) => (
           <button key={`${option.label}-${i}`} className="tap" type="button" onClick={() => onPick(option)}>
             <span className="dim">{`${' '.repeat(MARGIN.prompt)}${PICK_MARK} `}</span>
-            <span className={[kindClass(option), option.locked ? 'locked' : ''].filter(Boolean).join(' ')}>
+            {/* Цвет требования — тот же, что на большом экране: вещь и слово
+                выглядят одинаково везде, где их показывают. */}
+            <span
+              className={[kindClass(option), needsClass(option), option.locked ? 'locked' : '']
+                .filter(Boolean)
+                .join(' ')}
+            >
               {option.attrs.advance ? `${ADVANCE_MARK} ` : ''}
               {option.label}
             </span>

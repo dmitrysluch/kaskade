@@ -26,6 +26,7 @@ function opt(label: string, patch: Partial<CatalogOption> = {}): CatalogOption {
     moves: false,
     locked: false,
     system: null,
+    needs: null,
     ...patch,
   };
 }
@@ -114,7 +115,7 @@ test('на большом экране кликать по-прежнему не
       stream={viewport([[{ text: 'Текст.' }]], 6, 0)}
       input={inputLine('осм')}
       list={commandLines(OPTIONS, null, '', 72, LIST_ROWS)}
-      details={detailLines(null, false, 72, DETAIL_ROWS)}
+      details={detailLines(null, false, null, 72, DETAIL_ROWS)}
       system={systemLine(['справочник'], 72)}
       more={{ up: false, down: false }}
       rule="━"

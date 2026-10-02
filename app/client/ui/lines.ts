@@ -13,7 +13,7 @@ import {
   type Seg,
   type Span,
 } from './text.ts';
-import { itemActions, type CatalogOption } from '../engine/catalog.ts';
+import { itemActions, type CatalogOption, type Needs } from '../engine/catalog.ts';
 import { evalCondition, type OverlayCall, type OverlayCommand, type SessionEntity, type StreamEntry, type Term } from '../engine/state.ts';
 import { days, daysBetween } from '../../shared/dates.ts';
 import { speakerLabel, speakerOf } from '../../shared/speech.ts';
@@ -315,6 +315,19 @@ export function portraitLines(portrait: Portrait): Seg[][] {
 export const ADVANCE_MARK = '▶';
 export const ADVANCE_LEGEND = 'продолжает историю; к текущим действиям нельзя вернуться';
 
+/**
+ * Подпись требования. Без склонения намеренно: «нужен бланк» и «нужна книга»
+ * оболочка не выговорит, а двоеточие не врёт ни в одном роде.
+ */
+export const NEEDS_LEGEND = 'нужно';
+
+/**
+ * Короткая форма предупреждения — когда в строке помет стоит ещё и требование.
+ * Полная объясняет знак `▶` тому, кто видит его впервые, но обе пометы в одну
+ * строку не влезают, а знак в списке к этому моменту уже сказал главное.
+ */
+export const ADVANCE_SHORT = `${ADVANCE_MARK} необратимо`;
+
 /** Маркер выбора: одна зарезервированная позиция в начале каждой строки. */
 export const PICK_MARK = '›';
 
@@ -343,8 +356,17 @@ function kindClass(option: CatalogOption): string {
   return option.attrs.advance ? 'advance' : option.kind === 'environment' ? 'environment' : 'story';
 }
 
+/**
+ * На чём команда держится (07-оболочка-тз, «Команда, которой нужна вещь или
+ * слово»): вещь на руках — цветом предмета, слово «Дела» — цветом слова. Тем
+ * же, которым они подсвечены в тексте: цвет значит одно и то же везде.
+ */
+export function needsClass(option: CatalogOption): string {
+  return option.needs == null ? '' : option.needs.kind === 'word' ? 'needs-word' : 'needs-item';
+}
+
 function optionSegs(option: CatalogOption, input: string, picked: boolean): Seg[] {
-  const marks = [option.locked ? 'locked' : '', kindClass(option), picked ? 'pick' : '']
+  const marks = [option.locked ? 'locked' : '', kindClass(option), needsClass(option), picked ? 'pick' : '']
     .filter(Boolean)
     .join(' ');
 
@@ -419,20 +441,36 @@ export function commandLines(
 export function detailLines(
   preview: string | null,
   advance: boolean,
+  needs: Needs | null,
   max: number,
   rows: number,
 ): Seg[][] {
   const lines: Seg[][] = [];
+  /*
+   * Пометы машины — в одну строку под репликой: `advance` и требование говорят
+   * о разном, но оба короткие и оба служебные, а высота области постоянна.
+   * Требование печатается словами в том же цвете, которым команда покрашена
+   * в списке: цвет сказал «нужна вещь», строка называет, какая именно.
+   */
+  const notes: Seg[] = [];
+  if (advance) notes.push({ text: needs ? ADVANCE_SHORT : ADVANCE_LEGEND, cls: 'dim' });
+  if (needs) {
+    if (notes.length > 0) notes.push({ text: ' · ', cls: 'dim' });
+    notes.push({ text: `${NEEDS_LEGEND}: ${needs.label}`, cls: needs.kind === 'word' ? 'needs-word' : 'needs-item' });
+  }
+
   if (preview) {
-    // Строку под предупреждение держим только тогда, когда оно будет.
-    const room = Math.max(1, rows - (advance ? 1 : 0));
+    // Строку под пометы держим только тогда, когда они будут.
+    const room = Math.max(1, rows - (notes.length > 0 ? 1 : 0));
     const all = wrap(`Марго: ${preview}`, max);
     const shown = all.slice(0, room);
     if (all.length > room) shown[shown.length - 1] = ellipsis(shown[shown.length - 1]!, max);
 
     for (const line of shown) lines.push([{ text: pad() }, { text: line, cls: 'preview' }]);
   }
-  if (advance) lines.push([{ text: pad() }, { text: ADVANCE_LEGEND, cls: 'dim' }]);
+  // Строка помет по ширине колонки не режется: подпись `advance` длиннее
+  // колонки намеренно — она объясняет знак, а экран шире текстового блока.
+  if (notes.length > 0) lines.push([{ text: pad() }, ...notes]);
 
   while (lines.length < rows) lines.push([]);
   return lines.slice(0, rows);

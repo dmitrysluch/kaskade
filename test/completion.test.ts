@@ -8,7 +8,7 @@ import type { CatalogOption } from '../app/client/engine/catalog.ts';
 import type { SaveState } from '../app/shared/types.ts';
 
 function opt(label: string, locked = false): CatalogOption {
-  return { label, kind: 'story', target: null, attrs: attrs(), verb: null, object: null, moves: false, locked, system: null };
+  return { label, kind: 'story', target: null, attrs: attrs(), verb: null, object: null, moves: false, locked, system: null, needs: null };
 }
 
 const CATALOG = [

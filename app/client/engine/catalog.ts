@@ -16,6 +16,62 @@ export interface CatalogOption extends Option {
   /** Серое слово: видно в автокомплите, выбрать нельзя. */
   locked: boolean;
   system: SystemCall | null;
+  /**
+   * На чём команда держится: вещь на руках или слово «Дела» (07-оболочка-тз,
+   * «Команда, которой нужна вещь или слово»). `null` — ни на чём, обычное
+   * действие места или разговора.
+   */
+  needs: Needs | null;
+}
+
+/** Требование команды: что именно и как это называется на экране. */
+export interface Needs {
+  kind: 'word' | 'item';
+  id: string;
+  label: string;
+}
+
+/**
+ * Чем держится команда (07-оболочка-тз, «Команда, которой нужна вещь или слово»).
+ *
+ * Два источника, и оба честные:
+ *
+ *   1. **Условие автора** — `has:00-book`, `word:word-only-case`. До сих пор
+ *      игрок видел только результат: команда есть или её нет. Но «изучать
+ *      учебник» есть потому, что учебник на руках, а «спросить о единственном
+ *      случае» — потому что слово получено, и это разные вещи: первое про то,
+ *      что Марго несёт, второе — про то, что знает. Условие читается и у самой
+ *      команды, и у целевого узла: автор вправе написать его в любом.
+ *      Отрицание требованием не является — `!has:x` значит «пока этого нет».
+ *   2. **Сама цель команды** — слово «Дела» или вещь, которая у Марго в руках.
+ *      `спросить о АЛЕРС` держится на слове без всякого `if`, а `позвонить
+ *      телефон` — на телефоне в инвентаре. Доска в комнате требованием не
+ *      становится: она стоит на месте, и брать её с собой не нужно.
+ *
+ * Слово важнее вещи: оно и есть механика игры, а вещь у Марго и так в руках.
+ */
+export function needsOf(content: GameContent, save: SaveState, option: Option): Needs | null {
+  const word = (id: string): Needs => ({ kind: 'word', id, label: content.words[id]?.label ?? id });
+  const thing = (id: string, label?: string): Needs => ({ kind: 'item', id, label: label ?? id });
+
+  const target = option.target == null ? undefined : content.nodes[option.target];
+  const terms = [option.attrs.if, target?.attrs.if ?? null]
+    .filter((c): c is string => c != null)
+    .flatMap((cond) => cond.split(',').map((t) => t.trim()))
+    .filter((term) => term !== '' && !term.startsWith('!'));
+
+  const needed = terms.find((t) => t.startsWith('word:'))?.slice(5).trim();
+  if (needed != null) return word(needed);
+
+  const carried = terms.find((t) => t.startsWith('has:'))?.slice(4).trim();
+  if (carried != null) return thing(carried, docById(content, carried)?.label);
+
+  if (option.object != null) {
+    if (content.words[option.object]) return word(option.object);
+    const doc = content.docs[option.object];
+    if (doc?.type === 'item' && save.inventory.includes(doc.id)) return thing(doc.id, doc.label);
+  }
+  return null;
 }
 
 /**
@@ -30,7 +86,9 @@ export interface CatalogOption extends Option {
 export const SYSTEM_COMMANDS: SystemCommand[] = ['справочник', 'дело', 'инвентарь', 'меню'];
 
 function plain(option: Option): CatalogOption {
-  return { ...option, locked: false, system: null };
+  // Требование дописывается один раз, на выходе каталога: источников опций
+  // полдесятка, и считать его в каждом — верный способ однажды забыть.
+  return { ...option, locked: false, system: null, needs: null };
 }
 
 /**
@@ -56,6 +114,7 @@ function systemOption(kind: SystemCommand): CatalogOption {
     moves: false,
     locked: false,
     system: { kind },
+    needs: null,
   };
 }
 
@@ -237,6 +296,7 @@ function fromWords(content: GameContent, save: SaveState, phrase: string): Catal
     moves: false,
     locked: state === 'grey',
     system: null,
+    needs: null,
   }));
 }
 
@@ -300,5 +360,5 @@ export function buildCatalog(content: GameContent, save: SaveState): CatalogOpti
   return out
     .map((option, i) => ({ option, i }))
     .sort((a, b) => rank(a.option) - rank(b.option) || a.i - b.i)
-    .map((x) => x.option);
+    .map((x) => ({ ...x.option, needs: needsOf(content, save, x.option) }));
 }

@@ -65,7 +65,7 @@ function build(cols: number, rows: number, entries: string[], scroll = 0, rule =
       stream={viewport(stream, streamRows, scroll)}
       input={inputLine('спросить о парт')}
       list={commandLines([], null, '', width, LIST_ROWS)}
-      details={detailLines(null, false, width, DETAIL_ROWS)}
+      details={detailLines(null, false, null, width, DETAIL_ROWS)}
       system={systemLine(['справочник', 'дело', 'инвентарь'], width)}
       more={{
         up: Math.min(scroll, Math.max(0, stream.length - streamRows)) < Math.max(0, stream.length - streamRows),

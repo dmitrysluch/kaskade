@@ -1149,6 +1149,7 @@ export function App() {
         details={detailLines(
           picked ? previewOf(bundle.content, session.save, picked) : null,
           picked?.attrs.advance ?? false,
+          picked?.needs ?? null,
           layout.text,
           DETAIL_ROWS,
         )}
