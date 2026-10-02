@@ -13,8 +13,11 @@ import { targetsIn } from './rooms.ts';
  * тут показан, может требовать флага — зато видно, что связь вообще есть.
  */
 
-/** Места: сцена и комната. Предмет отвечает, но игрока не двигает. */
-const PLACES: DocType[] = ['scene', 'room', 'transition'];
+/**
+ * Места: сцена, комната, карточка перехода и поле мини-игры. Предмет отвечает,
+ * но игрока не двигает, поэтому в графе он висит на месте, а не стоит коробкой.
+ */
+const PLACES: DocType[] = ['scene', 'room', 'transition', 'minigame'];
 
 export interface MapBox {
   docId: string;

@@ -174,7 +174,7 @@ export function AdmView({ content }: { content: GameContent }) {
             key={box.docId}
             className={[
               'adm-box',
-              box.type === 'room' ? 'adm-room' : 'adm-scene',
+              box.type === 'room' ? 'adm-room' : box.type === 'minigame' ? 'adm-field-box' : 'adm-scene',
               box.closed ? 'adm-closed' : '',
               box.layer === -1 ? 'adm-lost' : '',
               open === box.docId ? 'adm-open' : '',

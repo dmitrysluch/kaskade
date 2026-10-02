@@ -130,6 +130,11 @@ body.adm-page #root {
   fill: #0f1a1f;
 }
 
+/* Поле мини-игры — третий вид места: в нём не говорят и не ходят, а играют. */
+.adm-field-box rect {
+  fill: #1b1420;
+}
+
 .adm-closed rect,
 .adm-lost rect {
   stroke-dasharray: 4 3;
