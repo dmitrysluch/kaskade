@@ -1,6 +1,7 @@
 ---
 id: common-dorm-room
 type: room
+log: true
 persistent: tu.dorm-room
 available: false
 label: комната

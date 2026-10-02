@@ -1,6 +1,7 @@
 ---
 id: common-dorm-kitchen
 type: room
+log: true
 persistent: tu.dorm-kitchen
 available: true
 label: общая кухня

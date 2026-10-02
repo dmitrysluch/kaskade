@@ -1,6 +1,7 @@
 ---
 id: common-elevator
 type: room
+log: true
 persistent: tu.elevator
 available: true
 label: лифт

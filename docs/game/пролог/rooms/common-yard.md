@@ -1,6 +1,7 @@
 ---
 id: common-yard
 type: room
+log: true
 persistent: tu.yard
 available: true
 label: двор

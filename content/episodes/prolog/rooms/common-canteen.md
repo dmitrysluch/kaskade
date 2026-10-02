@@ -1,6 +1,7 @@
 ---
 id: common-canteen
 type: room
+log: true
 persistent: tu.canteen
 available: true
 label: столовая

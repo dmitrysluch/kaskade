@@ -2,6 +2,7 @@
 id: 00-student-talk
 type: scene
 label: разговор со студенткой
+log: true
 ---
 
 → [[#хаб]]

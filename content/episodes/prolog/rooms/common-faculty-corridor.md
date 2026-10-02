@@ -1,6 +1,7 @@
 ---
 id: common-faculty-corridor
 type: room
+log: true
 persistent: tu.faculty-corridor
 available: true
 label: кафедральный коридор

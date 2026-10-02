@@ -1,6 +1,7 @@
 ---
 id: common-dorm-corridor
 type: room
+log: true
 persistent: tu.dorm-corridor
 available: true
 label: жилой коридор

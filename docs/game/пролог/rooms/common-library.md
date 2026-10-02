@@ -1,6 +1,7 @@
 ---
 id: common-library
 type: room
+log: true
 persistent: tu.library
 available: true
 label: библиотека

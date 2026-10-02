@@ -1,6 +1,7 @@
 ---
 id: common-secretariat
 type: room
+log: true
 persistent: tu.secretariat
 available: false
 label: секретариат

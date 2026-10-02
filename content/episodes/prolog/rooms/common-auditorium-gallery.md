@@ -1,6 +1,7 @@
 ---
 id: common-auditorium-gallery
 type: room
+log: true
 persistent: tu.auditorium-gallery
 available: true
 label: аудиторная галерея
