@@ -355,6 +355,25 @@ function assembleRooms(
   return out;
 }
 
+/**
+ * Сворачивать ли семьи команд в этом месте (07-оболочка-тз, «Сворачивание
+ * повторяющихся действий комнаты»).
+ *
+ * Меряется самый плотный узел места при полностью раскрытых группах: условия
+ * сняты, как будто подняты все флаги. Так решение остаётся свойством места,
+ * а не хода: список не переставляется под игроком, и комната из трёх предметов
+ * не сворачивается в одну строку, из которой нечего выбирать.
+ *
+ * Генераторы по словам и инвентарю в счёт не идут: сколько слов у игрока,
+ * на сборке не знает никто, а семьями они и не бывают.
+ */
+export const CROWD = 8;
+
+function crowded(nodes: Node[]): boolean {
+  const most = Math.max(0, ...nodes.map((n) => n.options.filter((o) => o.label !== '').length));
+  return most > CROWD;
+}
+
 function parseDates(file: string, id: string, raw: unknown): EpisodeDef['dates'] {
   if (raw == null) return {};
   if (typeof raw !== 'object' || Array.isArray(raw)) {
@@ -634,6 +653,7 @@ export function loadContent(): GameContent {
       inHand: p.info.inHand,
       parent: parents.get(p.docId) ?? null,
       log: p.log === true,
+      collapse: crowded(built),
       entry: p.entry,
       available: p.available ?? true,
       optionBlocks: p.raw.nodes
@@ -719,6 +739,7 @@ export function loadContent(): GameContent {
       inHand: [],
       parent: null,
       log: room.log,
+      collapse: crowded(built),
       entry: room.entry,
       available: room.available,
       optionBlocks: room.optionBlocks,

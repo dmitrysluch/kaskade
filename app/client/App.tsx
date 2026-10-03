@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildCatalog, itemActions, SYSTEM_COMMANDS, type CatalogOption } from './engine/catalog.ts';
 import { commonPrefix, exact, matches } from './engine/completion.ts';
-import { collapse, familyPrefix, optionOf, type Row } from './engine/families.ts';
+import { collapse, crowded, familyPrefix, optionOf, type Row } from './engine/families.ts';
 import {
   appendLog,
   begin,
@@ -364,7 +364,11 @@ export function App() {
    * действий комнаты»). Стрелки ходят по строкам, а каталог остаётся полным:
    * спрятанную команду можно набрать и исполнить, не раскрывая семью.
    */
-  const choices = useMemo(() => collapse(shown, input), [shown, input]);
+  const choices = useMemo(
+    // Сворачивает или нет — свойство места, посчитанное на сборке.
+    () => collapse(shown, input, content && session ? crowded(content, session.save) : false),
+    [shown, input, content, session],
+  );
 
   // Что выбрано на самом деле: стрелками, Tab или введённым целиком текстом.
   // Именно эта опция раскрывает реплику Марго в области деталей.

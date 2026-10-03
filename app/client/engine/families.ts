@@ -1,4 +1,6 @@
+import { sceneOf } from './state.ts';
 import type { CatalogOption } from './catalog.ts';
+import type { GameContent, SaveState } from '../../shared/types.ts';
 
 /**
  * Сворачивание повторяющихся действий комнаты (07-оболочка-тз, «Сворачивание
@@ -41,14 +43,21 @@ function foldable(option: CatalogOption): boolean {
 }
 
 /**
- * Список строк для показа. При непустом вводе ничего не сворачивается: игрок
- * уже сузил выбор сам, и прятать от него половину найденного незачем.
+ * Список строк для показа.
+ *
+ * Сворачивает или нет — решает **место**, а не семья и не ход: плотность
+ * считает сборка по самому людному узлу комнаты (`Doc.collapse`). Иначе список
+ * переставляется под игроком от одного поднятого флага, а комната из трёх
+ * предметов превращается в одну строку `осмотреть… (3)`, из которой нечего
+ * выбирать.
+ *
+ * При непустом вводе не сворачивается ничего: игрок уже сузил выбор сам.
  *
  * Семья встаёт на место своей первой команды и наследует её категорию и цвет —
  * порядок списка от сворачивания не меняется.
  */
-export function collapse(options: CatalogOption[], input: string): Row[] {
-  if (input !== '') return options.map((option) => ({ kind: 'option' as const, option }));
+export function collapse(options: CatalogOption[], input: string, here = true): Row[] {
+  if (input !== '' || !here) return options.map((option) => ({ kind: 'option' as const, option }));
 
   const counts = new Map<string, number>();
   for (const option of options) {
@@ -87,4 +96,12 @@ export function familyPrefix(row: Extract<Row, { kind: 'family' }>): string {
 /** Команда строки, если это команда: семью выбрать нельзя — её раскрывают. */
 export function optionOf(row: Row | undefined): CatalogOption | null {
   return row?.kind === 'option' ? row.option : null;
+}
+
+/**
+ * Сворачивает ли место, где игрок стоит. Открытый предмет своих семей не имеет
+ * (их ставит только генератор комнаты), поэтому спрашиваем позицию.
+ */
+export function crowded(content: GameContent, save: SaveState): boolean {
+  return content.docs[sceneOf(save.episodeState.at)]?.collapse === true;
 }

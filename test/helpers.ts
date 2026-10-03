@@ -55,6 +55,7 @@ export function doc(docId: string, patch: Partial<Doc> = {}): Doc {
     items: [],
     inHand: [],
     log: false,
+    collapse: true,
     entry: null,
     available: true,
     pages: [],
