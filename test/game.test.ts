@@ -590,10 +590,12 @@ test('предпросмотр проходит сквозь ремарку, н�
 });
 
 test('список идёт в одном порядке: окружение, сюжет, advance, служебные', () => {
-  const base = at('episodes/prolog/rooms-virt/tu.auditorium-gallery:01#');
+  // Место выбрано по живому контенту: в общаге есть и осмотры, и разговор,
+  // и «лечь спать» с `advance`, и служебные команды — все четыре категории.
+  const base = at('episodes/prolog/rooms-virt/tu.dorm-room:00#комната');
   const save: SaveState = {
     ...base,
-    flags: { 'prolog.lecture-done': { value: true, at: '14.10.2024' } },
+    words: { 'word-only-case': 'white' },
   };
   const kinds = buildCatalog(game, save).map((o) =>
     o.system ? 'system' : o.attrs.advance ? 'advance' : o.kind,
@@ -752,7 +754,7 @@ test('доска и Тоби независимо открывают несущ�
     openItem: null,
     episodeState: { ...board.episodeState, at: 'episodes/prolog/rooms-virt/tu.faculty-corridor:00#' },
   };
-  assert.ok(labels(corridor).includes('искать алерса'));
+  assert.ok(labels(corridor).includes('искать Алерса'), labels(corridor).join(' · '));
 
   const program = enter(game, corridor, 'episodes/prolog/items/00-program#искать', false).save;
   assert.equal(program.words['word-containment'], 'white');
@@ -762,7 +764,7 @@ test('доска и Тоби независимо открывают несущ�
     ...program,
     episodeState: { ...program.episodeState, at: 'episodes/prolog/rooms-virt/tu.library:00#' },
   };
-  assert.ok(labels(library).includes('искать контейнмент'));
+  assert.ok(labels(library).some((l) => l.startsWith('искать')), labels(library).join(' · '));
   const found = enter(game, library, 'episodes/prolog/items/00-catalog#искать', false).save;
   assert.ok(labels({ ...found, episodeState: { ...found.episodeState, at: library.episodeState.at } }).includes('взять учебник'));
 

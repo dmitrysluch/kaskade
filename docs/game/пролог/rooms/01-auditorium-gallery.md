@@ -23,4 +23,5 @@ exits:
 ```
 
 → уйти [[transitions/02-club-entry]]
+  - if: prolog.after-lecture-done
   - advance

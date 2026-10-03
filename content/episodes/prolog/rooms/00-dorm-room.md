@@ -33,6 +33,7 @@ items: [00-computer, 00-schedule, 00-blister]
   - if: "has:00-book, !prolog.study-only-case"
 → лечь спать [[scenes/00-night]]
   - if: word:word-only-case
+  - advance
 
 ## после-разговора
 - items: [00-toby]

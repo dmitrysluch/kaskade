@@ -89,12 +89,21 @@ export function streamLines(
   const inline = max - SPEAKER_WIDTH - SPEAKER_GAP < MIN_SPEECH;
   const textCol = MARGIN.text + SPEAKER_WIDTH + SPEAKER_GAP;
 
+  const rule = (): Seg[] => [{ text: pad() }, { text: ROUND.repeat(Math.max(1, max)), cls: 'round' }];
+
   entries.forEach((entry, index) => {
     if (out.length > 0) out.push([]);
     // Черту ставим перед командой: ниже неё — то, что случилось в ответ.
     // Перед самой первой не ставим: делить там нечего.
-    if (entry.kind === 'echo' && index > 0) {
-      out.push([{ text: pad() }, { text: ROUND.repeat(Math.max(1, max)), cls: 'round' }]);
+    if (entry.kind === 'echo' && index > 0) out.push(rule());
+    /*
+     * Граница нового посещения — та же тонкая черта и по той же причине: это
+     * деление внутри транскрипта, а не монтаж и не смена места. Своего текста
+     * у записи нет, подписи «возвращение» тоже: черта говорит всё сама.
+     */
+    if (entry.kind === 'visit') {
+      out.push(rule());
+      return;
     }
     /*
      * Подсвечивается только размеченное автором (07-оболочка-тз, «Явно

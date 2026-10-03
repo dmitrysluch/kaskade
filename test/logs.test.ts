@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendLog, enter, streamOf } from '../app/client/engine/state.ts';
+import { streamLines } from '../app/client/ui/lines.ts';
 import { migrate } from '../app/client/engine/save.ts';
 import { mergeRoom } from '../app/server/content/rooms.ts';
 import { RULES } from '../app/server/validate/index.ts';
@@ -142,16 +143,74 @@ test('`log: true` восстанавливает прежний поток, а `
   // Лог комнаты сохранён вместе с эхом ухода.
   assert.deepEqual(away.logs['p|00|tu.dorm-room']!.at(-1)!.text, 'идти в аудиторию');
 
-  // Вернулись: прежний поток на месте, реакция дописана, место снова себя описало.
+  // Вернулись: прежний поток на месте, реакция дописана, место снова себя
+  // описало. Между старым и новым стоит граница посещения — запись без текста.
   const back = enter(g, away, `${ROOM}#`).save;
   assert.deepEqual(texts(g, back), [
     'Комната на троих.',
     'осмотреть учебник',
     'Учебник по контейнменту.',
     'идти в аудиторию',
+    '',
     'Тоби оборачивается к тебе.',
     'Комната на троих.',
   ]);
+  assert.equal(streamOf(g, back)[4]!.kind, 'visit');
+});
+
+test('возврат отделяет старый лог от нового текста тонкой чертой', () => {
+  const g = game();
+  let s = enter(g, save(), `${ROOM}#`).save;
+  s = appendLog(g, s, [{ kind: 'echo', text: 'идти в аудиторию' }]);
+  const away = enter(g, s, `${HALL}#`).save;
+
+  const back = enter(g, away, `${ROOM}#`).save;
+  const kinds = streamOf(g, back).map((e) => e.kind);
+  // Граница стоит ровно между командой ухода и тем, что показал новый вход.
+  assert.deepEqual(kinds, ['text', 'echo', 'visit', 'text', 'text']);
+  assert.equal(streamOf(g, back).find((e) => e.kind === 'visit')!.text, '');
+
+  // Обычный раунд «эхо → ответ» второй чертой не делится.
+  const inside = enter(g, appendLog(g, back, [{ kind: 'echo', text: 'осмотреть учебник' }]), `${BOOK}#осмотреть`, false).save;
+  assert.equal(streamOf(g, inside).filter((e) => e.kind === 'visit').length, 1);
+
+  // На экране это та же тонкая черта, что граница раундов.
+  const lines = streamLines(streamOf(g, back), 40).map((l) => l.map((seg) => seg.text).join('').trim());
+  assert.equal(lines.filter((l) => l.startsWith('┈')).length, 2, 'черта ухода и черта возвращения');
+});
+
+test('границы нет там, где делить нечего', () => {
+  const g = game();
+  // Первый вход: старого лога нет.
+  const first = enter(g, save(), `${ROOM}#`).save;
+  assert.equal(streamOf(g, first).some((e) => e.kind === 'visit'), false);
+
+  // Возврат в нелогируемое место: лог пуст, и черта повисла бы над пустотой.
+  const plain = game({ log: false });
+  const away = enter(plain, enter(plain, save(), `${ROOM}#`).save, `${HALL}#`).save;
+  assert.equal(streamOf(plain, enter(plain, away, `${ROOM}#`).save).some((e) => e.kind === 'visit'), false);
+
+  // Перезагрузка новым входом не является: прохода нет, структура та же.
+  const back = enter(g, enter(g, first, `${HALL}#`).save, `${ROOM}#`).save;
+  const reloaded = JSON.parse(JSON.stringify(back)) as SaveState;
+  assert.deepEqual(streamOf(g, reloaded).map((e) => e.kind), streamOf(g, back).map((e) => e.kind));
+
+  // Соседних границ не бывает: вход без нового текста черты не ставит.
+  const silent = content({
+    ...g,
+    docs: {
+      ...g.docs,
+      [HALL]: doc(HALL, {
+        type: 'room',
+        log: true,
+        fm: { persistent: 'tu.h1012', stage: '00' },
+        nodes: [node(`${HALL}#`, { options: [option({ label: 'идти в комнату', target: `${ROOM}#`, moves: true })] })],
+      }),
+    },
+    nodes: undefined as never,
+  });
+  const quiet = enter(silent, enter(silent, enter(silent, save(), `${HALL}#`).save, `${ROOM}#`).save, `${HALL}#`).save;
+  assert.equal(streamOf(silent, quiet).some((e) => e.kind === 'visit'), false, 'показывать нечего — делить нечего');
 });
 
 test('без `log: true` буфер при уходе выбрасывается, но ключ остаётся', () => {
