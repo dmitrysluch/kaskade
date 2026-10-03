@@ -176,13 +176,13 @@ test('каталог раскрашивает строку списка тем �
   assert.ok(!/справочник\|[^\n]*needs-/.test(list), list);
 });
 
-test('в деталях требование печатается словами и рядом с advance', () => {
+test('в деталях команда сама говорит, чем пользуется', () => {
   const needs = { kind: 'item' as const, id: '00-book', label: 'учебник' };
   const rows = 2;
 
   const lines = detailLines('— Сверю с перечнем.', false, needs, null, 60, rows);
   assert.equal(lines.length, rows, 'высота области не меняется');
-  assert.match(lines[1]!.map((s) => s.text).join(''), /нужно: учебник/);
+  assert.match(lines[1]!.map((s) => s.text).join(''), /использует предмет учебник/);
   assert.equal(lines[1]!.some((s) => s.cls === 'needs-item'), true);
 
   // Предупреждение и требование живут в одной строке. Вдвоём полная подпись
@@ -191,7 +191,7 @@ test('в деталях требование печатается словами
   const both = detailLines('— Ладно.', true, needs, null, 60, rows);
   const note = both[1]!.map((s) => s.text).join('');
   assert.match(note, /необратимо/);
-  assert.match(note, /нужно: учебник/);
+  assert.match(note, /использует предмет учебник/);
   assert.ok(note.length <= 60 + 4, note);
 
   // Один `advance` печатается подписью целиком: объяснять знак больше нечем.
@@ -200,7 +200,7 @@ test('в деталях требование печатается словами
   // Слово называется своим именем и получает свой цвет.
   const word = detailLines(null, false, { kind: 'word', id: 'word-only-case', label: 'ЕДИНСТВЕННЫЙ СЛУЧАЙ' }, null, 60, rows);
   assert.equal(word[0]!.some((s) => s.cls === 'needs-word'), true);
-  assert.match(word[0]!.map((s) => s.text).join(''), /нужно: ЕДИНСТВЕННЫЙ СЛУЧАЙ/);
+  assert.match(word[0]!.map((s) => s.text).join(''), /использует слово ЕДИНСТВЕННЫЙ СЛУЧАЙ/);
 });
 
 test('в прологе требование находится у живых команд', () => {

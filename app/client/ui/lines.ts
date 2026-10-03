@@ -325,10 +325,17 @@ export const ADVANCE_MARK = '▶';
 export const ADVANCE_LEGEND = 'продолжает историю; к текущим действиям нельзя вернуться';
 
 /**
- * Подпись требования. Без склонения намеренно: «нужен бланк» и «нужна книга»
- * оболочка не выговорит, а двоеточие не врёт ни в одном роде.
+ * Подпись требования: что команда использует и что именно.
+ *
+ * Названо своим словом, а не общим «нужно»: цвет говорит, какого рода вещь, но
+ * цвет — не единственный канал, и строка деталей обязана сказать то же прямо.
+ * Заодно снимается падеж: «использует предмет бланк» выговаривается в любом
+ * роде, а «нужен бланк» / «нужна книга» оболочка не выговорит.
  */
-export const NEEDS_LEGEND = 'нужно';
+export const USES: Record<Needs['kind'], string> = {
+  word: 'использует слово',
+  item: 'использует предмет',
+};
 
 /**
  * Шкала времени раунда «надавить» ([[07b-надавить-тз]], «Представление»).
@@ -519,7 +526,10 @@ export function detailLines(
   if (advance) notes.push({ text: needs ? ADVANCE_SHORT : ADVANCE_LEGEND, cls: 'dim' });
   if (needs) {
     if (notes.length > 0) notes.push({ text: ' · ', cls: 'dim' });
-    notes.push({ text: `${NEEDS_LEGEND}: ${needs.label}`, cls: needs.kind === 'word' ? 'needs-word' : 'needs-item' });
+    notes.push({
+      text: `${USES[needs.kind]} ${needs.label}`,
+      cls: needs.kind === 'word' ? 'needs-word' : 'needs-item',
+    });
   }
 
   if (preview) {
