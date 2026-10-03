@@ -113,8 +113,30 @@ export function streamLines(
      */
     const spans = entitySpans(entry, focus);
     const seen = new Map<string, number>();
+    /*
+     * Листинг — машина показывает экран (07-оболочка-тз, «Разметка»): текст
+     * внутри ``` не проза. Его не переносят по словам и не разбирают на
+     * говорящих — у него значимы собственные пробелы, на них держится и
+     * столбик таблицы, и отступ формулы. Сами ограждения не печатаются:
+     * игрок видит окно редактора, а не разметку заметки.
+     */
+    let fence: string | null = null;
 
     for (const source of entry.text.split('\n')) {
+      const edge = /^\s*(```+|~~~+)\s*(\S*)\s*$/.exec(source);
+      if (edge && (fence == null || source.trim().startsWith(fence))) {
+        fence = fence == null ? edge[1]! : null;
+        continue;
+      }
+      if (fence != null) {
+        // Табуляция в сетке знаков не живёт: одна клетка, а рисуется шире.
+        const code = source.replace(/\t/g, '    ');
+        // Строка длиннее колонки обрезается многоточием: у окна машины есть
+        // край, а перенос по словам сломал бы столбик таблицы и отступ формулы.
+        const text = code.length > max ? `${code.slice(0, max - 1)}…` : code;
+        out.push([{ text: pad() }, { text, cls: 'listing' }]);
+        continue;
+      }
       // Эхо команды и карточки говорят не голосом персонажа — разметку к ним
       // не применяем: у них свой класс и свой цвет.
       const said = entry.kind === 'text' ? speakerOf(source) : { voice: entry.kind, name: null, text: source };

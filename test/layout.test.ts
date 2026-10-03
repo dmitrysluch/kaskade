@@ -540,6 +540,48 @@ test('цитата колонки говорящего не занимает', (
   assert.equal(segs[1]!.text, '«Единственный случай в истории».');
 });
 
+test('листинг печатается как экран машины: свои пробелы и свой цвет', () => {
+  const entry = {
+    kind: 'text' as const,
+    text: [
+      'График температуры обмотки.',
+      '',
+      '```text',
+      'Метод          α   Результат',
+      'splitting      18   p = 8.6e-7',
+      '```',
+      '> марго — Шесть минут.',
+    ].join('\n'),
+  };
+
+  const lines = streamLines([entry], 40).map((l) => ({
+    text: l.map((s) => s.text).join('').replace(/\s+$/, ''),
+    cls: l.map((s) => s.cls ?? '').filter(Boolean).join(','),
+  }));
+
+  // Ограждений и имени языка игрок не видит.
+  assert.equal(lines.some((l) => l.text.includes('```') || l.text.includes('text')), false);
+
+  // Пробелы внутри сохранены: на них держится столбик.
+  const table = lines.filter((l) => l.cls.includes('listing'));
+  assert.equal(table.length, 2);
+  assert.match(table[0]!.text, /^ {4}Метод {10}α {3}Результат$/);
+  assert.match(table[1]!.text, /^ {4}splitting {6}18 {3}p = 8\.6e-7$/);
+
+  // Проза и реплика остаются собой: листинг не отменяет ни переноса, ни колонки.
+  assert.ok(lines.some((l) => l.cls.includes('margo')));
+});
+
+test('строка листинга длиннее колонки обрезается многоточием', () => {
+  const long = '\\begin{lemma} при отказе вентилятора коэффициент теплоотдачи меняется скачком';
+  const lines = streamLines([{ kind: 'text' as const, text: `\`\`\`tex\n${long}\n\`\`\`` }], 30);
+  const text = lines[0]!.map((s) => s.text).join('');
+
+  assert.equal(text.length, 30 + MARGIN.text);
+  assert.match(text, /…$/);
+  assert.equal(lines[0]!.some((s) => s.cls === 'listing'), true);
+});
+
 test('раунды разделены тонкой чертой перед командой, но не в начале потока', () => {
   const lines = streamLines(
     [

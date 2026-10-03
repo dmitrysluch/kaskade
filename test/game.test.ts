@@ -4,7 +4,7 @@ import { loadContent } from '../app/server/content/load.ts';
 import { validate } from '../app/server/validate/index.ts';
 import { buildCatalog, type CatalogOption } from '../app/client/engine/catalog.ts';
 import { completeMinigame, fieldHere, fieldOf } from '../app/client/engine/minigame.ts';
-import { begin, confirmTransition, dateAt, enter, evalCondition, freshSave, interpolate, previewOf, pagesOf, sceneOf, terms, waitRoute } from '../app/client/engine/state.ts';
+import { begin, confirmTransition, dateAt, enter, evalCondition, freshSave, interpolate, previewOf, pagesOf, resolveTarget, sceneOf, terms, waitRoute } from '../app/client/engine/state.ts';
 import { overlayLines, statusText } from '../app/client/ui/lines.ts';
 import type { SaveState } from '../app/shared/types.ts';
 import type { StreamEntry } from '../app/client/engine/state.ts';
@@ -542,8 +542,11 @@ test('предпросмотр берёт реплику Марго целево
 
   assert.ok(withReply.length > 10, `предпросмотров всего ${withReply.length}`);
   for (const option of withReply) {
-    const target = game.nodes[option.target!]!;
-    const preview = previewOf(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#'), option)!;
+    const here = at('episodes/prolog/rooms-virt/tu.dorm-room:00#');
+    // Адрес разрешаем так же, как движок: у ссылки на комнату без среза в цели
+    // стоит звёздочка, и сырым ключом такой узел не найти.
+    const target = game.nodes[resolveTarget(game, here, option.target)!]!;
+    const preview = previewOf(game, here, option)!;
     // Дословно: строка обязана найтись в узле как есть, а не быть пересказом.
     // Сравниваем с текстом без разметки и без метки говорящего: игрок видит
     // форму из ссылки и речь без служебного имени — с этим и обязан совпадать
