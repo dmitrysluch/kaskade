@@ -39,10 +39,6 @@ threads:
 запроектной.
 
 ## complete
-- tag: montage
 - set: prolog.study-definitions
-- timeLabel: час спустя
-
-Ты закладываешь страницу. За окном начинаются сумерки.
 
 → [[scenes/00-show-toby]]

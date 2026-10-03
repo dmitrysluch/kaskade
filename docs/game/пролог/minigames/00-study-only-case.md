@@ -39,9 +39,7 @@ threads:
 авария на Чернобыльской АЭС.
 
 ## complete
-- tag: montage
 - set: prolog.study-only-case
-- timeLabel: ещё два часа
 
 Ты дочитываешь главу и зажигаешь настольную лампу. `thesis.tex` остаётся
 недописанным.
