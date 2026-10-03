@@ -279,7 +279,11 @@ test('пролог проходится до конца, и на каждом ш
       tried.set(save.episodeState.at, seen);
       const stage00 = save.activeStage === '00';
       const here = sceneOf(save.episodeState.at);
-      const bearing = !stage00 ? []
+      const bearing = save.activeStage === '01' ?
+          save.flags['prolog.after-lecture-done'] ? ['уйти']
+          : here.endsWith('tu.auditorium-gallery:01') ? ['идти в аудиторию']
+          : []
+        : !stage00 ? []
         : save.words['word-only-case'] === 'white' ? ['лечь спать', 'завалить деда']
         : save.inventory.includes('00-book') ?
           here.endsWith('tu.dorm-room:00') ? ['изучать учебник']
@@ -744,6 +748,28 @@ test('к Тоби можно вернуться, а книга один раз �
   };
   assert.equal(
     enter(game, afterToby, 'episodes/prolog/rooms-virt/tu.dorm-room:00#').save.episodeState.at,
+    'episodes/prolog/rooms-virt/tu.dorm-room:00#один',
+  );
+});
+
+test('Тоби можно прогнать только после книги, а исправленную страницу показывают только пока он здесь', () => {
+  const hub = 'episodes/prolog/scenes/00-talk#хаб';
+  const beforeBook = at(hub);
+  assert.equal(labels(beforeBook).includes('иди уже'), false);
+
+  const withBook: SaveState = { ...beforeBook, inventory: ['00-book'] };
+  assert.equal(labels(withBook).includes('иди уже'), true);
+
+  const show = 'episodes/prolog/scenes/00-show-toby#';
+  assert.equal(enter(game, at(show), show).save.episodeState.at, 'episodes/prolog/scenes/00-show-toby#выбор');
+
+  const beforeLeft = at(show);
+  const left: SaveState = {
+    ...beforeLeft,
+    flags: { ...beforeLeft.flags, 'prolog.toby-left': { value: true, at: null } },
+  };
+  assert.equal(
+    enter(game, left, show).save.episodeState.at,
     'episodes/prolog/rooms-virt/tu.dorm-room:00#один',
   );
 });

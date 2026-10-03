@@ -10,6 +10,7 @@ import { planStages, type Out, type PlanDoc, type StagePlan } from './stages.ts'
 import { docGenerators, expandNode, type ExpandContext, type TargetInfo } from './options.ts';
 import { parseRenderer, readYaml, str, strArray, strMap } from './yaml.ts';
 import { loadCharacters } from './portrait.ts';
+import { REENTRY } from '../../shared/logs.ts';
 import type {
   Doc,
   EpisodeDef,
@@ -695,14 +696,21 @@ export function loadContent(): GameContent {
     const built: Node[] = room.nodes.map((node) => {
       const exits = [...room.exits, ...node.raw.attrs.exits];
       const items = [...room.items, ...node.raw.attrs.items];
-      const { options, pending, generators } = expandNode(
-        ctx,
-        { path: node.file, baseDocId: node.baseDocId, selfDocId: room.docId, stage: room.stage, place: 'room' },
-        node.raw,
-        exits,
-        items,
-        room.generators.length > 0 ? room.generators : docGenerators({ type: 'room', nodes: [] }, exits, items),
-      );
+      // `## reentry` — текстовая реакция движка, не игровая нода. Комнатные
+      // генераторы принадлежат всем обычным состояниям помещения, но сюда
+      // попадать не должны: иначе чистый фрагмент неожиданно получает
+      // `идти`/`осмотреть` и валидатор справедливо считает его игровой нодой.
+      const { options, pending, generators } =
+        node.raw.id === REENTRY ?
+          { options: [], pending: [], generators: [] }
+        : expandNode(
+            ctx,
+            { path: node.file, baseDocId: node.baseDocId, selfDocId: room.docId, stage: room.stage, place: 'room' },
+            node.raw,
+            exits,
+            items,
+            room.generators.length > 0 ? room.generators : docGenerators({ type: 'room', nodes: [] }, exits, items),
+          );
 
       return {
         id: node.raw.id,

@@ -20,8 +20,9 @@ import {
 } from '../app/client/ui/lines.ts';
 import { loadContent } from '../app/server/content/load.ts';
 import { buildCatalog, SYSTEM_COMMANDS } from '../app/client/engine/catalog.ts';
-import { dateAt, enter, freshSave, previewOf, terms } from '../app/client/engine/state.ts';
+import { dateAt, enter, freshSave, placeLabel, previewOf, terms } from '../app/client/engine/state.ts';
 import { matches } from '../app/client/engine/completion.ts';
+import { collapse, crowded, optionOf } from '../app/client/engine/families.ts';
 import { MARGIN } from '../app/client/ui/text.ts';
 import type { SaveState } from '../app/shared/types.ts';
 import type { StreamEntry } from '../app/client/engine/state.ts';
@@ -62,10 +63,11 @@ const textWidth = Math.max(1, cols - MARGIN.text - MARGIN.right);
 const streamRows = Math.max(3, rows - STATUS_ROWS - LOWER_ROWS);
 const lines = streamLines(stream, textWidth);
 const catalog = buildCatalog(game, save);
-const shown = matches(catalog, inputArg);
+const shown = collapse(matches(catalog, inputArg), inputArg, crowded(game, save));
 // В превью показываем первый вариант: в браузере это то, что выбрал бы игрок
-// стрелкой вниз, а здесь надо увидеть саму область деталей.
-const picked = shown[0];
+// стрелкой вниз, а здесь надо увидеть саму область деталей. У строки семьи
+// превью нет — её раскрывают, а не выбирают.
+const picked = shown[0] ? optionOf(shown[0]) : null;
 const scroll = Number(process.env.SCROLL ?? 0);
 const maxScroll = Math.max(0, lines.length - streamRows);
 
@@ -73,7 +75,7 @@ const html = renderToStaticMarkup(
   React.createElement(GameScreen, {
     cols,
     streamRows,
-    status: statusLine(statusText(dateAt(game, save), terms(game, save)), cols),
+    status: statusLine(placeLabel(game, save), statusText(dateAt(game, save), terms(game, save)), cols),
     stream: viewport(lines, streamRows, scroll),
     more: { up: Math.min(scroll, maxScroll) < maxScroll, down: Math.min(scroll, maxScroll) > 0 },
     input: inputLine(inputArg),
@@ -81,6 +83,8 @@ const html = renderToStaticMarkup(
     details: detailLines(
       picked ? previewOf(game, save, picked) : null,
       picked?.attrs.advance ?? false,
+      picked?.needs ?? null,
+      null,
       textWidth,
       DETAIL_ROWS,
     ),

@@ -35,7 +35,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     started: true,
     wait: null,
     pressure: null,
-    resume: null,
+    resume: [],
     activeStage: '00',
     currentDate: '12.10.2024',
     lastTransitionId: '00-start',

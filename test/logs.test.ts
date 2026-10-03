@@ -42,7 +42,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     started: true,
     wait: null,
     pressure: null,
-    resume: null,
+    resume: [],
     activeStage: '00',
     currentDate: '12.10.2024',
     lastTransitionId: null,
@@ -221,13 +221,13 @@ test('закрытый разговор возобновляет комнату,
   const talking = enter(g, appendLog(g, inRoom, [{ kind: 'echo', text: 'говорить с тоби' }]), `${TALK}#`).save;
 
   // Комната приостановлена: адрес возврата записан, поток ждёт.
-  assert.equal(talking.resume, `${ROOM}#`);
+  assert.deepEqual(talking.resume, [`${ROOM}#`]);
   assert.deepEqual(texts(g, talking), ['Тоби лежит поперёк кровати.']);
 
   const back = enter(g, appendLog(g, talking, [{ kind: 'echo', text: 'завершить разговор' }]), `${ROOM}#`).save;
   // Поток остался, комната себя не повторила, реакции и черты нет.
   assert.deepEqual(texts(g, back), ['Комната на троих.', 'говорить с тоби']);
-  assert.equal(back.resume, null);
+  assert.deepEqual(back.resume, []);
 });
 
 test('возврат в другую ноду комнаты печатает её один раз, но входом не считается', () => {
@@ -272,6 +272,77 @@ test('возврат в другую ноду комнаты печатает е
   assert.equal(back.roomStates[roomKey], 'один', 'новое устойчивое состояние запомнено');
 });
 
+test('поле мини-игры — подэкран того же посещения, а не уход из комнаты', () => {
+  const FIELD = 'episodes/p/minigames/00-study';
+  const STUDY = 'episodes/p/scenes/study';
+  const g = content({
+    episodes: [episode('p', { entry: `${ROOM}#` })],
+    docs: {
+      [ROOM]: doc(ROOM, {
+        type: 'room',
+        label: 'комната',
+        log: true,
+        fm: { persistent: 'tu.dorm-room', stage: '00' },
+        nodes: [
+          node(`${ROOM}#один`, {
+            text: 'Тоби ушёл, дверь оставил открытой.',
+            options: [
+              option({ label: 'проверить единственный случай', target: `${FIELD}#`, moves: true }),
+              option({ label: 'изучать учебник', target: `${STUDY}#`, moves: true }),
+            ],
+          }),
+          node(`${ROOM}#${REENTRY}`, { text: 'Тоби оборачивается к тебе.' }),
+        ],
+      }),
+      // Диспетчер учёбы: своего текста нет, только маршрут в поле.
+      [STUDY]: doc(STUDY, {
+        type: 'scene',
+        nodes: [node(`${STUDY}#`, { options: [option({ label: '', target: `${FIELD}#`, moves: true })] })],
+      }),
+      [FIELD]: doc(FIELD, {
+        type: 'minigame',
+        nodes: [
+          node(`${FIELD}#`),
+          node(`${FIELD}#complete`, {
+            text: 'Ты обводишь строку и ставишь на поле двойку.',
+            attrs: attrs({ give: ['word-only-case'], once: true }),
+            options: [option({ label: '', target: `${ROOM}#один`, moves: true })],
+          }),
+        ],
+      }),
+    },
+    words: {
+      'word-only-case': { id: 'word-only-case', label: 'ЕДИНСТВЕННЫЙ СЛУЧАЙ', category: 'слова', text: '', details: [] },
+    },
+  });
+
+  const inRoom = enter(g, save({ episodeState: { episode: 'p', at: `${ROOM}#один`, used: [] } }), `${ROOM}#один`).save;
+  const field = enter(g, appendLog(g, inRoom, [{ kind: 'echo', text: 'проверить единственный случай' }]), `${FIELD}#`).save;
+
+  // Комната приостановлена, а не покинута: у поля своего потока нет.
+  assert.deepEqual(field.resume, [`${ROOM}#один`]);
+  assert.deepEqual(texts(g, field), []);
+
+  const back = enter(g, field, `${FIELD}#complete`).save;
+  // Результат и выдача легли в поток комнаты; ни черты, ни повторного описания.
+  assert.deepEqual(texts(g, back), [
+    'Тоби ушёл, дверь оставил открытой.',
+    'проверить единственный случай',
+    'Ты обводишь строку и ставишь на поле двойку.',
+    'ЕДИНСТВЕННЫЙ СЛУЧАЙ — в деле, 2',
+  ]);
+  assert.deepEqual(back.resume, []);
+
+  // Цепочка подлиннее: комната → диспетчер учёбы → поле → комната.
+  const chain = enter(g, enter(g, inRoom, `${STUDY}#`).save, `${FIELD}#complete`).save;
+  assert.equal(streamOf(g, chain).some((e) => e.kind === 'visit'), false, 'и здесь это одно посещение');
+  assert.equal(
+    streamOf(g, chain).filter((e) => e.text.startsWith('Тоби ушёл')).length,
+    1,
+    'комната не описывает себя заново',
+  );
+});
+
 test('возобновление не зависит от `log`: игрок никуда и не уходил', () => {
   const g = game({ log: false });
   const talking = enter(g, enter(g, save(), `${ROOM}#`).save, `${TALK}#`).save;
@@ -287,7 +358,7 @@ test('уход в другое помещение — настоящий вхо�
 
   // Из разговора ушли не назад, а в аудиторию: это обычный вход.
   const away = enter(g, talking, `${HALL}#`).save;
-  assert.equal(away.resume, null);
+  assert.deepEqual(away.resume, []);
   assert.deepEqual(away.logs['p|00|tu.dorm-room'], [], 'нелогируемая комната всё-таки покинута');
   assert.deepEqual(texts(g, away), ['Аудитория на сорок мест.']);
 });

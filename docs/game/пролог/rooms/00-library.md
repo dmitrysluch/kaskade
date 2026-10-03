@@ -21,3 +21,7 @@ items:
 
 → говорить с библиотекаршей [[scenes/00-librarian-talk]]
   - if: "word:word-ahlers, !has:00-book"
+
+## reentry
+
+Библиотекарша за столом. В читальном зале тихо.

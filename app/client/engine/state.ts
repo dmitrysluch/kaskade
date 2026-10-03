@@ -660,17 +660,20 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
 
   /*
    * Возобновление ли это (07-оболочка-тз, «Неявный `resume`»): игрок закрывает
-   * сцену и возвращается туда, откуда её открыл. Решается тоже до прохода —
-   * по первой разрешённой цели: дальше проход может уйти маршрутом в третье
-   * место, и это уже обычный вход.
+   * сцену или поле мини-игры и возвращается туда, откуда её открыл.
+   *
+   * Поле и карточка своего потока не имеют, поэтому «откуда» считается не по
+   * типу, а по отсутствию ключа: с экрана, который потоком не владеет, уйти
+   * по-настоящему нельзя — на нём стояли внутри того же посещения.
+   *
+   * Решается на первой же смене контекста внутри прохода, а не по начальной
+   * цели: от поля проход сперва идёт его узлом завершения и только потом
+   * маршрутом в комнату.
    */
-  const target = resolveTarget(content, save, addr);
-  const resuming =
-    typeOf(content, save.episodeState.at) === 'scene' &&
-    save.resume != null &&
-    target != null &&
-    keyAt(content, save, target) !== from &&
-    keyAt(content, save, target) === keyAt(content, save, save.resume);
+  const closing = from == null || typeOf(content, save.episodeState.at) === 'scene';
+  let resuming = false;
+  let parked: number | null = null;
+  let decided = false;
 
   while (current != null) {
     const addr = resolveTarget(content, state, current);
@@ -743,6 +746,19 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
       if (state.activeRoom !== room) state = { ...state, activeRoom: room };
     }
 
+    // Первая смена контекста решает, вход это или возвращение.
+    if (!decided) {
+      const key = logKey(content, state);
+      if (key != null && key !== from) {
+        decided = true;
+        const at = closing ? resumeAt(content, save, key) : null;
+        if (at != null) {
+          resuming = true;
+          parked = at;
+        }
+      }
+    }
+
     /*
      * Полноэкранный кадр останавливает проход: ввод не принимается, дальше
      * уводит компонент кадра, когда игрок нажмёт Enter. Текст такого узла
@@ -771,7 +787,7 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
      * новый вход. Другая нода вызывающего места при этом печатается — она
      * действительно изменилась, пока игрок разговаривал.
      */
-    const again = resuming && node.addr === save.resume;
+    const again = resuming && parked != null && node.addr === save.resume[parked];
     if (node.text && !again) entries.push(textEntry(content, state, interpolate(node.text, state)));
     applied.granted.forEach((id) => {
       const word = content.words[id];
@@ -799,7 +815,7 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
    * и ответ предмета новой попытки не дают.
    */
   return {
-    save: armPressure(content, context(content, save, state, { from, kept, entries, resuming })),
+    save: armPressure(content, context(content, save, state, { from, kept, entries, resuming, parked })),
     entries,
   };
 }
@@ -823,7 +839,14 @@ function context(
   content: GameContent,
   before: SaveState,
   after: SaveState,
-  walk: { from: string | null; kept: boolean; entries: StreamEntry[]; resuming: boolean },
+  walk: {
+    from: string | null;
+    kept: boolean;
+    entries: StreamEntry[];
+    resuming: boolean;
+    /** Какая запись стека сработала возвратом. */
+    parked: number | null;
+  },
 ): SaveState {
   const to = logKey(content, after);
   const changed = walk.from !== to;
@@ -837,19 +860,26 @@ function context(
    * при таком уходе не выбрасывается, даже если у него нет `log: true`, —
    * выбросить его нужно только тогда, когда игрок ушёл по-настоящему.
    */
-  const suspending = changed && typeOf(content, after.episodeState.at) === 'scene';
+  const suspending = changed && (typeOf(content, after.episodeState.at) === 'scene' || to == null);
   const resuming = walk.resuming;
-  const parked = before.resume == null ? null : keyAt(content, before, before.resume);
 
   if (changed && !resuming && !suspending) {
     if (walk.from != null && !walk.kept) logs[walk.from] = [];
-    // Отложенный выброс: приостановленное место так и не дождалось возврата.
-    if (parked != null && parked !== to && !loggedAt(content, before.resume!)) logs[parked] = [];
+    /*
+     * Отложенный выброс: приостановленные места так и не дождались возврата,
+     * игрок ушёл в третье. Нелогируемый буфер гаснет — `log` решает, что
+     * переживёт настоящий уход, а не возобновление.
+     */
+    for (const addr of before.resume) {
+      const key = keyAt(content, before, addr);
+      if (key != null && key !== to && !loggedAt(content, addr)) logs[key] = [];
+    }
   }
 
   const resume =
-    suspending ? before.episodeState.at
-    : resuming || changed ? null
+    suspending ? [...before.resume.filter((a) => a !== before.episodeState.at), before.episodeState.at]
+    : resuming && walk.parked != null ? before.resume.slice(0, walk.parked)
+    : changed ? []
     : before.resume;
 
   if (to == null) return { ...after, logs, resume };
@@ -913,6 +943,18 @@ function keyAt(content: GameContent, save: SaveState, addr: string): string | nu
 }
 
 /**
+ * Какая запись стека приостановленных мест отвечает этому ключу — с верхней.
+ * `null` — туда не возвращаются, это обычный вход.
+ */
+function resumeAt(content: GameContent, save: SaveState, key: string | null): number | null {
+  if (key == null) return null;
+  for (let i = save.resume.length - 1; i >= 0; i--) {
+    if (keyAt(content, save, save.resume[i]!) === key) return i;
+  }
+  return null;
+}
+
+/**
  * Начало сессии: войти туда, где стоит сейв, и показать, что там написано.
  * `started` взводится здесь — узел отыгрывается ровно один раз, и второй запуск
  * не выдаёт слова по второму разу.
@@ -948,7 +990,7 @@ export function freshSave(content: GameContent): SaveState {
     started: false,
     wait: null,
     pressure: null,
-    resume: null,
+    resume: [],
     // Контекст пуст: до первой карточки перехода у игры нет ни даты, ни среза.
     activeStage: null,
     currentDate: null,
