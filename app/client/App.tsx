@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildCatalog, itemActions, SYSTEM_COMMANDS, type CatalogOption } from './engine/catalog.ts';
 import { commonPrefix, exact, matches } from './engine/completion.ts';
+import { collapse, familyPrefix, optionOf, type Row } from './engine/families.ts';
 import {
   appendLog,
   begin,
@@ -357,13 +358,32 @@ export function App() {
   );
 
   const shown = useMemo(() => matches(catalog, input), [catalog, input]);
+  /**
+   * Строки списка: при пустом вводе повторяющиеся действия комнаты сворачиваются
+   * в одну строку с префиксом (07-оболочка-тз, «Сворачивание повторяющихся
+   * действий комнаты»). Стрелки ходят по строкам, а каталог остаётся полным:
+   * спрятанную команду можно набрать и исполнить, не раскрывая семью.
+   */
+  const choices = useMemo(() => collapse(shown, input), [shown, input]);
 
   // Что выбрано на самом деле: стрелками, Tab или введённым целиком текстом.
   // Именно эта опция раскрывает реплику Марго в области деталей.
   const picked = useMemo(
-    () => (pick == null ? exact(catalog, input) : (shown[pick] ?? null)),
-    [catalog, shown, pick, input],
+    () => (pick == null ? exact(catalog, input) : optionOf(choices[pick])),
+    [catalog, choices, pick, input],
   );
+
+  /**
+   * Раскрыть семью: подставить префикс в строку ввода. Ничего не исполняется,
+   * не эхается и в лог не пишется — это ровно тот же непустой ввод, который
+   * игрок мог набрать руками.
+   */
+  const expand = useCallback((row: Row) => {
+    if (row.kind !== 'family') return false;
+    setInput(familyPrefix(row));
+    setPick(null);
+    return true;
+  }, []);
 
   /**
    * Строки монтажного кадра. Считаются тем же `streamLines`, что и поток:
@@ -989,7 +1009,10 @@ export function App() {
           event.preventDefault();
           // Enter исполняет выбранное или введённое целиком; неполный набор
           // без выбора не исполняет ничего.
-          const chosen = exact(catalog, input) ?? (pick == null ? null : shown[pick]) ?? null;
+          const row = pick == null ? null : choices[pick];
+          // Выбрана семья — раскрываем её, а не исполняем: это не опция игры.
+          if (row && expand(row)) return;
+          const chosen = exact(catalog, input) ?? optionOf(row ?? undefined);
           // Ввод валидируется до отправки: если совпадения нет, не происходит
           // ничего. Ни одного «не понимаю» за всю игру.
           if (chosen) run(chosen);
@@ -997,12 +1020,16 @@ export function App() {
         }
         case 'Tab': {
           event.preventDefault();
-          if (shown.length === 0) return;
+          if (choices.length === 0) return;
+          // На выбранной семье Tab раскрывает её — тем же префиксом, что Enter.
+          const row = pick == null ? null : choices[pick];
+          if (row && expand(row)) return;
+
           const prefix = commonPrefix(shown);
           // Tab сначала дописывает общее, а дальше листает — и это уже осознанный
           // выбор, после которого показывается реплика.
           if (prefix.length > input.length && pick == null) setInput(prefix);
-          else setPick((p) => (p == null ? 0 : (p + 1) % shown.length));
+          else setPick((p) => (p == null ? 0 : (p + 1) % choices.length));
           return;
         }
         case 'Escape':
@@ -1020,11 +1047,11 @@ export function App() {
           // Стрелки листают команды, а не историю ввода: список под строкой — это
           // и есть то, что игрок сейчас может сказать, и выбирать надо в нём.
           event.preventDefault();
-          if (shown.length === 0) return;
+          if (choices.length === 0) return;
           setPick((p) =>
             p == null
-              ? key === 'ArrowDown' ? 0 : shown.length - 1
-              : (p + (key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length,
+              ? key === 'ArrowDown' ? 0 : choices.length - 1
+              : (p + (key === 'ArrowDown' ? 1 : choices.length - 1)) % choices.length,
           );
           return;
         }
@@ -1194,8 +1221,14 @@ export function App() {
           // Аргументы служебных команд (`справочник контейнмент`) в список не
           // идут: они существуют ради набора, а пальцем до статьи добираются
           // через сам справочник. Иначе полсотни строк поверх трёх нужных.
-          options={catalog.filter((o) => !o.system)}
-          onPick={run}
+          options={choices.filter((row) => row.kind === 'family' || !row.option.system)}
+          onPick={(row) => {
+            // Семью трогают, чтобы раскрыть: на телефоне это тот же непустой
+            // ввод, просто набирать его нечем.
+            const option = optionOf(row);
+            if (option && !expand(row)) run(option);
+          }}
+          {...(input === '' ? {} : { onBack: () => setInput('') })}
           system={systemTaps}
           rule={ruleGlyph(renderer.rule)}
           {...(clock && !noLimit ?
@@ -1216,7 +1249,7 @@ export function App() {
         )}
         stream={viewport(layout.stream, layout.streamRows, scroll)}
         input={inputLine(input)}
-        list={commandLines(shown, pick, input, layout.text, LIST_ROWS)}
+        list={commandLines(choices, pick, input, layout.text, LIST_ROWS)}
         details={detailLines(
           picked ? previewOf(bundle.content, session.save, picked) : null,
           picked?.attrs.advance ?? false,

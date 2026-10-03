@@ -54,6 +54,12 @@ export interface RefBase {
   selfDocId: string;
   /** Срез, в котором живёт эта ссылка; `null` — сцена или предмет. */
   stage: string | null;
+  /**
+   * Тип заметки-источника. Нужен семьям команд: сворачиваются только
+   * генераторы **комнаты** (07-оболочка-тз, «Сворачивание повторяющихся
+   * действий комнаты»), а окна компьютера и ответы сцены — нет.
+   */
+  place: DocType;
 }
 
 export interface ExpandContext {
@@ -146,6 +152,17 @@ function expandGenerator(
     );
   }
 
+  /*
+   * Метка семьи (07-оболочка-тз, «Сворачивание повторяющихся действий
+   * комнаты»). Ключ — генератор целиком, фраза — то, что подставится в строку
+   * ввода при раскрытии. Семьи бывают только у комнаты: окна контейнера и
+   * ответы сцены сворачивать нечего и незачем.
+   */
+  const family =
+    base.place === 'room'
+      ? { key: `${gen.phrase}\u0000${Array.isArray(source) ? 'список' : source}`, phrase: gen.phrase }
+      : null;
+
   const options: Option[] = [];
   for (const ref of refs) {
     const { docId: targetId } = ctx.resolve(base, ref, gen.line);
@@ -160,6 +177,7 @@ function expandGenerator(
           attrs: emptyAttrs(),
           verb,
           object: t.docId,
+          family,
         })),
       );
       continue;
@@ -186,6 +204,7 @@ function expandGenerator(
         attrs: emptyAttrs(),
         verb,
         object: t.docId,
+        family,
       })),
     );
   }
@@ -265,6 +284,9 @@ export function expandNode(
         // Динамический адрес комнаты ещё не имеет конкретного TargetInfo.
         // Авторская метка уже написана: здесь нужен только тип цели.
         moves: isVirtual(docId) || PLACES.includes(ctx.get(docId)!.type),
+        // Авторская опция семьёй не бывает: её текст написан руками, и
+        // похожее начало ещё не делает две команды одной семьёй.
+        family: null,
     });
   }
 

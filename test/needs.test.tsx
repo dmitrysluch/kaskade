@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildCatalog, needsOf } from '../app/client/engine/catalog.ts';
+import { collapse } from '../app/client/engine/families.ts';
 import { loadContent } from '../app/server/content/load.ts';
 import { commandLines, detailLines } from '../app/client/ui/lines.ts';
 import { LIST_ROWS } from '../app/client/ui/Screen.tsx';
@@ -168,7 +169,7 @@ test('каталог раскрашивает строку списка тем �
   const study = catalog.find((o) => o.label === 'изучать учебник')!;
   assert.deepEqual(study.needs, { kind: 'item', id: '00-book', label: 'учебник' });
 
-  const list = commandLines(catalog, 0, '', 60, LIST_ROWS)
+  const list = commandLines(collapse(catalog, ''), 0, '', 60, LIST_ROWS)
     .map((line) => line.map((seg) => `${seg.text}|${seg.cls ?? ''}`).join(''))
     .join('\n');
   assert.match(list, /изучать учебник\|[^\n]*needs-item/);

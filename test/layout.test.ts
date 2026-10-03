@@ -11,6 +11,7 @@ import {
   viewport,
 } from '../app/client/ui/lines.ts';
 import { days, daysBetween, parseDate } from '../app/shared/dates.ts';
+import type { Row } from '../app/client/engine/families.ts';
 import { fit } from '../app/client/ui/metrics.ts';
 import { MARGIN } from '../app/client/ui/text.ts';
 import { attrs } from './helpers.ts';
@@ -21,8 +22,13 @@ import { SYSTEM_COMMANDS, type CatalogOption } from '../app/client/engine/catalo
  * иначе символьная рамка разъедется. Проверяем именно это, а не «красиво ли».
  */
 
+/** Строки списка из готовых опций: сворачивание проверяется отдельно. */
+function rowsOf(options: CatalogOption[]): Row[] {
+  return options.map((option) => ({ kind: 'option' as const, option }));
+}
+
 function opt(label: string, locked = false): CatalogOption {
-  return { label, kind: 'story', target: null, attrs: attrs(), verb: null, object: null, moves: false, locked, system: null, needs: null };
+  return { label, kind: 'story', target: null, attrs: attrs(), verb: null, object: null, moves: false, locked, system: null, needs: null, family: null };
 }
 
 test('перенос идёт по словам и держится в ширине', () => {
@@ -369,7 +375,7 @@ test('список вертикальный: по команде на строк
   const leave = opt('идти на лекцию');
   leave.attrs.advance = true;
 
-  const lines = commandLines([look, talk, leave], 1, '', 60, 7);
+  const lines = commandLines(rowsOf([look, talk, leave]), 1, '', 60, 7);
   const text = lines.map((l) => l.map((s) => s.text).join('').trimEnd());
 
   // Порядок плотный: окружение, сюжет, advance — без пустых разделителей.
@@ -386,14 +392,14 @@ test('список вертикальный: по команде на строк
 });
 
 test('без выбора маркера нет ни у кого', () => {
-  const lines = commandLines([opt('а'), opt('б')], null, '', 60, 3);
+  const lines = commandLines(rowsOf([opt('а'), opt('б')]), null, '', 60, 3);
   assert.equal(lines.map((l) => l.map((s) => s.text).join('')).some((l) => l.includes('›')), false);
 });
 
 test('вариантов больше, чем строк: окно едет за выбором', () => {
   const many = Array.from({ length: 12 }, (_, i) => opt(`вариант-${i}`));
   const text = (pick: number) =>
-    commandLines(many, pick, '', 60, 4).map((l) => l.map((s) => s.text).join('').trim());
+    commandLines(rowsOf(many), pick, '', 60, 4).map((l) => l.map((s) => s.text).join('').trim());
 
   assert.ok(text(0).includes('› вариант-0'));
   const far = text(11);

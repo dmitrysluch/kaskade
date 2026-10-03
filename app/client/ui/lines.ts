@@ -14,6 +14,7 @@ import {
   type Span,
 } from './text.ts';
 import { itemActions, type CatalogOption, type Needs } from '../engine/catalog.ts';
+import type { Row } from '../engine/families.ts';
 import { evalCondition, type OverlayCall, type OverlayCommand, type SessionEntity, type StreamEntry, type Term } from '../engine/state.ts';
 import { days, daysBetween } from '../../shared/dates.ts';
 import { speakerLabel, speakerOf } from '../../shared/speech.ts';
@@ -414,6 +415,22 @@ export function needsClass(option: CatalogOption): string {
   return option.needs == null ? '' : option.needs.kind === 'word' ? 'needs-word' : 'needs-item';
 }
 
+/**
+ * Строка свёрнутой семьи: `осмотреть… (6)` (07-оболочка-тз, «Сворачивание
+ * повторяющихся действий комнаты»).
+ *
+ * Опцией игры она не является, поэтому и выглядит иначе — многоточием и числом,
+ * — но цвет и категорию наследует у первой своей команды: семья стоит на её
+ * месте, и список от сворачивания не перекрашивается.
+ */
+function familySegs(row: Extract<Row, { kind: 'family' }>, picked: boolean): Seg[] {
+  const marks = [kindClass(row.sample), picked ? 'pick' : ''].filter(Boolean).join(' ');
+  return [
+    { text: row.phrase, cls: marks },
+    { text: `… (${row.count})`, cls: picked ? 'pick' : 'dim' },
+  ];
+}
+
 function optionSegs(option: CatalogOption, input: string, picked: boolean): Seg[] {
   const marks = [option.locked ? 'locked' : '', kindClass(option), needsClass(option), picked ? 'pick' : '']
     .filter(Boolean)
@@ -441,7 +458,7 @@ function optionSegs(option: CatalogOption, input: string, picked: boolean): Seg[
  * ввода, деталей и служебной полосы не меняется.
  */
 export function commandLines(
-  matches: CatalogOption[],
+  matches: Row[],
   pick: number | null,
   input: string,
   max: number,
@@ -451,7 +468,7 @@ export function commandLines(
   const from = pick == null ? 0 : Math.max(0, Math.min(pick - rows + 1, matches.length - rows));
   const window = matches.slice(Math.max(0, from), Math.max(0, from) + rows);
 
-  const lines = window.map((option, i) => {
+  const lines = window.map((row, i) => {
     const index = Math.max(0, from) + i;
     const picked = index === pick;
     // Маркер висит в поле, как промпт: сами команды тогда стоят на той же
@@ -460,7 +477,8 @@ export function commandLines(
       text: hanging(picked ? PICK_MARK : ' '),
       ...(picked ? { cls: 'pick' } : {}),
     };
-    return clip([lead, ...optionSegs(option, input, picked)], max + MARGIN.text);
+    const body = row.kind === 'family' ? familySegs(row, picked) : optionSegs(row.option, input, picked);
+    return clip([lead, ...body], max + MARGIN.text);
   });
 
   const hidden = matches.length - Math.max(0, from) - window.length;

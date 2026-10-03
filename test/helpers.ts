@@ -15,6 +15,7 @@ export function option(patch: Partial<Option> = {}): Option {
     verb: null,
     object: null,
     moves: false,
+    family: null,
     ...patch,
   };
 }

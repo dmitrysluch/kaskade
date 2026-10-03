@@ -529,7 +529,13 @@ export function loadContent(): GameContent {
     for (const stage of plan.docStages.get(p.docId) ?? []) {
       for (const node of p.raw.nodes) {
         for (const ref of [...node.transitions.map((t) => t.ref), ...(node.attrs.goto ? [node.attrs.goto] : [])]) {
-          if (parseRoomRef(ref)) ctx.resolve({ path: p.raw.path, baseDocId: p.docId, selfDocId: p.docId, stage }, ref, node.line);
+          if (parseRoomRef(ref)) {
+            ctx.resolve(
+              { path: p.raw.path, baseDocId: p.docId, selfDocId: p.docId, stage, place: p.raw.type },
+              ref,
+              node.line,
+            );
+          }
         }
       }
     }
@@ -573,7 +579,13 @@ export function loadContent(): GameContent {
          * `rooms-virt/tu.h1012` внутри него значит комнату **его** среза, а не
          * старого активного ([[14-переходы-и-даты-тз]], «Новый файл»).
          */
-        { path: p.raw.path, baseDocId: p.docId, selfDocId: p.docId, stage: p.raw.type === 'transition' ? p.stage : null },
+        {
+          path: p.raw.path,
+          baseDocId: p.docId,
+          selfDocId: p.docId,
+          stage: p.raw.type === 'transition' ? p.stage : null,
+          place: p.raw.type,
+        },
         node,
         exits,
         items,
@@ -665,7 +677,7 @@ export function loadContent(): GameContent {
       const items = [...room.items, ...node.raw.attrs.items];
       const { options, pending, generators } = expandNode(
         ctx,
-        { path: node.file, baseDocId: node.baseDocId, selfDocId: room.docId, stage: room.stage },
+        { path: node.file, baseDocId: node.baseDocId, selfDocId: room.docId, stage: room.stage, place: 'room' },
         node.raw,
         exits,
         items,

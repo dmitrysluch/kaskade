@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { ADVANCE_MARK, needsClass, PICK_MARK } from './lines.ts';
 import { MARGIN, pad, type Seg } from './text.ts';
+import { familyLabel, type Row } from '../engine/families.ts';
 import type { CatalogOption } from '../engine/catalog.ts';
 
 /**
@@ -48,8 +49,18 @@ export interface MobileScreenProps {
   status: Seg[];
   /** Поток целиком: окна в `rows` строк на телефоне нет. */
   stream: Seg[][];
-  options: CatalogOption[];
-  onPick: (option: CatalogOption) => void;
+  /**
+   * Строки списка: свёрнутая семья здесь такая же кнопка, как команда
+   * (07-оболочка-тз, «Сворачивание повторяющихся действий комнаты»). Трогают
+   * её, чтобы раскрыть, — исполнять в ней нечего.
+   */
+  options: Row[];
+  onPick: (row: Row) => void;
+  /**
+   * Раскрытая семья: кнопка возврата к верхнему списку. Строки ввода на
+   * телефоне нет, поэтому «удалить префикс» делает она.
+   */
+  onBack?: (() => void) | undefined;
   /** Служебная полоса: те же команды, но их трогают. */
   system: { label: string; run: () => void }[];
   rule: string;
@@ -60,7 +71,7 @@ export interface MobileScreenProps {
   timer?: Seg[];
 }
 
-export function MobileScreen({ cols, status, stream, options, onPick, system, rule, timer }: MobileScreenProps) {
+export function MobileScreen({ cols, status, stream, options, onPick, onBack, system, rule, timer }: MobileScreenProps) {
   const streamRef = useRef<HTMLDivElement | null>(null);
 
   // Новый текст всегда внизу: игрок читает то, что только что произошло.
@@ -84,21 +95,30 @@ export function MobileScreen({ cols, status, stream, options, onPick, system, ru
       {timer && timer.length > 0 && <Row segs={timer} cols={cols} />}
 
       <div className="mobile-list">
-        {options.map((option, i) => (
-          <button key={`${option.label}-${i}`} className="tap" type="button" onClick={() => onPick(option)}>
-            <span className="dim">{`${' '.repeat(MARGIN.prompt)}${PICK_MARK} `}</span>
-            {/* Цвет требования — тот же, что на большом экране: вещь и слово
-                выглядят одинаково везде, где их показывают. */}
-            <span
-              className={[kindClass(option), needsClass(option), option.locked ? 'locked' : '']
-                .filter(Boolean)
-                .join(' ')}
-            >
-              {option.attrs.advance ? `${ADVANCE_MARK} ` : ''}
-              {option.label}
-            </span>
+        {onBack && (
+          <button className="tap" type="button" onClick={onBack}>
+            <span className="dim">{`${' '.repeat(MARGIN.prompt)}← все команды`}</span>
           </button>
-        ))}
+        )}
+        {options.map((row, i) => {
+          const option = row.kind === 'option' ? row.option : row.sample;
+          const label = row.kind === 'family' ? familyLabel(row) : row.option.label;
+          return (
+            <button key={`${label}-${i}`} className="tap" type="button" onClick={() => onPick(row)}>
+              <span className="dim">{`${' '.repeat(MARGIN.prompt)}${PICK_MARK} `}</span>
+              {/* Цвет требования — тот же, что на большом экране: вещь и слово
+                  выглядят одинаково везде, где их показывают. */}
+              <span
+                className={[kindClass(option), needsClass(option), option.locked ? 'locked' : '']
+                  .filter(Boolean)
+                  .join(' ')}
+              >
+                {row.kind === 'option' && option.attrs.advance ? `${ADVANCE_MARK} ` : ''}
+                {label}
+              </span>
+            </button>
+          );
+        })}
         {options.length === 0 && <div className="dim">{`${pad()}нечего сделать`}</div>}
       </div>
 

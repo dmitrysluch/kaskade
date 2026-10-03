@@ -27,6 +27,7 @@ function opt(label: string, patch: Partial<CatalogOption> = {}): CatalogOption {
     locked: false,
     system: null,
     needs: null,
+    family: null,
     ...patch,
   };
 }
@@ -43,7 +44,7 @@ function mobile(options = OPTIONS): string {
       cols={MOBILE_COLS}
       status={statusLine('', '12.10.2024', MOBILE_COLS)}
       stream={[[{ text: 'Общага на Франклинштрассе.' }]]}
-      options={options}
+      options={options.map((option) => ({ kind: 'option' as const, option }))}
       onPick={() => {}}
       system={[{ label: 'справочник', run: () => {} }, { label: 'дело', run: () => {} }]}
       rule="━"
@@ -114,7 +115,7 @@ test('на большом экране кликать по-прежнему не
       status={statusLine('', '12.10.2024', 80)}
       stream={viewport([[{ text: 'Текст.' }]], 6, 0)}
       input={inputLine('осм')}
-      list={commandLines(OPTIONS, null, '', 72, LIST_ROWS)}
+      list={commandLines(OPTIONS.map((option) => ({ kind: 'option' as const, option })), null, '', 72, LIST_ROWS)}
       details={detailLines(null, false, null, null, 72, DETAIL_ROWS)}
       system={systemLine(['справочник'], 72)}
       more={{ up: false, down: false }}

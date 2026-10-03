@@ -115,6 +115,7 @@ function systemOption(kind: SystemCommand): CatalogOption {
     locked: false,
     system: { kind },
     needs: null,
+    family: null,
   };
 }
 
@@ -158,6 +159,7 @@ function leafOptions(content: GameContent, save: SaveState, doc: Doc): CatalogOp
         verb: LEAF,
         object: doc.docId,
         moves: false,
+        family: null,
       }),
     );
   }
@@ -173,6 +175,7 @@ function closeOption(doc: Doc): CatalogOption {
     verb: CLOSE,
     object: doc.docId,
     moves: false,
+    family: null,
   });
 }
 
@@ -281,6 +284,7 @@ export function itemActions(content: GameContent, save: SaveState, docId: string
       verb,
       object: doc.docId,
       moves: false,
+      family: null,
     };
     if (optionAvailable(content, save, option)) out.push(resolved(content, save, plain(option)));
   }
@@ -305,6 +309,7 @@ function fromWords(content: GameContent, save: SaveState, phrase: string): Catal
     locked: state === 'grey',
     system: null,
     needs: null,
+    family: null,
   }));
 }
 

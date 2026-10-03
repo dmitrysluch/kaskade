@@ -68,7 +68,7 @@ function room(body: string) {
 }
 
 /** База ссылок стенда: одна заметка, срез не задан — как у сцены. */
-const BASE = { path: 'room.md', baseDocId: 'rooms/пультовая', selfDocId: 'rooms/пультовая', stage: null };
+const BASE = { path: 'room.md', baseDocId: 'rooms/пультовая', selfDocId: 'rooms/пультовая', stage: null, place: 'room' as const };
 
 /** Раскрыть вступление комнаты со стандартными генераторами. */
 function expand(doc: ReturnType<typeof room>, exits: string[], items: string[]) {
