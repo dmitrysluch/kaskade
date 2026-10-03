@@ -3,8 +3,10 @@ id: 00-program
 type: item
 label: стенд программ
 target: стенд программ
+items: [00-program-ahlers]
 # Стенд общий для всех версий кафедрального коридора. Поиск доступен только в
 # `00`: переход дальше требует уже полученного `word-containment`.
+# Найденная программа остаётся доступна для повторного чтения внутри стенда.
 ---
 
 Стенд с учебными программами трёх факультетов.
@@ -18,12 +20,5 @@ target: стенд программ
 - once
 - label: искать Алерса
 - set: prolog.ahlers-program
-- give: word-containment
 
-Лист факультета III.
-
-`Sicherheitsbehälter II` · понедельник, 9:00 · `H 1012` · Prof. F. Ahlers.
-
-Основная литература: K. Schmidt, F. Ahlers, `Sicherheitsbehälter: Auslegung und Nachweis`.
-
-`Sicherheitsbehälter` — защитная оболочка реактора, контейнмент.
+→ [[00-program-ahlers#осмотреть]]

@@ -23,6 +23,7 @@ const ROOM = 'episodes/p/rooms-virt/tu.dorm-room:00';
 const HALL = 'episodes/p/rooms-virt/tu.h1012:00';
 const TALK = 'episodes/p/scenes/talk';
 const BOOK = 'episodes/p/items/book';
+const roomKey = 'p|00|tu.dorm-room';
 
 function save(patch: Partial<SaveState> = {}): SaveState {
   return {
@@ -41,6 +42,7 @@ function save(patch: Partial<SaveState> = {}): SaveState {
     started: true,
     wait: null,
     pressure: null,
+    resume: null,
     activeStage: '00',
     currentDate: '12.10.2024',
     lastTransitionId: null,
@@ -211,6 +213,83 @@ test('границы нет там, где делить нечего', () => {
   });
   const quiet = enter(silent, enter(silent, enter(silent, save(), `${HALL}#`).save, `${ROOM}#`).save, `${HALL}#`).save;
   assert.equal(streamOf(silent, quiet).some((e) => e.kind === 'visit'), false, 'показывать нечего — делить нечего');
+});
+
+test('закрытый разговор возобновляет комнату, а не входит в неё заново', () => {
+  const g = game();
+  const inRoom = enter(g, save(), `${ROOM}#`).save;
+  const talking = enter(g, appendLog(g, inRoom, [{ kind: 'echo', text: 'говорить с тоби' }]), `${TALK}#`).save;
+
+  // Комната приостановлена: адрес возврата записан, поток ждёт.
+  assert.equal(talking.resume, `${ROOM}#`);
+  assert.deepEqual(texts(g, talking), ['Тоби лежит поперёк кровати.']);
+
+  const back = enter(g, appendLog(g, talking, [{ kind: 'echo', text: 'завершить разговор' }]), `${ROOM}#`).save;
+  // Поток остался, комната себя не повторила, реакции и черты нет.
+  assert.deepEqual(texts(g, back), ['Комната на троих.', 'говорить с тоби']);
+  assert.equal(back.resume, null);
+});
+
+test('возврат в другую ноду комнаты печатает её один раз, но входом не считается', () => {
+  const g = game();
+  const other = content({
+    episodes: g.episodes,
+    docs: {
+      ...g.docs,
+      [ROOM]: doc(ROOM, {
+        type: 'room',
+        label: 'комната',
+        log: true,
+        fm: { persistent: 'tu.dorm-room', stage: '00' },
+        nodes: [
+          node(`${ROOM}#`, {
+            text: 'Комната на троих.',
+            options: [option({ label: 'говорить с тоби', target: `${TALK}#`, moves: true })],
+          }),
+          node(`${ROOM}#один`, { text: 'Тоби ушёл, дверь оставил открытой.' }),
+          node(`${ROOM}#${REENTRY}`, { text: 'Тоби оборачивается к тебе.' }),
+        ],
+      }),
+      [TALK]: doc(TALK, {
+        type: 'scene',
+        nodes: [
+          node(`${TALK}#`, {
+            text: 'Тоби лежит поперёк кровати.',
+            options: [option({ label: 'иди уже', target: `${ROOM}#один`, moves: true })],
+          }),
+        ],
+      }),
+    },
+  });
+
+  const talking = enter(other, enter(other, save(), `${ROOM}#`).save, `${TALK}#`).save;
+  const back = enter(other, talking, `${ROOM}#один`).save;
+
+  // Нода другая — её текст прозвучал; реакции возвращения всё равно нет.
+  // Реплика разговора осталась в логе разговора: у него свой контекст.
+  assert.deepEqual(texts(other, back), ['Комната на троих.', 'Тоби ушёл, дверь оставил открытой.']);
+  assert.equal(streamOf(other, back).some((e) => e.kind === 'visit'), false);
+  assert.equal(back.roomStates[roomKey], 'один', 'новое устойчивое состояние запомнено');
+});
+
+test('возобновление не зависит от `log`: игрок никуда и не уходил', () => {
+  const g = game({ log: false });
+  const talking = enter(g, enter(g, save(), `${ROOM}#`).save, `${TALK}#`).save;
+
+  assert.deepEqual(g.docs[ROOM]!.log, false);
+  assert.deepEqual(texts(g, enter(g, talking, `${ROOM}#`).save), ['Комната на троих.']);
+});
+
+test('уход в другое помещение — настоящий вход, и приостановленное гаснет', () => {
+  const g = game({ log: false, reentry: false });
+  const talking = enter(g, enter(g, save(), `${ROOM}#`).save, `${TALK}#`).save;
+  assert.deepEqual(talking.logs['p|00|tu.dorm-room'], ['Комната на троих.'].map(() => talking.logs['p|00|tu.dorm-room']![0]!));
+
+  // Из разговора ушли не назад, а в аудиторию: это обычный вход.
+  const away = enter(g, talking, `${HALL}#`).save;
+  assert.equal(away.resume, null);
+  assert.deepEqual(away.logs['p|00|tu.dorm-room'], [], 'нелогируемая комната всё-таки покинута');
+  assert.deepEqual(texts(g, away), ['Аудитория на сорок мест.']);
 });
 
 test('без `log: true` буфер при уходе выбрасывается, но ключ остаётся', () => {
@@ -393,10 +472,36 @@ test('валидатор: место с двумя входами без лог�
   const g = game({ log: false, reentry: false });
   const warned = run('log', g).filter((f) => f.severity === 'warn');
 
-  // В комнату ведут разговор и аудитория — два входа снаружи.
-  assert.equal(warned.length, 1);
-  assert.match(warned[0]!.message, /сюда ведёт 2 входа/);
+  // В комнату ведут разговор и аудитория. Но разговор комната открывает сама,
+  // и выход из него — `resume`: настоящий вход остаётся один, из аудитории.
+  assert.deepEqual(warned, [], warned.map((f) => f.message).join(' | '));
 
-  // С `log: true` претензии нет.
-  assert.deepEqual(run('log', game({ reentry: false })).filter((f) => f.severity === 'warn'), []);
+  // Вторая комната, которая тоже ведёт в разговор, делает его повторный вход
+  // настоящим: из разговора в комнату вернётся `resume`, а в сам разговор
+  // войдут дважды.
+  const second = 'episodes/p/rooms-virt/tu.canteen:00';
+  const twice = content({
+    episodes: g.episodes,
+    docs: {
+      ...g.docs,
+      // У разговора ни `log`, ни реакции: именно о таком и предупреждают.
+      [TALK]: doc(TALK, {
+        type: 'scene',
+        nodes: [
+          node(`${TALK}#`, {
+            text: 'Тоби лежит поперёк кровати.',
+            options: [option({ label: 'завершить разговор', target: `${ROOM}#`, moves: true })],
+          }),
+        ],
+      }),
+      [second]: doc(second, {
+        type: 'room',
+        fm: { persistent: 'tu.canteen', stage: '00' },
+        nodes: [node(`${second}#`, { options: [option({ label: 'говорить с тоби', target: `${TALK}#`, moves: true })] })],
+      }),
+    },
+  });
+
+  const found = run('log', twice).filter((f) => f.severity === 'warn');
+  assert.ok(found.some((f) => f.file.includes('talk')), found.map((f) => f.message).join(' | '));
 });

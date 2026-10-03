@@ -1560,21 +1560,35 @@ const contextLog: Rule = {
      * в которое ведёт больше одной связи **снаружи**: такое игрок однажды
      * откроет второй раз. Собственные переходы внутри заметки не считаются:
      * они не выход и не вход.
+     *
+     * Возврат через `resume` входом тоже не считается ([[07-оболочка-тз]],
+     * «Неявный `resume`»): если место само открывает эту сцену, то выход из
+     * неё — закрытие разговора, а не новое посещение, и поток там остался
+     * на экране.
      */
-    const incoming = new Map<string, number>();
+    const links = new Map<string, Set<string>>();
     for (const node of allNodes(content)) {
       const here = docOfNode(content, node).docId;
-      const seen = new Set<string>();
+      const out = links.get(here) ?? new Set<string>();
+      links.set(here, out);
       for (const target of [
         ...node.options.flatMap((o) => (o.target ? [o.target] : [])),
         ...(node.attrs.goto ? [node.attrs.goto] : []),
       ]) {
         for (const addr of targetsIn(content, node.addr, target)) {
           const to = addr.slice(0, addr.indexOf('#') === -1 ? addr.length : addr.indexOf('#'));
-          if (to === here || seen.has(to)) continue;
-          seen.add(to);
-          incoming.set(to, (incoming.get(to) ?? 0) + 1);
+          if (to !== here) out.add(to);
         }
+      }
+    }
+
+    const incoming = new Map<string, number>();
+    for (const [from, out] of links) {
+      for (const to of out) {
+        // Сцена, которую это место само открывает: её выход — `resume`.
+        const resume = content.docs[from]?.type === 'scene' && links.get(to)?.has(from) === true;
+        if (resume) continue;
+        incoming.set(to, (incoming.get(to) ?? 0) + 1);
       }
     }
 

@@ -658,6 +658,20 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
   const from = logKey(content, save);
   const kept = logged(content, save);
 
+  /*
+   * Возобновление ли это (07-оболочка-тз, «Неявный `resume`»): игрок закрывает
+   * сцену и возвращается туда, откуда её открыл. Решается тоже до прохода —
+   * по первой разрешённой цели: дальше проход может уйти маршрутом в третье
+   * место, и это уже обычный вход.
+   */
+  const target = resolveTarget(content, save, addr);
+  const resuming =
+    typeOf(content, save.episodeState.at) === 'scene' &&
+    save.resume != null &&
+    target != null &&
+    keyAt(content, save, target) !== from &&
+    keyAt(content, save, target) === keyAt(content, save, save.resume);
+
   while (current != null) {
     const addr = resolveTarget(content, state, current);
     const node: Node | undefined = addr == null ? undefined : content.nodes[addr];
@@ -751,7 +765,14 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
       state = { ...state, wait: { node: node.addr, id, ms, elapsed: 0 } };
     }
     if (node.attrs.timeLabel) entries.push({ kind: 'time', text: node.attrs.timeLabel });
-    if (node.text) entries.push(textEntry(content, state, interpolate(node.text, state)));
+    /*
+     * Приостановленный узел себя не повторяет: игрок его уже читал, и показать
+     * описание комнаты второй раз значило бы сделать из закрытого разговора
+     * новый вход. Другая нода вызывающего места при этом печатается — она
+     * действительно изменилась, пока игрок разговаривал.
+     */
+    const again = resuming && node.addr === save.resume;
+    if (node.text && !again) entries.push(textEntry(content, state, interpolate(node.text, state)));
     applied.granted.forEach((id) => {
       const word = content.words[id];
       const label = word?.label ?? Object.values(content.docs).find((d) => d.id === id)?.label ?? id;
@@ -777,7 +798,10 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
    * Остаток при этом не перезаводится, если игрок стоит там же, — перезагрузка
    * и ответ предмета новой попытки не дают.
    */
-  return { save: armPressure(content, context(content, save, state, { from, kept, entries })), entries };
+  return {
+    save: armPressure(content, context(content, save, state, { from, kept, entries, resuming })),
+    entries,
+  };
 }
 
 /**
@@ -799,17 +823,41 @@ function context(
   content: GameContent,
   before: SaveState,
   after: SaveState,
-  walk: { from: string | null; kept: boolean; entries: StreamEntry[] },
+  walk: { from: string | null; kept: boolean; entries: StreamEntry[]; resuming: boolean },
 ): SaveState {
   const to = logKey(content, after);
   const changed = walk.from !== to;
   const logs = { ...after.logs };
 
-  if (changed && walk.from != null && !walk.kept) logs[walk.from] = [];
-  if (to == null) return { ...after, logs };
+  /*
+   * Неявный `resume` (07-оболочка-тз, «Неявный `resume`»).
+   *
+   * Открытая сцена не уводит из места, а приостанавливает его: поток остаётся
+   * ждать, и адрес возврата запоминается. Поэтому буфер вызывающего контекста
+   * при таком уходе не выбрасывается, даже если у него нет `log: true`, —
+   * выбросить его нужно только тогда, когда игрок ушёл по-настоящему.
+   */
+  const suspending = changed && typeOf(content, after.episodeState.at) === 'scene';
+  const resuming = walk.resuming;
+  const parked = before.resume == null ? null : keyAt(content, before, before.resume);
+
+  if (changed && !resuming && !suspending) {
+    if (walk.from != null && !walk.kept) logs[walk.from] = [];
+    // Отложенный выброс: приостановленное место так и не дождалось возврата.
+    if (parked != null && parked !== to && !loggedAt(content, before.resume!)) logs[parked] = [];
+  }
+
+  const resume =
+    suspending ? before.episodeState.at
+    : resuming || changed ? null
+    : before.resume;
+
+  if (to == null) return { ...after, logs, resume };
 
   const visited = before.logs[to] != null;
-  const base = !changed || logged(content, after) ? (before.logs[to] ?? []) : [];
+  // Возобновление всегда возвращает приостановленный поток — `log` тут не судья:
+  // игрок никуда и не уходил, он закрывал разговор.
+  const base = !changed || resuming || logged(content, after) ? (before.logs[to] ?? []) : [];
 
   /*
    * Повторный вход — возвращение из другой сцены или комнаты. Реакция идёт
@@ -819,7 +867,8 @@ function context(
    * Перезагрузка вкладки новым входом не является: там прохода нет вовсе,
    * оболочка просто показывает сохранённый поток.
    */
-  const node = changed && visited ? content.nodes[`${sceneOf(after.episodeState.at)}#${REENTRY}`] : undefined;
+  const node =
+    changed && visited && !resuming ? content.nodes[`${sceneOf(after.episodeState.at)}#${REENTRY}`] : undefined;
   const reaction = node?.text ? [textEntry(content, after, interpolate(node.text, after))] : [];
   // Реакция становится частью того, что показано этим входом: и в логе,
   // и в `entries`, которые вернутся вызвавшему.
@@ -840,12 +889,27 @@ function context(
    */
   const shows = walk.entries.some((e) => e.text !== '');
   const border =
-    changed && visited && base.length > 0 && shows && base.at(-1)?.kind !== 'visit'
+    changed && visited && !resuming && base.length > 0 && shows && base.at(-1)?.kind !== 'visit'
       ? [{ kind: 'visit' as const, text: '' }]
       : [];
 
   logs[to] = [...base, ...border, ...walk.entries];
-  return { ...after, logs };
+  return { ...after, logs, resume };
+}
+
+/** Тип заметки по адресу узла. */
+function typeOf(content: GameContent, addr: string): string | undefined {
+  return content.docs[sceneOf(addr)]?.type;
+}
+
+/** Хранит ли место этого адреса свой поток после ухода. */
+function loggedAt(content: GameContent, addr: string): boolean {
+  return content.docs[sceneOf(addr)]?.log === true;
+}
+
+/** Ключ контекста того места, где стоит этот адрес. */
+function keyAt(content: GameContent, save: SaveState, addr: string): string | null {
+  return logKey(content, { ...save, episodeState: { ...save.episodeState, at: addr } });
 }
 
 /**
@@ -884,6 +948,7 @@ export function freshSave(content: GameContent): SaveState {
     started: false,
     wait: null,
     pressure: null,
+    resume: null,
     // Контекст пуст: до первой карточки перехода у игры нет ни даты, ни среза.
     activeStage: null,
     currentDate: null,

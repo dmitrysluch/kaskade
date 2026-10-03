@@ -4,7 +4,7 @@ import { loadContent } from '../app/server/content/load.ts';
 import { validate } from '../app/server/validate/index.ts';
 import { buildCatalog, type CatalogOption } from '../app/client/engine/catalog.ts';
 import { completeMinigame, fieldHere, fieldOf } from '../app/client/engine/minigame.ts';
-import { begin, confirmTransition, dateAt, enter, evalCondition, freshSave, interpolate, previewOf, pagesOf, resolveTarget, sceneOf, terms, waitRoute } from '../app/client/engine/state.ts';
+import { begin, confirmTransition, dateAt, enter, evalCondition, freshSave, interpolate, openScreen, previewOf, pagesOf, resolveTarget, sceneOf, terms, waitRoute } from '../app/client/engine/state.ts';
 import { overlayLines, statusText } from '../app/client/ui/lines.ts';
 import type { SaveState } from '../app/shared/types.ts';
 import type { StreamEntry } from '../app/client/engine/state.ts';
@@ -193,8 +193,10 @@ test('пролог проходится до конца, и на каждом ш
   let result = enter(full, save, save.episodeState.at);
   save = result.save;
   const tried = new Map<string, Set<string>>();
+  /** Где уже были: помогает обходу разворачивать кампус, а не ходить кругами. */
+  const places = new Set<string>();
 
-  for (let step = 0; step < 400; step++) {
+  for (let step = 0; step < 1200; step++) {
     // `конец` — единственный законный тупик: дальше пролога пока ничего нет.
     if (save.episodeState.at.endsWith('#конец')) return;
 
@@ -284,22 +286,34 @@ test('пролог проходится до конца, и на каждом ш
           : here.endsWith('tu.dorm-corridor:00') ? ['идти в комнату']
           : here.endsWith('tu.yard:00') ? ['идти в жилой коридор']
           : ['идти во двор']
-        : save.flags['prolog.book-found']?.value ? ['взять учебник']
         : save.words['word-containment'] === 'white' ?
           here.endsWith('tu.faculty-corridor:00') ? ['идти к лифту']
           : here.endsWith('tu.elevator:00') ? ['идти в аудиторную галерею']
           : here.endsWith('tu.auditorium-gallery:00') ? ['идти в библиотеку']
-          : ['искать контейнмент']
+          : here.endsWith('tu.library:00') ? ['говорить с библиотекаршей']
+          : []
         : save.words['word-ahlers'] === 'white' ?
           here.endsWith('tu.dorm-room:00') ? ['идти в жилой коридор']
           : here.endsWith('tu.dorm-corridor:00') ? ['идти во двор']
           : here.endsWith('tu.yard:00') ? ['идти в столовую']
           : here.endsWith('tu.canteen:00') ? ['идти к лифту']
           : here.endsWith('tu.elevator:00') ? ['идти в кафедральный коридор']
-          : ['искать алерса']
+          : here.endsWith('tu.faculty-corridor:00') ? ['осмотреть стенд программ']
+          : []
         : ['говорить с тоби', 'что за алерс'];
+      /*
+       * Куда ещё не заходили — туда и сначала: кампус в `01` это пятнадцать
+       * помещений, и жадный обход без этого правила ходит кругами между
+       * лифтом и галереей, пока не кончатся шаги.
+       */
+      const inRoom = full.docs[here]?.type === 'room';
+      const fresh =
+        inRoom ?
+          options.find((o) => !seen.has(o.label) && o.target != null && !places.has(sceneOf(o.target)))
+        : undefined;
       chosen =
         bearing.flatMap((label) => options.filter((o) => o.label === label))[0]
+        ?? fresh
         ?? options.find((o) => !seen.has(o.label))
         ?? options[options.length - 1]!;
       seen.add(chosen.label);
@@ -321,10 +335,11 @@ test('пролог проходится до конца, и на каждом ш
 
     // У `закрыть` цели нет: она ничего не отыгрывает, только гасит режим.
     if (chosen.target) save = enter(full, save, chosen.target, chosen.moves).save;
+    places.add(sceneOf(save.episodeState.at));
   }
 
   assert.fail(
-    `пролог не сошёлся за 400 шагов, застрял на ${save.episodeState.at}; ` +
+    `пролог не сошёлся за 1200 шагов, застрял на ${save.episodeState.at}; ` +
     `слова=${Object.keys(save.words).join(',')}; вещи=${save.inventory.join(',')}; ` +
     `флаги=${Object.keys(save.flags).join(',')}`,
   );
@@ -757,19 +772,30 @@ test('доска и Тоби независимо открывают несущ�
     openItem: null,
     episodeState: { ...board.episodeState, at: 'episodes/prolog/rooms-virt/tu.faculty-corridor:00#' },
   };
-  assert.ok(labels(corridor).includes('искать Алерса'), labels(corridor).join(' · '));
+  const STAND = 'episodes/prolog/items/00-program';
+  assert.ok(!labels(corridor).includes('искать Алерса'));
+  const examine = buildCatalog(game, corridor).find((o) => o.label === 'осмотреть стенд программ')!;
+  assert.ok(examine, 'в коридоре нет осмотра стенда');
+  const stand = { ...enter(game, corridor, examine.target!, examine.moves).save, openItem: STAND };
+  const search = buildCatalog(game, stand).find((o) => o.label === 'искать Алерса')!;
+  assert.ok(search, 'внутри стенда нет поиска по известной фамилии');
 
-  const program = enter(game, corridor, 'episodes/prolog/items/00-program#искать', false).save;
+  const program = enter(game, stand, search.target!, search.moves).save;
   assert.equal(program.words['word-containment'], 'white');
   assert.equal(program.flags['prolog.ahlers-program']?.value, true);
 
   const library: SaveState = {
     ...program,
+    openItem: null,
     episodeState: { ...program.episodeState, at: 'episodes/prolog/rooms-virt/tu.library:00#' },
   };
-  assert.ok(labels(library).some((l) => l.startsWith('искать')), labels(library).join(' · '));
-  const found = enter(game, library, 'episodes/prolog/items/00-catalog#искать', false).save;
-  assert.ok(labels({ ...found, episodeState: { ...found.episodeState, at: library.episodeState.at } }).includes('взять учебник'));
+  let borrowed = library;
+  for (const label of ['говорить с библиотекаршей', 'нужен Sicherheitsbehälter', 'протянуть билет', 'не моя, просто заинтересовало', 'забрать учебник']) {
+    const action = buildCatalog(game, borrowed).find((o) => o.label === label)!;
+    assert.ok(action, `нет команды «${label}» после находки программы`);
+    borrowed = enter(game, borrowed, action.target!, action.moves).save;
+  }
+  assert.ok(borrowed.inventory.includes('00-book'));
 
   const talk = enter(
     game,
@@ -778,6 +804,49 @@ test('доска и Тоби независимо открывают несущ�
   ).save;
   assert.equal(talk.words['word-ahlers'], 'white');
   assert.equal(talk.flags['prolog.ahlers-toby']?.value, true);
+});
+
+test('стенд открывает поиск по Алерсу внутри контейнера и сохраняет найденный лист', () => {
+  const STAND = 'episodes/prolog/items/00-program';
+  const PROGRAM = 'episodes/prolog/items/00-program-ahlers';
+  const corridor = at('episodes/prolog/rooms-virt/tu.faculty-corridor:00#');
+  assert.deepEqual(game.docs[STAND]!.items, ['00-program-ahlers']);
+  assert.equal(game.docs[PROGRAM]!.parent, STAND);
+
+  const unopened = { ...enter(game, corridor, `${STAND}#осмотреть`, false).save, openItem: STAND };
+  assert.ok(!labels(unopened).includes('искать Алерса'));
+  assert.ok(!labels(unopened).includes('осмотреть программу Алерса'));
+  const grey: SaveState = { ...unopened, words: { 'word-ahlers': 'grey' } };
+  assert.ok(!labels(grey).includes('искать Алерса'));
+
+  const known: SaveState = { ...unopened, words: { 'word-ahlers': 'white' } };
+  const search = buildCatalog(game, known).find((o) => o.label === 'искать Алерса')!;
+  assert.ok(search);
+  assert.equal(search.needs?.id, 'word-ahlers');
+  assert.ok(!labels(known).includes('осмотреть программу Алерса'));
+  const found = enter(game, known, search.target!, search.moves);
+  assert.equal(found.save.words['word-containment'], 'white');
+  assert.equal(found.save.flags['prolog.ahlers-program']?.value, true);
+  assert.equal(found.save.itemStates['00-program'], '00-program-ahlers');
+  assert.equal(found.save.episodeState.at, corridor.episodeState.at);
+  assert.ok(!labels(found.save).includes('искать Алерса'));
+  assert.ok(labels(found.save).includes('осмотреть программу Алерса'));
+  assert.ok(labels(found.save).includes('закрыть стенд программ'));
+
+  const closed = { ...found.save, openItem: null };
+  const reopened = { ...enter(game, closed, `${STAND}#осмотреть`, false).save, openItem: STAND };
+  assert.equal(openScreen(game, reopened)?.addr, `${PROGRAM}#осмотреть`);
+  const reread = buildCatalog(game, reopened).find((o) => o.label === 'осмотреть программу Алерса')!;
+  assert.ok(reread);
+  const read = enter(game, reopened, reread.target!, reread.moves);
+  assert.ok(read.entries.some((e) => e.text?.includes('Auslegung und Nachweis')));
+  assert.ok(!read.entries.some((e) => e.kind === 'grant'));
+
+  // Уже найденная программа остаётся доступна и в сохранении старого формата,
+  // где поиск был действием простого предмета и ещё не запоминал открытый лист.
+  const legacy: SaveState = { ...found.save, itemStates: {} };
+  assert.ok(labels(legacy).includes('осмотреть программу Алерса'));
+  assert.ok(!labels(legacy).includes('искать Алерса'));
 });
 
 test('финал 00 либо ведёт на лекцию, либо закрывает игру', () => {
