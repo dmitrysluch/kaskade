@@ -25,6 +25,8 @@ label: лекция
 
 → их два [[#знаю]]
   - if: word:word-only-case
+→ промолчать [[#авария]]
+  - if: "!word:word-only-case"
 
 ## знаю
 
