@@ -179,8 +179,18 @@ function closeOption(doc: Doc): CatalogOption {
   });
 }
 
+/**
+ * Открытый предмет без окон: книга со страницами или вещь со своим экраном
+ * (07-оболочка-тз, «Предмет, у которого есть свой экран»).
+ *
+ * Собственные действия показываются только у вещи с `tag: screen`. У документа
+ * со страницами их намеренно нет: подпись и возврат протокола принадлежат сцене
+ * с полицейским, а не открытой бумаге («На каком уровне показывается действие»).
+ * Тег — это и есть авторское «а у этой вещи — здесь».
+ */
 function readingOptions(content: GameContent, save: SaveState, doc: Doc): CatalogOption[] {
-  return [...leafOptions(content, save, doc), closeOption(doc)];
+  const own = doc.screen ? itemActions(content, save, doc.docId).filter((o) => o.verb !== EXAMINE) : [];
+  return [...own, ...leafOptions(content, save, doc), closeOption(doc)];
 }
 
 /**

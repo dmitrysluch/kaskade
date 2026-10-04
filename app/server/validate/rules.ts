@@ -4,7 +4,7 @@ import { parseDate } from '../../shared/dates.ts';
 import { targetsIn } from '../../shared/rooms.ts';
 import { PRESSURE } from '../../client/engine/pressure.ts';
 import { REENTRY } from '../../shared/logs.ts';
-import { closeLabel, EXAMINE } from '../../shared/pages.ts';
+import { closeLabel, EXAMINE, SCREEN } from '../../shared/pages.ts';
 import { MINIGAME_FIELDS } from '../content/minigames.ts';
 import { analyze, POINTS, shifted, THREADS, type Cell } from '../../shared/untangle.ts';
 import { speakerOf } from '../../shared/speech.ts';
@@ -1313,6 +1313,60 @@ const nestedItems: Rule = {
 };
 
 /**
+ * Предмет со своим экраном ([[07-оболочка-тз]], «Предмет, у которого есть свой
+ * экран»).
+ *
+ * Тег `screen` добавляет вещи уровень, которого у неё иначе нет, и ровно этим
+ * опасен: лишним он даёт второй ответ на «что открывает уровень», а пустым —
+ * экран, на котором видно одно «закрыть». Руками ни то ни другое не ловится:
+ * автор видит свою команду в файле и считает, что она в игре есть.
+ */
+const screens: Rule = {
+  id: 'screen',
+  title: 'предмет со своим экраном: тег и то, что на экране',
+  run(content) {
+    const found: Finding[] = [];
+
+    for (const doc of Object.values(content.docs)) {
+      for (const node of doc.nodes) {
+        if (!node.attrs.tag.includes(SCREEN)) continue;
+        const say = (message: string): void => {
+          found.push({ rule: 'screen', severity: 'error', ...where(node), message });
+        };
+
+        if (doc.type !== 'item') {
+          say(`\`tag: ${SCREEN}\` в заметке типа "${doc.type}": свой экран бывает только у предмета — комнату открывать не надо, в ней стоят`);
+          continue;
+        }
+
+        if (node.attrs.page != null) {
+          say(`\`tag: ${SCREEN}\` на странице: страница — состояние вещи, а уровень открывает сама вещь; тег принадлежит вступлению или "${EXAMINE}"`);
+        }
+
+        if (doc.items.length > 0) {
+          say(`у "${doc.id}" есть окна (\`items\`) — уровень открывают они, и тег \`${SCREEN}\` даёт второй ответ на один вопрос`);
+        } else if (doc.pages.length > 1) {
+          say(`у "${doc.id}" страницы — уровень открывают они, и тег \`${SCREEN}\` здесь лишний`);
+        }
+
+        if (doc.parent != null) {
+          say(`"${doc.id}" вложен в "${content.docs[doc.parent]?.id ?? doc.parent}": окно открывается внутри контейнера, своего уровня у него не бывает`);
+        }
+
+        // Собственное действие — именованная секция, которая не страница
+        // и не осмотр: осмотром вещь открыли.
+        const own = doc.nodes.filter((n) => n.id !== '' && n.id !== EXAMINE && n.attrs.page == null);
+        if (own.length === 0) {
+          say(`на экране "${doc.id}" нет ни одного собственного действия: уровень, из которого видно одно «${closeLabel(doc.label)}», открывать незачем`);
+        }
+      }
+    }
+
+    return found;
+  },
+};
+
+/**
  * Мини-игра «Распутать мысль» ([[07a-мини-игра]], «Валидация контента»).
  *
  * Поле нельзя проверить руками: пересечения считаются геометрически, а
@@ -1870,6 +1924,7 @@ export const RULES: Rule[] = [
   brokenGraph,
   mentions,
   nestedItems,
+  screens,
   contextLog,
   pressureRounds,
   minigames,

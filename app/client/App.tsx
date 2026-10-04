@@ -9,8 +9,8 @@ import {
   dateAt,
   enter,
   freshSave,
+  openLevel,
   openScreen,
-  pagesOf,
   placeLabel,
   previewOf,
   sceneOf,
@@ -442,39 +442,10 @@ export function App() {
       const counted =
         option.label === episode?.tutorial.hint ? { ...session.save, hinted: true } : session.save;
 
-      /*
-       * Чтение — отдельный уровень (07-оболочка-тз, «Страницы предмета»): пока
-       * книга открыта, список состоит из неё одной.
-       *
-       * Решает **цель, а не глагол**: открывает книгу всё, что ведёт на её
-       * страницу, — и `осмотреть учебник` из комнаты, и авторское `прочитать
-       * протокол`, которое сцена объявила сама. Иначе игрок попадает на первую
-       * страницу и остаётся без «вперёд»: команда сработала, а книга не открылась.
-       *
-       * Одностраничный предмет в режим не входит: экран, где единственная
-       * команда «закрыть», не стоит того, чтобы из него выходить.
-       */
-      // Открывает книгу только страница. Обычное действие той же вещи
-      // (`вернуть протокол`) в режим чтения не входит — читать после него нечего.
-      const target = option.target ? content.nodes[option.target] : undefined;
-      const item = option.target ? content.docs[sceneOf(option.target)] : undefined;
-      /*
-       * Контейнер открывает уровень сам по себе: у компьютера окна, а не
-       * страницы, и «осмотреть компьютер» — это уже вход в него.
-       *
-       * Окно внутри открытого контейнера уровень не подменяет, даже если у него
-       * свои страницы: окна переключают, а не вкладывают, иначе список окон
-       * исчезал бы ровно в тот момент, когда он нужен.
-       */
-      const opens =
-        item?.type !== 'item' ? null
-        : item.parent != null && item.parent === session.save.openItem ? session.save.openItem
-        : item.items.length > 0 ? item.docId
-        : target?.attrs.page != null && pagesOf(content, item.docId, session.save).length > 1 ? item.docId
-        : null;
-      const openItem =
-        option.verb === CLOSE ? null
-        : opens ?? session.save.openItem;
+      // Чтение, контейнер и экран вещи — отдельный уровень (07-оболочка-тз,
+      // «Страницы предмета»): пока он открыт, список состоит из одной вещи.
+      // Что именно его открывает, решает движок — здесь только последствие.
+      const openItem = openLevel(content, session.save, option);
 
       if (option.system) {
         const call = option.system;

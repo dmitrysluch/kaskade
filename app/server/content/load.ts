@@ -6,6 +6,7 @@ import { ANY_STAGE, formatRoomRef, parseRoomRef, roomRefOf, virtDocId } from '..
 import { validateNavigationSource } from './navigation.ts';
 import { mergeRoom, type MergedRoom, type RoomPart } from './rooms.ts';
 import { parseMinigame } from './minigames.ts';
+import { SCREEN } from '../../shared/pages.ts';
 import { planStages, type Out, type PlanDoc, type StagePlan } from './stages.ts';
 import { docGenerators, expandNode, type ExpandContext, type TargetInfo } from './options.ts';
 import { parseRenderer, readYaml, str, strArray, strMap } from './yaml.ts';
@@ -655,6 +656,7 @@ export function loadContent(): GameContent {
       parent: parents.get(p.docId) ?? null,
       log: p.log === true,
       collapse: crowded(built),
+      screen: p.raw.type === 'item' && built.some((n) => n.attrs.tag.includes(SCREEN)),
       entry: p.entry,
       available: p.available ?? true,
       optionBlocks: p.raw.nodes
@@ -748,6 +750,8 @@ export function loadContent(): GameContent {
       parent: null,
       log: room.log,
       collapse: crowded(built),
+      // Экран — свойство вещи: у помещения он есть всегда и зовётся комнатой.
+      screen: false,
       entry: room.entry,
       available: room.available,
       optionBlocks: room.optionBlocks,

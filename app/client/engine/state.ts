@@ -2,7 +2,7 @@ import { plainText, resolveEntities, type EntityKind, type EntityMention } from 
 import { addrIn, isStarred, persistentOfAddr, roomStateKey, stageOfAddr } from '../../shared/rooms.ts';
 import { armPressure } from './pressure.ts';
 import { logged, logKey, REENTRY } from '../../shared/logs.ts';
-import { EXAMINE } from '../../shared/pages.ts';
+import { CLOSE, EXAMINE } from '../../shared/pages.ts';
 import { said, voiceOf } from '../../shared/speech.ts';
 import type {
   Doc,
@@ -217,6 +217,41 @@ export function openScreen(content: GameContent, save: SaveState): Node | null {
   const shown = doc.items.length > 0 ? (openWindow(content, save, doc) ?? doc) : doc;
   if (shown.pages.length > 0) return pageAt(content, save, shown.docId);
   return shown.nodes.find((n) => n.id === EXAMINE) ?? shown.nodes.find((n) => n.id === '') ?? null;
+}
+
+/**
+ * Какой предмет открыт уровнем после этой команды (07-оболочка-тз, «Страницы
+ * предмета», «Вложенные предметы», «Предмет, у которого есть свой экран»).
+ *
+ * Решает **цель, а не глагол**: уровень открывает всё, что ведёт внутрь вещи, —
+ * и `осмотреть учебник` из комнаты, и авторское `прочитать протокол`, которое
+ * сцена объявила сама. Иначе игрок попадает на первую страницу и остаётся без
+ * «вперёд»: команда сработала, а книга не открылась.
+ *
+ * Три входа, и ни одного угаданного:
+ *
+ *   - **контейнер** открывает уровень сам: у компьютера окна, а не страницы,
+ *     и `осмотреть компьютер` — это уже вход в него;
+ *   - **книга** — только многостраничная: экран, где единственная команда
+ *     «закрыть», не стоит того, чтобы из него выходить;
+ *   - **вещь с `tag: screen`** — по авторскому разрешению. Собственное действие
+ *     такой вещи иначе показать негде: в инвентаре её нет, она стоит в комнате.
+ *
+ * Окно внутри открытого контейнера уровень не подменяет, даже если у него свои
+ * страницы: окна переключают, а не вкладывают, — иначе список окон исчезал бы
+ * ровно в тот момент, когда он нужен.
+ */
+export function openLevel(content: GameContent, save: SaveState, option: Option): string | null {
+  if (option.verb === CLOSE) return null;
+
+  const target = option.target == null ? undefined : content.nodes[option.target];
+  const item = option.target == null ? undefined : content.docs[sceneOf(option.target)];
+  if (item?.type !== 'item') return save.openItem;
+
+  if (item.parent != null && item.parent === save.openItem) return save.openItem;
+  if (item.items.length > 0 || item.screen) return item.docId;
+  if (target?.attrs.page != null && pagesOf(content, item.docId, save).length > 1) return item.docId;
+  return save.openItem;
 }
 
 /**

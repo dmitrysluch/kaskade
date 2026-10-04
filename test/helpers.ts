@@ -1,3 +1,4 @@
+import { SCREEN } from '../app/shared/pages.ts';
 import { emptyAttrs, type Attrs, type Doc, type GameContent, type Node, type Option } from '../app/shared/types.ts';
 
 /** Сборка синтетического контента: правила валидатора удобнее проверять на трёх узлах. */
@@ -56,6 +57,8 @@ export function doc(docId: string, patch: Partial<Doc> = {}): Doc {
     inHand: [],
     log: false,
     collapse: true,
+    // Как на сборке: экран предмета заводится тегом на любом его узле.
+    screen: patch.nodes?.some((n) => n.attrs.tag.includes(SCREEN)) ?? false,
     entry: null,
     available: true,
     pages: [],
