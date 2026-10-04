@@ -701,14 +701,15 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
    * типу, а по отсутствию ключа: с экрана, который потоком не владеет, уйти
    * по-настоящему нельзя — на нём стояли внутри того же посещения.
    *
-   * Решается на первой же смене контекста внутри прохода, а не по начальной
-   * цели: от поля проход сперва идёт его узлом завершения и только потом
-   * маршрутом в комнату.
+   * Решает то, **где проход остановился**, а не первая смена контекста по
+   * дороге: от распутанного поля обратный путь идёт через сцену показа Тоби,
+   * и эта сцена ни разу не была приостановлена. Решай по ней — комната,
+   * в которой игрок всё это время стоял, оказалась бы новым входом.
    */
   const closing = from == null || typeOf(content, save.episodeState.at) === 'scene';
-  let resuming = false;
-  let parked: number | null = null;
-  let decided = false;
+  /** Узел, на котором проход встал, и его текст в потоке — чтобы снять повтор. */
+  let last: Node | undefined;
+  let lastText: number | null = null;
 
   while (current != null) {
     const addr = resolveTarget(content, state, current);
@@ -781,19 +782,6 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
       if (state.activeRoom !== room) state = { ...state, activeRoom: room };
     }
 
-    // Первая смена контекста решает, вход это или возвращение.
-    if (!decided) {
-      const key = logKey(content, state);
-      if (key != null && key !== from) {
-        decided = true;
-        const at = closing ? resumeAt(content, save, key) : null;
-        if (at != null) {
-          resuming = true;
-          parked = at;
-        }
-      }
-    }
-
     /*
      * Полноэкранный кадр останавливает проход: ввод не принимается, дальше
      * уводит компонент кадра, когда игрок нажмёт Enter. Текст такого узла
@@ -822,8 +810,12 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
      * новый вход. Другая нода вызывающего места при этом печатается — она
      * действительно изменилась, пока игрок разговаривал.
      */
-    const again = resuming && parked != null && node.addr === save.resume[parked];
-    if (node.text && !again) entries.push(textEntry(content, state, interpolate(node.text, state)));
+    last = node;
+    lastText = null;
+    if (node.text) {
+      lastText = entries.length;
+      entries.push(textEntry(content, state, interpolate(node.text, state)));
+    }
     applied.granted.forEach((id) => {
       const word = content.words[id];
       const label = word?.label ?? Object.values(content.docs).find((d) => d.id === id)?.label ?? id;
@@ -841,6 +833,19 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
     // и выбор места — проходные, возвращаться в них нельзя.
     if (next == null) state = remember(content, state, node);
     if (++hops > 100) throw new Error(`зациклился безусловный переход в ${addr}`);
+  }
+
+  /*
+   * Возвращение решается здесь, когда известно, где проход встал. Текст
+   * приостановленного узла при этом снимается: игрок его уже читал, и показать
+   * описание комнаты второй раз значило бы сделать из закрытого разговора
+   * новый вход. Другая нода вызывающего места печатается как обычно — она
+   * действительно изменилась, пока игрок разговаривал.
+   */
+  const parked = closing ? resumeAt(content, save, logKey(content, state)) : null;
+  const resuming = parked != null;
+  if (resuming && lastText != null && last?.addr === save.resume[parked]) {
+    entries.splice(lastText, 1);
   }
 
   /*

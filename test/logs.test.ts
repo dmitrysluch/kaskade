@@ -275,6 +275,7 @@ test('возврат в другую ноду комнаты печатает е
 test('поле мини-игры — подэкран того же посещения, а не уход из комнаты', () => {
   const FIELD = 'episodes/p/minigames/00-study';
   const STUDY = 'episodes/p/scenes/study';
+  const SHOW = 'episodes/p/scenes/show';
   const g = content({
     episodes: [episode('p', { entry: `${ROOM}#` })],
     docs: {
@@ -284,6 +285,8 @@ test('поле мини-игры — подэкран того же посеще
         log: true,
         fm: { persistent: 'tu.dorm-room', stage: '00' },
         nodes: [
+          // Вход без якоря идёт диспетчером, как в общаге пролога.
+          node(`${ROOM}#`, { options: [option({ label: '', target: `${ROOM}#один`, moves: true })] }),
           node(`${ROOM}#один`, {
             text: 'Тоби ушёл, дверь оставил открытой.',
             options: [
@@ -299,6 +302,20 @@ test('поле мини-игры — подэкран того же посеще
         type: 'scene',
         nodes: [node(`${STUDY}#`, { options: [option({ label: '', target: `${FIELD}#`, moves: true })] })],
       }),
+      // Сцена показа: завершённое поле уводит сюда, а она — обратно в комнату.
+      [SHOW]: doc(SHOW, {
+        type: 'scene',
+        nodes: [
+          node(`${SHOW}#`, {
+            text: 'Ты закладываешь страницу.',
+            options: [option({ label: '', target: `${SHOW}#очевидно`, moves: true })],
+          }),
+          node(`${SHOW}#очевидно`, {
+            text: '> марго — Это было очевидно.',
+            options: [option({ label: '', target: `${ROOM}#`, moves: true })],
+          }),
+        ],
+      }),
       [FIELD]: doc(FIELD, {
         type: 'minigame',
         nodes: [
@@ -307,6 +324,9 @@ test('поле мини-игры — подэкран того же посеще
             text: 'Ты обводишь строку и ставишь на поле двойку.',
             attrs: attrs({ give: ['word-only-case'], once: true }),
             options: [option({ label: '', target: `${ROOM}#один`, moves: true })],
+          }),
+          node(`${FIELD}#complete-through-show`, {
+            options: [option({ label: '', target: `${SHOW}#`, moves: true })],
           }),
         ],
       }),
@@ -341,6 +361,23 @@ test('поле мини-игры — подэкран того же посеще
     1,
     'комната не описывает себя заново',
   );
+
+  /*
+   * Обратный путь через сцену. Возвращение решает то, где проход встал, а не
+   * первая смена контекста: по дороге из поля игрок проходит сцену показа,
+   * которую никто не приостанавливал, — и комната от этого новым входом
+   * становиться не должна.
+   */
+  const shown = enter(g, field, `${FIELD}#complete-through-show`).save;
+  assert.equal(shown.episodeState.at, `${ROOM}#один`);
+  assert.deepEqual(texts(g, shown), [
+    'Тоби ушёл, дверь оставил открытой.',
+    'проверить единственный случай',
+    'Ты закладываешь страницу.',
+    '> марго — Это было очевидно.',
+  ]);
+  assert.equal(streamOf(g, shown).some((e) => e.kind === 'visit'), false, 'черты нет: посещение то же');
+  assert.deepEqual(shown.resume, []);
 });
 
 test('возобновление не зависит от `log`: игрок никуда и не уходил', () => {
