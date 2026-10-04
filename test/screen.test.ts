@@ -114,7 +114,7 @@ function game(): GameContent {
         nodes: [
           node(`${PC}#осмотреть`, {
             text: 'На экране окно.',
-            options: [look(`${WINDOW}#осмотреть`, 'осмотреть thesis.tex', WINDOW)],
+            options: [look(`${WINDOW}#первая`, 'осмотреть thesis.tex', WINDOW)],
           }),
         ],
       }),
@@ -152,8 +152,6 @@ test('осмотр вещи с экраном открывает уровень,
   assert.equal(openLevel(g, here, of(g, here, 'осмотреть яблоко')), APPLE);
 
   // Та же вещь без тега: экран, на котором видно одно «закрыть», не нужен.
-  const plain = content({ ...game(), docs: undefined as never });
-  void plain;
   const notagged = game();
   notagged.docs[APPLE] = doc(APPLE, {
     type: 'item',
