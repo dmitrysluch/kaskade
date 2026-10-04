@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import yaml from 'js-yaml';
-import { formatRoomRef, roomRefOf } from '../../shared/rooms.ts';
+import { formatRoomRef, parseExit, roomRefOf } from '../../shared/rooms.ts';
 import { emptyAttrs, type Attrs, type DocType } from '../../shared/types.ts';
 
 /**
@@ -100,7 +100,7 @@ const WAIT = /^([a-z][a-z0-9-]*)\s+(\d+)s$/i;
 const SECONDS = /^(\d+)s$/;
 
 /** Ключи, которые можно писать несколько раз: `- set: a` двумя строками. */
-const MULTI_KEYS = new Set(['set', 'unset', 'give', 'take', 'tag', 'items', 'exits']);
+const MULTI_KEYS = new Set(['set', 'unset', 'give', 'take', 'tag', 'items']);
 
 /**
  * Якорь узла нормализуется так же, как в Obsidian: `[[#Первый ряд]]` и `## первый-ряд`
@@ -173,6 +173,17 @@ function parseAttrs(file: string, lines: { text: string; line: number }[]): Attr
         }
         for (const [name, at] of Object.entries(value as Record<string, unknown>)) {
           attrs.dates[name.trim()] = String(at).trim();
+        }
+      } else if (key === 'exits') {
+        /*
+         * Выход узла — тот же словарь, что во frontmatter комнаты, вместе
+         * с локальной подписью ([[13a-локальные-подписи-выходов-тз]]).
+         * Проверяем здесь: автор пишет это в узле, и ругаться надо строкой.
+         */
+        for (const item of Array.isArray(value) ? value : [value]) {
+          const parsed = parseExit(item);
+          if (!parsed.ok) throw new ContentError(file, parsed.reason, line);
+          attrs.exits.push(parsed.exit);
         }
       } else if (MULTI_KEYS.has(key)) {
         const target = attrs[key as 'set' | 'unset' | 'give' | 'take' | 'tag'];

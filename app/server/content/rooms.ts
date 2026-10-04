@@ -1,5 +1,6 @@
 import { virtDocId } from '../../shared/rooms.ts';
 import type { RawDoc, RawGenerator, RawNode } from './markdown.ts';
+import type { RoomExit } from '../../shared/types.ts';
 
 /**
  * Сборка виртуальных комнат ([[13-навигация-и-комнаты-тз]], «Объединение»).
@@ -31,7 +32,7 @@ export interface RoomPart {
   available: boolean | null;
   log: boolean | null;
   /** `undefined` — список не объявлен: значимо, потому что `[]` значит «выходов нет». */
-  exits: string[] | undefined;
+  exits: RoomExit[] | undefined;
   items: string[] | undefined;
 }
 
@@ -57,7 +58,7 @@ export interface MergedRoom {
   available: boolean;
   /** Хранит ли собранная комната свой поток после ухода. */
   log: boolean;
-  exits: string[];
+  exits: RoomExit[];
   items: string[];
   nodes: MergedNode[];
   /**
@@ -91,7 +92,10 @@ function blocksOf(part: RoomPart): { file: string; line: number }[] {
  * - `label`, `target`, `entry`, `available` — версия заменяет, отсутствие наследует;
  * - `targets` — объединение по глаголам: у версии своя форма только там, где она есть;
  * - `items` — общие плюс версии, без повторов: постоянное остаётся постоянным;
- * - `exits` — список версии заменяет общий **целиком**, и `[]` значит «выходов нет»
+ * - `exits` — список версии заменяет общий **целиком**, вместе с локальными
+ *   подписями ([[13a-локальные-подписи-выходов-тз]]): выход версии без своей
+ *   подписи берёт форму комнаты назначения, а не подпись из заменённого списка.
+ *   `[]` значит «выходов нет»
  *   (поэтому сравнение с `undefined`, а не с пустотой);
  * - блок `options` — то же самое: версия заменяет, а не дописывает;
  * - нода с тем же id — замена целиком и **на месте** общей: порядок чтения файла

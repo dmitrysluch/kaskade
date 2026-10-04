@@ -1,5 +1,13 @@
 import { SCREEN } from '../app/shared/pages.ts';
-import { emptyAttrs, type Attrs, type Doc, type GameContent, type Node, type Option } from '../app/shared/types.ts';
+import {
+  emptyAttrs,
+  type Attrs,
+  type Doc,
+  type GameContent,
+  type Node,
+  type Option,
+  type RoomExit,
+} from '../app/shared/types.ts';
 
 /** Сборка синтетического контента: правила валидатора удобнее проверять на трёх узлах. */
 
@@ -36,6 +44,11 @@ export function node(addr: string, patch: Partial<Node> = {}): Node {
     generators: [],
     ...patch,
   };
+}
+
+/** Запись `exits`: адрес и, если нужно, локальная подпись. */
+export function exit(ref: string, target: string | null = null): RoomExit {
+  return { ref, target };
 }
 
 export function doc(docId: string, patch: Partial<Doc> = {}): Doc {

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RULES, validate } from '../app/server/validate/index.ts';
-import { attrs, content, doc, episode, node, option } from './helpers.ts';
+import { attrs, content, doc, episode, exit, node, option } from './helpers.ts';
 
 /**
  * Правила дизайна как автотесты. Каждое правило проверяется на минимальном контенте:
@@ -48,7 +48,7 @@ test('глагол из генератора должен быть объявл�
   });
   const game = content({
     episodes: [episode('p', { verbs: ['идти'] })],
-    docs: { 'episodes/p/rooms/r': doc('episodes/p/rooms/r', { type: 'room', nodes: [room], exits: ['x'] }) },
+    docs: { 'episodes/p/rooms/r': doc('episodes/p/rooms/r', { type: 'room', nodes: [room], exits: [exit('x')] }) },
   });
 
   const found = run('verbs', game);
@@ -108,7 +108,7 @@ test('блок options, продублированный по узлам, нах
   const file = '/content/episodes/p/rooms/r.md';
   const room = doc('episodes/p/rooms/r', {
     type: 'room',
-    exits: ['x'],
+    exits: [exit('x')],
     nodes: [node('episodes/p/rooms/r#'), node('episodes/p/rooms/r#осмотреться')],
     optionBlocks: [
       { file, line: 11 },
@@ -863,4 +863,57 @@ test('атрибуты сгенерированной опции — атриб�
 
   const found = run('transition-attrs', content({ docs: { [item.docId]: item, [room.docId]: room } }));
   assert.deepEqual(found, []);
+});
+
+test('две команды с одним текстом: подписи выходов сошлись', () => {
+  // ([[13a-локальные-подписи-выходов-тз]], «Валидация»): две записи `exits`
+  // назвали себя одинаково — какой маршрут сработает, не решает никто.
+  const clash = node('episodes/p/rooms-virt/tu.yard:00#', {
+    options: [
+      option({ label: 'идти в общагу', kind: 'story', verb: 'идти', target: 'episodes/p/rooms-virt/tu.dorm-corridor:00#' }),
+      option({ label: 'идти в общагу', kind: 'story', verb: 'идти', target: 'episodes/p/rooms-virt/tu.library:00#' }),
+    ],
+  });
+
+  const game = content({
+    episodes: [episode('p')],
+    docs: {
+      'episodes/p/rooms-virt/tu.yard:00': doc('episodes/p/rooms-virt/tu.yard:00', { type: 'room', nodes: [clash] }),
+      'episodes/p/rooms-virt/tu.dorm-corridor:00': doc('episodes/p/rooms-virt/tu.dorm-corridor:00', {
+        type: 'room',
+        nodes: [node('episodes/p/rooms-virt/tu.dorm-corridor:00#')],
+      }),
+      'episodes/p/rooms-virt/tu.library:00': doc('episodes/p/rooms-virt/tu.library:00', {
+        type: 'room',
+        nodes: [node('episodes/p/rooms-virt/tu.library:00#')],
+      }),
+    },
+  });
+
+  assert.match(run('labels', game)[0]!.message, /2 команды «идти в общагу»/);
+});
+
+test('взаимоисключающие ветки с одним текстом дублем не считаются', () => {
+  // Два «промолчать» в допросе: условия стоят на целях, и в списке всегда одно.
+  const fork = node('episodes/p/scenes/talk#итог', {
+    options: [
+      option({ label: 'промолчать', target: 'episodes/p/scenes/talk#тоби' }),
+      option({ label: 'промолчать', target: 'episodes/p/scenes/talk#пентест' }),
+    ],
+  });
+
+  const game = content({
+    episodes: [episode('p')],
+    docs: {
+      'episodes/p/scenes/talk': doc('episodes/p/scenes/talk', {
+        nodes: [
+          fork,
+          node('episodes/p/scenes/talk#тоби', { attrs: attrs({ if: '!prolog.pentest' }) }),
+          node('episodes/p/scenes/talk#пентест', { attrs: attrs({ if: 'prolog.pentest' }) }),
+        ],
+      }),
+    },
+  });
+
+  assert.deepEqual(run('labels', game), []);
 });

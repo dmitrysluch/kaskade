@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CONTENT, docIdOf, walkMarkdown } from './paths.ts';
 import { ContentError, anchor, parseMarkdown, type RawDoc } from './markdown.ts';
-import { ANY_STAGE, formatRoomRef, parseRoomRef, roomRefOf, virtDocId } from '../../shared/rooms.ts';
+import { ANY_STAGE, exitRefs, parseExit, parseRoomRef, virtDocId } from '../../shared/rooms.ts';
 import { validateNavigationSource } from './navigation.ts';
 import { mergeRoom, type MergedRoom, type RoomPart } from './rooms.ts';
 import { parseMinigame } from './minigames.ts';
@@ -20,6 +20,7 @@ import type {
   Node,
   ReferenceDef,
   RendererDef,
+  RoomExit,
   StageDef,
   TransitionDef,
   WordDef,
@@ -58,7 +59,7 @@ interface Parsed {
   date: string | null;
   info: TargetInfo;
   /** `undefined` — список не объявлен; `[]` — объявлен пустым, и это решение автора. */
-  exits: string[] | undefined;
+  exits: RoomExit[] | undefined;
   items: string[] | undefined;
   /** Постоянный адрес помещения; `null` — заметка помещением не является. */
   persistent: string | null;
@@ -247,12 +248,12 @@ function planDocs(parsed: Map<string, Parsed>, byBasename: Map<string, string[]>
 
   for (const p of parsed.values()) {
     const refs: string[] = [
-      ...(p.exits ?? []),
+      ...exitRefs(p.exits ?? []),
       ...(p.items ?? []),
       ...p.raw.nodes.flatMap((n) => [
         ...n.transitions.map((t) => t.ref),
         ...(n.attrs.goto == null ? [] : [n.attrs.goto]),
-        ...n.attrs.exits,
+        ...exitRefs(n.attrs.exits),
         ...n.attrs.items,
         ...n.generators.flatMap((g) => (Array.isArray(g.source) ? g.source : [])),
       ]),
@@ -449,6 +450,20 @@ function parseEpisodes(gameFile: string, game: Record<string, unknown>): Episode
   });
 }
 
+/**
+ * `exits` заметки: адрес плюс необязательная локальная подпись
+ * ([[13a-локальные-подписи-выходов-тз]]). Форму проверяет `validateNavigationSource`,
+ * здесь остаётся только не потерять подпись по дороге в собранную комнату.
+ */
+function exitsOf(raw: RawDoc, file: string): RoomExit[] {
+  const list = Array.isArray(raw.fm.exits) ? (raw.fm.exits as unknown[]) : [raw.fm.exits];
+  return list.map((value) => {
+    const parsed = parseExit(value);
+    if (!parsed.ok) throw new ContentError(file, parsed.reason, 1);
+    return parsed.exit;
+  });
+}
+
 export function loadContent(): GameContent {
   const gameFile = join(CONTENT, 'game.yaml');
   const game = readYaml(gameFile);
@@ -469,9 +484,7 @@ export function loadContent(): GameContent {
       date: raw.fm.date == null ? null : String(raw.fm.date).trim(),
       // Объявлен ли список вообще — значимо: `exits: []` у версии значит
       // «выходов нет», а отсутствие списка — «берём общие».
-      exits: raw.fm.exits == null ? undefined : raw.type === 'room'
-        ? (raw.fm.exits as unknown[]).map((ref) => formatRoomRef(roomRefOf(ref)!))
-        : strArray(raw.fm.exits),
+      exits: raw.fm.exits == null ? undefined : exitsOf(raw, file),
       items: raw.fm.items == null ? undefined : strArray(raw.fm.items),
       persistent: raw.fm.persistent == null ? null : String(raw.fm.persistent).trim(),
       stage: raw.fm.stage == null ? null : String(raw.fm.stage).trim(),

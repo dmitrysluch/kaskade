@@ -1313,6 +1313,51 @@ const nestedItems: Rule = {
 };
 
 /**
+ * Две команды с одним текстом ([[13a-локальные-подписи-выходов-тз]],
+ * «Валидация»).
+ *
+ * Игрок вводит текст, а не выбирает ссылку: две одинаковые строки в одном
+ * списке значат, что движок выберет первый маршрут, а автор об этом не узнает.
+ * Раньше такого не случалось само — метки собирались из разных форм комнат;
+ * с локальными подписями выходов две записи легко называются одинаково.
+ *
+ * Штатная пара «авторская команда + подавленная ею сгенерированная» дублем
+ * не считается: подавленная до списка не доходит.
+ *
+ * Считаются только команды без единого условия — ни у себя, ни у цели. Два
+ * «промолчать» во взаимоисключающих ветках допроса — законная развилка: в
+ * списке всегда одна из них, и различать их игроку не нужно.
+ */
+const labels: Rule = {
+  id: 'labels',
+  title: 'две команды с одним текстом',
+  run(content) {
+    const found: Finding[] = [];
+
+    for (const node of allNodes(content)) {
+      const seen = new Map<string, number>();
+      for (const option of node.options) {
+        if (option.label === '') continue;
+        const target = option.target == null ? undefined : content.nodes[option.target];
+        if (option.attrs.if != null || target?.attrs.if != null) continue;
+        seen.set(option.label, (seen.get(option.label) ?? 0) + 1);
+      }
+      for (const [label, count] of seen) {
+        if (count < 2) continue;
+        found.push({
+          rule: 'labels',
+          severity: 'error',
+          ...where(node),
+          message: `в списке ${count} команды «${label}» — игрок вводит текст, и какой из маршрутов сработает, не решает никто`,
+        });
+      }
+    }
+
+    return found;
+  },
+};
+
+/**
  * Предмет со своим экраном ([[07-оболочка-тз]], «Предмет, у которого есть свой
  * экран»).
  *
@@ -1925,6 +1970,7 @@ export const RULES: Rule[] = [
   mentions,
   nestedItems,
   screens,
+  labels,
   contextLog,
   pressureRounds,
   minigames,

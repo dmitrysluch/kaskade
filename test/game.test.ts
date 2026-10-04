@@ -288,20 +288,21 @@ test('пролог проходится до конца, и на каждом ш
         : save.inventory.includes('00-book') ?
           here.endsWith('tu.dorm-room:00') ? ['изучать учебник']
           : here.endsWith('tu.dorm-corridor:00') ? ['идти в комнату']
-          : here.endsWith('tu.yard:00') ? ['идти в жилой коридор']
+          : here.endsWith('tu.yard:00') ? ['идти в общагу']
           : ['идти во двор']
         : save.words['word-containment'] === 'white' ?
-          here.endsWith('tu.faculty-corridor:00') ? ['идти к лифту']
-          : here.endsWith('tu.elevator:00') ? ['идти в аудиторную галерею']
+          here.endsWith('tu.faculty-corridor:00') ? ['идти в лифт']
+          : here.endsWith('tu.elevator:00') ? ['ехать на этаж 1']
           : here.endsWith('tu.auditorium-gallery:00') ? ['идти в библиотеку']
           : here.endsWith('tu.library:00') ? ['говорить с библиотекаршей']
           : []
         : save.words['word-ahlers'] === 'white' ?
           here.endsWith('tu.dorm-room:00') ? ['идти в жилой коридор']
           : here.endsWith('tu.dorm-corridor:00') ? ['идти во двор']
-          : here.endsWith('tu.yard:00') ? ['идти в столовую']
-          : here.endsWith('tu.canteen:00') ? ['идти к лифту']
-          : here.endsWith('tu.elevator:00') ? ['идти в кафедральный коридор']
+          : here.endsWith('tu.yard:00') ? ['идти в учебный комплекс']
+          : here.endsWith('tu.auditorium-gallery:00') ? ['идти в лифт']
+          : here.endsWith('tu.canteen:00') ? ['идти в лифт']
+          : here.endsWith('tu.elevator:00') ? ['ехать на этаж 2']
           : here.endsWith('tu.faculty-corridor:00') ? ['осмотреть стенд программ']
           : []
         : ['говорить с тоби', 'что за алерс'];

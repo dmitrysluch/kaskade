@@ -221,3 +221,32 @@ test('разрыв во времени — атрибут узла, а не пе
   // Подпись из текста не съедается: она отдельная сущность.
   assert.equal(node.text, 'Ты чувствуешь руку на плече.');
 });
+
+test('выход узла пишется объектом вместе с локальной подписью', () => {
+  // ([[13a-локальные-подписи-выходов-тз]], «Формат»): состояние комнаты
+  // добавляет свои выходы тем же словарём, что frontmatter.
+  const doc = parseMarkdown(
+    'yard.md',
+    '---\nid: yard\ntype: room\npersistent: tu.yard\n---\n## ночью\n' +
+      '- exits: [{persistent: tu.dorm-corridor, target: в общагу}, {persistent: tu.library}]\n\nДвор.\n',
+  );
+
+  assert.deepEqual(doc.nodes.find((n) => n.id === 'ночью')!.attrs.exits, [
+    { ref: 'rooms-virt/tu.dorm-corridor', target: 'в общагу' },
+    { ref: 'rooms-virt/tu.library', target: null },
+  ]);
+});
+
+test('испорченная подпись выхода падает с именем файла и строкой', () => {
+  const bad = (exits: string) =>
+    parseMarkdown('yard.md', `---\nid: yard\ntype: room\n---\n## ночью\n- exits: ${exits}\n\nДвор.\n`);
+
+  assert.throws(() => bad('[{persistent: tu.yard, target: ""}]'), (e: Error) => {
+    assert.match(e.message, /пустая подпись/);
+    return true;
+  });
+  assert.throws(() => bad('[{persistent: tu.yard, verb: ехать}]'), (e: Error) => {
+    assert.match(e.message, /неизвестное поле "verb"/);
+    return true;
+  });
+});

@@ -1,7 +1,7 @@
 import { ContentError, type RawDoc } from './markdown.ts';
 import { emptyAttrs } from '../../shared/types.ts';
 import { parseDate } from '../../shared/dates.ts';
-import { parseRoomRef, roomRefOf } from '../../shared/rooms.ts';
+import { parseExit, parseRoomRef } from '../../shared/rooms.ts';
 
 /** Проверяем исходники до merge: иначе старые поля общей комнаты потеряются. */
 export function validateNavigationSource(doc: RawDoc, docId: string): void {
@@ -20,11 +20,19 @@ export function validateNavigationSource(doc: RawDoc, docId: string): void {
       fail('stage комнаты — строка, например "00"');
     }
     if (fm.available != null && typeof fm.available !== 'boolean') fail('available — булево поле');
-    if (fm.exits != null && (!Array.isArray(fm.exits) || fm.exits.some((ref) =>
-      !roomRefOf(ref) || (typeof ref === 'object' && ref !== null &&
-        Object.keys(ref).some((key) => !['persistent', 'stage', 'node'].includes(key))) ||
-      (typeof ref === 'object' && ref !== null && 'stage' in ref && typeof ref.stage !== 'string')))) {
-      fail('exits комнаты — список логических адресов {persistent, stage?, node?}, без ссылок на файлы');
+    if (fm.exits != null) {
+      if (!Array.isArray(fm.exits)) {
+        fail('exits комнаты — список логических адресов {persistent, stage?, node?, target?}, без ссылок на файлы');
+      }
+      for (const ref of fm.exits as unknown[]) {
+        // Строковая ссылка на файл выходом комнаты больше не бывает: помещение
+        // адресуется тройкой, а не путём ([[13-навигация-и-комнаты-тз]]).
+        if (typeof ref === 'string' && !parseRoomRef(ref)) {
+          fail(`выход "${ref}" — ссылка на файл; у комнаты выход это {persistent, stage?, node?, target?}`);
+        }
+        const parsed = parseExit(ref);
+        if (!parsed.ok) fail(parsed.reason);
+      }
     }
   }
   const inTransitions = /^episodes\/[^/]+\/transitions\/[^/]+$/.test(docId);

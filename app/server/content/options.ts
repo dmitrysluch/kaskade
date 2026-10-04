@@ -7,6 +7,7 @@ import {
   type GeneratorRef,
   type Option,
   type PendingOption,
+  type RoomExit,
 } from '../../shared/types.ts';
 
 /**
@@ -62,6 +63,14 @@ export interface RefBase {
   place: DocType;
 }
 
+/** Выход, у которого локальная подпись изменила текст команды. */
+interface Renamed {
+  label: string;
+  was: string;
+  ref: string;
+  line: number;
+}
+
 export interface ExpandContext {
   /** `[[файл#узел]]` → адрес. Бросает ContentError, если ссылка битая. */
   resolve(base: RefBase, ref: string, line: number): { docId: string; nodeId: string };
@@ -99,6 +108,19 @@ function form(target: TargetInfo, verb: string): string {
   return target.targets[verb] ?? target.target;
 }
 
+/**
+ * Чем заканчивается команда выхода ([[13a-локальные-подписи-выходов-тз]],
+ * «Генерация команды»): локальная подпись → форма глагола → форма комнаты →
+ * её название.
+ *
+ * Подпись принадлежит записи `exits` в этой комнате и больше нигде не живёт:
+ * «в общагу» со двора ничего не говорит ни о названии жилого коридора, ни
+ * о том, как называется выход обратно.
+ */
+function exitForm(exit: RoomExit, target: TargetInfo, verb: string): string {
+  return exit.target ?? form(target, verb);
+}
+
 function optionTo(
   ctx: ExpandContext,
   base: RefBase,
@@ -124,24 +146,29 @@ function kindOf(target: TargetInfo): Option['kind'] {
   return PLACES.includes(target.type) ? 'story' : 'environment';
 }
 
+/** Подписи бывают только у выходов: предмет и явный список — просто ссылки. */
+function plainRefs(refs: string[]): RoomExit[] {
+  return refs.map((ref) => ({ ref, target: null }));
+}
+
 function expandGenerator(
   ctx: ExpandContext,
   base: RefBase,
   gen: RawGenerator,
-  exits: string[],
+  exits: RoomExit[],
   items: string[],
-): { options: Option[]; pending: PendingOption[] } {
+): { options: Option[]; pending: PendingOption[]; renamed: Renamed[] } {
   const source = gen.source;
 
   if (source === 'words' || source === 'inventory') {
-    return { options: [], pending: [{ verb: gen.phrase, from: source }] };
+    return { options: [], pending: [{ verb: gen.phrase, from: source }], renamed: [] };
   }
 
   const verb = verbOf(gen.phrase);
   const refs =
-    Array.isArray(source) ? source
+    Array.isArray(source) ? plainRefs(source)
     : source === 'exits' ? exits
-    : source === 'items' ? items
+    : source === 'items' ? plainRefs(items)
     : null;
 
   if (refs === null) {
@@ -164,15 +191,23 @@ function expandGenerator(
       : null;
 
   const options: Option[] = [];
-  for (const ref of refs) {
+  const renamed: Renamed[] = [];
+  for (const exit of refs) {
+    const ref = exit.ref;
     const { docId: targetId } = ctx.resolve(base, ref, gen.line);
     const target = ctx.get(targetId)!;
 
     // Комната — место: `идти` ведёт в неё целиком, узел с именем глагола ей не нужен.
     if (PLACES.includes(target.type)) {
+      const text = label(gen.phrase, exitForm(exit, target, verb));
+      // Что команда называлась бы без подписи — нужно одной проверке: автор
+      // мог оставить подмену со старым текстом, и тогда рядом с ней появился
+      // бы прямой выход в обход сцены.
+      const was = label(gen.phrase, form(target, verb));
+      if (text !== was) renamed.push({ label: text, was, ref, line: gen.line });
       options.push(
         optionTo(ctx, base, ref, gen.line, (t) => ({
-          label: label(gen.phrase, form(t, verb)),
+          label: text,
           kind: kindOf(t),
           attrs: emptyAttrs(),
           verb,
@@ -209,7 +244,7 @@ function expandGenerator(
     );
   }
 
-  return { options, pending: [] };
+  return { options, pending: [], renamed };
 }
 
 /**
@@ -220,7 +255,7 @@ function expandGenerator(
  */
 export function docGenerators(
   doc: { type: DocType; nodes: { generators: RawGenerator[] }[] },
-  exits: string[],
+  exits: RoomExit[],
   items: string[],
 ): RawGenerator[] {
   const declared = doc.nodes.flatMap((n) => n.generators);
@@ -262,7 +297,7 @@ export function expandNode(
   ctx: ExpandContext,
   base: RefBase,
   node: RawNode,
-  exits: string[],
+  exits: RoomExit[],
   items: string[],
   generators: RawGenerator[],
 ): { options: Option[]; pending: PendingOption[]; generators: GeneratorRef[] } {
@@ -308,6 +343,26 @@ export function expandNode(
 
   for (const gen of generators) {
     const r = expandGenerator(ctx, base, gen, exits, items);
+
+    /*
+     * Устаревшая подмена ([[13a-локальные-подписи-выходов-тз]], «Авторские
+     * подмены выходов»). Выход переименовали локальной подписью, а авторская
+     * команда осталась с прежним текстом: она больше ничего не гасит, и рядом
+     * с ней появился бы прямой выход в обход написанной сцены. Молча это
+     * выглядит как «переименовал надпись — сломался сюжет», поэтому сборка
+     * останавливается и называет обе метки.
+     */
+    for (const exit of r.renamed) {
+      if (!authored.has(exit.was)) continue;
+      throw new ContentError(
+        base.path,
+        `узел "${node.id || 'вступление'}": команда «${exit.was}» перекрывала выход ${exit.ref}, ` +
+        `а он теперь называется «${exit.label}» — переименуйте подмену или удалите ветку, ` +
+        'иначе рядом с ней встанет прямой выход',
+        exit.line,
+      );
+    }
+
     options.push(...r.options.filter((o) => !authored.has(o.label)));
     pending.push(...r.pending);
   }

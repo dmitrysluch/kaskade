@@ -84,16 +84,39 @@ test('предметы складываются без повторов: пос�
   assert.deepEqual(room.items, ['00-window', '00-speaker', '04-letter']);
 });
 
+test('локальные подписи выходов наследуются и заменяются вместе со списком', () => {
+  // ([[13a-локальные-подписи-выходов-тз]], «Совместимость и объединение»)
+  const common = part('rooms/common-room', {
+    exits: [
+      { ref: 'rooms-virt/tu.dorm-corridor', target: 'в общагу' },
+      { ref: 'rooms-virt/tu.yard', target: null },
+    ],
+  });
+
+  // Версия своих выходов не объявила — весь общий список, вместе с подписями.
+  assert.deepEqual(merge(common, part('v', { stage: '04' })).exits, [
+    { ref: 'rooms-virt/tu.dorm-corridor', target: 'в общагу' },
+    { ref: 'rooms-virt/tu.yard', target: null },
+  ]);
+
+  // Версия объявила свои: подписи по `persistent` не доливаются. Выход без
+  // подписи берёт форму комнаты назначения, а не старую подпись общей части.
+  assert.deepEqual(
+    merge(common, part('v', { stage: '04', exits: [{ ref: 'rooms-virt/tu.dorm-corridor', target: null }] })).exits,
+    [{ ref: 'rooms-virt/tu.dorm-corridor', target: null }],
+  );
+});
+
 test('выходы версия заменяет целиком, и пустой список значит «выходов нет»', () => {
-  const common = part('c', { exits: ['rooms-virt/tu.dorm-corridor'] });
+  const common = part('c', { exits: [{ ref: 'rooms-virt/tu.dorm-corridor', target: null }] });
 
   // Версия молчит — берутся общие.
-  assert.deepEqual(merge(common, part('v', { stage: '04' })).exits, ['rooms-virt/tu.dorm-corridor']);
+  assert.deepEqual(merge(common, part('v', { stage: '04' })).exits, [{ ref: 'rooms-virt/tu.dorm-corridor', target: null }]);
 
   // Версия объявила свои — общие не дописываются.
   assert.deepEqual(
-    merge(common, part('v', { stage: '04', exits: ['rooms-virt/tu.yard'] })).exits,
-    ['rooms-virt/tu.yard'],
+    merge(common, part('v', { stage: '04', exits: [{ ref: 'rooms-virt/tu.yard', target: null }] })).exits,
+    [{ ref: 'rooms-virt/tu.yard', target: null }],
   );
 
   // Пустой список — это решение автора, а не отсутствие решения.

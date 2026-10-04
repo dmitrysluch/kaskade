@@ -6,6 +6,7 @@ import {
   formatRoomRef,
   isStarred,
   isVirtual,
+  parseExit,
   parseRoomRef,
   persistentOfAddr,
   roomRefOf,
@@ -75,6 +76,47 @@ test('объектная форма из exits читается тем же сл
   assert.equal(roomRefOf({ stage: '04' }), null);
   assert.equal(roomRefOf(42), null);
   assert.equal(roomRefOf(null), null);
+});
+
+test('запись выхода: адрес отдельно, подпись отдельно', () => {
+  // ([[13a-локальные-подписи-выходов-тз]], «Формат»)
+  const plain = parseExit({ persistent: 'tu.dorm-corridor' });
+  assert.deepEqual(plain, { ok: true, exit: { ref: 'rooms-virt/tu.dorm-corridor', target: null } });
+
+  const named = parseExit({ persistent: 'tu.dorm-corridor', target: ' в   общагу ' });
+  // Подпись нормализуется так же, как потом собирается команда.
+  assert.deepEqual(named, { ok: true, exit: { ref: 'rooms-virt/tu.dorm-corridor', target: 'в общагу' } });
+
+  // Адресные поля остаются адресными: подпись в адрес не попадает.
+  assert.deepEqual(parseExit({ persistent: 'tu.dorm-room', stage: '00', node: 'один', target: 'в комнату' }), {
+    ok: true,
+    exit: { ref: 'rooms-virt/tu.dorm-room:00#один', target: 'в комнату' },
+  });
+
+  // Строковая форма — тот же канон и никакой подписи.
+  assert.deepEqual(parseExit('rooms-virt/tu.yard'), {
+    ok: true,
+    exit: { ref: 'rooms-virt/tu.yard', target: null },
+  });
+});
+
+test('подпись выхода: непустая строка в одну строку, и никакого молчаливого fallback', () => {
+  const reason = (value: unknown): string => {
+    const parsed = parseExit(value);
+    assert.equal(parsed.ok, false, JSON.stringify(value));
+    return parsed.ok ? '' : parsed.reason;
+  };
+
+  assert.match(reason({ persistent: 'tu.yard', target: '' }), /пустая подпись/);
+  assert.match(reason({ persistent: 'tu.yard', target: '  ' }), /пустая подпись/);
+  assert.match(reason({ persistent: 'tu.yard', target: 'во\nдвор' }), /одну строку/);
+  assert.match(reason({ persistent: 'tu.yard', target: 2 }), /строка/);
+  assert.match(reason({ persistent: 'tu.yard', target: null }), /строка/);
+  assert.match(reason({ persistent: 'tu.yard', target: ['во двор'] }), /строка/);
+  assert.match(reason({ persistent: 'tu.yard', label: 'во двор' }), /неизвестное поле "label"/);
+  assert.match(reason({ persistent: 'tu.yard', verb: 'ехать' }), /неизвестное поле "verb"/);
+  assert.match(reason({ persistent: 'TU.Yard' }), /не разбирается в адрес/);
+  assert.match(reason(''), /пустая запись/);
 });
 
 test('канон один: как бы ни написали, наружу уходит одна форма', () => {

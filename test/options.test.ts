@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseMarkdown, ContentError } from '../app/server/content/markdown.ts';
 import { docGenerators, expandNode, type ExpandContext, type TargetInfo } from '../app/server/content/options.ts';
+import type { RoomExit } from '../app/shared/types.ts';
 
 /**
  * Раскрытие генераторов — то место, где «удобно автору» превращается в «одинаково
@@ -41,6 +42,27 @@ const TARGETS: Record<string, TargetInfo> = {
     inHand: [],
     pages: [],
   },
+  'rooms/библиотека': {
+    docId: 'rooms/библиотека',
+    type: 'room',
+    label: 'библиотека',
+    target: 'в библиотеку',
+    targets: { ехать: 'на автобусе в библиотеку' },
+    nodeIds: new Set(['', 'стойка']),
+    inHand: [],
+    pages: [],
+  },
+  'rooms/столовая': {
+    docId: 'rooms/столовая',
+    type: 'room',
+    label: 'столовая',
+    // Формы нет — у `TargetInfo` она совпадает с названием, как на сборке.
+    target: 'столовая',
+    targets: {},
+    nodeIds: new Set(['']),
+    inHand: [],
+    pages: [],
+  },
   'items/доска': {
     docId: 'items/доска',
     type: 'item',
@@ -70,9 +92,14 @@ function room(body: string) {
 /** База ссылок стенда: одна заметка, срез не задан — как у сцены. */
 const BASE = { path: 'room.md', baseDocId: 'rooms/пультовая', selfDocId: 'rooms/пультовая', stage: null, place: 'room' as const };
 
-/** Раскрыть вступление комнаты со стандартными генераторами. */
-function expand(doc: ReturnType<typeof room>, exits: string[], items: string[]) {
-  return expandNode(ctx, BASE, doc.nodes[0]!, exits, items, docGenerators(doc, exits, items));
+/**
+ * Раскрыть вступление комнаты со стандартными генераторами. Выход пишется
+ * строкой, когда подпись не при чём, и записью целиком, когда она есть
+ * ([[13a-локальные-подписи-выходов-тз]]).
+ */
+function expand(doc: ReturnType<typeof room>, exits: (string | RoomExit)[], items: string[]) {
+  const list = exits.map((e) => (typeof e === 'string' ? { ref: e, target: null } : e));
+  return expandNode(ctx, BASE, doc.nodes[0]!, list, items, docGenerators(doc, list, items));
 }
 
 test('комната без блока options ведёт себя очевидным образом', () => {
@@ -188,4 +215,97 @@ test('перекрытие считается по тексту: другая к
     options.map((o) => o.label),
     ['догнать его', 'идти в коридор'],
   );
+});
+
+/**
+ * Локальные подписи выходов ([[13a-локальные-подписи-выходов-тз]]).
+ *
+ * Одна и та же комната называется по-разному из разных точек входа: со двора
+ * идут «в общагу», из лифта — «на этаж 2». Подпись принадлежит записи `exits`
+ * и меняет только текст команды: адрес, категория и поведение те же.
+ */
+
+test('локальная подпись важнее формы глагола, формы комнаты и названия', () => {
+  const doc = room('\n```options\nехать: exits\n```\n');
+
+  // Без подписи работают прежние уровни: форма глагола, потом форма комнаты.
+  assert.deepEqual(
+    expand(doc, ['библиотека', 'коридор', 'столовая'], []).options.map((o) => o.label),
+    ['ехать на автобусе в библиотеку', 'ехать в коридор', 'ехать столовая'],
+  );
+
+  // С подписью — она, и ровно она, какой бы уровень ни был написан у цели.
+  assert.deepEqual(
+    expand(
+      doc,
+      [
+        { ref: 'библиотека', target: 'на этаж 1' },
+        { ref: 'коридор', target: 'на этаж 2' },
+        { ref: 'столовая', target: 'на этаж EG' },
+      ],
+      [],
+    ).options.map((o) => o.label),
+    ['ехать на этаж 1', 'ехать на этаж 2', 'ехать на этаж EG'],
+  );
+});
+
+test('подпись меняет текст, но не адрес, не категорию и не ход', () => {
+  const doc = room('\nОписание.\n');
+  const { options } = expand(doc, [{ ref: 'коридор', target: 'в общагу' }], []);
+  const [идти] = options;
+
+  assert.equal(идти!.label, 'идти в общагу');
+  assert.equal(идти!.target, 'rooms/коридор#');
+  assert.equal(идти!.object, 'rooms/коридор');
+  assert.equal(идти!.moves, true);
+  assert.equal(идти!.kind, 'story');
+});
+
+test('подпись локальна: вторая комната называет ту же цель иначе', () => {
+  const yard = room('\nДвор.\n');
+  const stairs = room('\nЛестница.\n');
+
+  assert.equal(expand(yard, [{ ref: 'коридор', target: 'в общагу' }], []).options[0]!.label, 'идти в общагу');
+  assert.equal(expand(stairs, [{ ref: 'коридор', target: 'наверх' }], []).options[0]!.label, 'идти наверх');
+  // Сама комната назначения не переименована: её форма на месте.
+  assert.equal(expand(stairs, ['коридор'], []).options[0]!.label, 'идти в коридор');
+});
+
+test('подпись живёт вместе с явным узлом в адресе', () => {
+  const doc = room('\nОписание.\n');
+  const { options } = expand(doc, [{ ref: 'библиотека#стойка', target: 'к стойке' }], []);
+
+  assert.equal(options[0]!.label, 'идти к стойке');
+  assert.equal(options[0]!.target, 'rooms/библиотека#стойка');
+});
+
+test('подписи бывают только у выходов: предмет и явный список их не получают', () => {
+  const doc = room('\n```options\nосмотреть: items\nидти: [коридор]\n```\n');
+  const { options } = expand(doc, [{ ref: 'коридор', target: 'в общагу' }], ['доска']);
+
+  // Явный список ссылок — не `exits`: подстановка к нему не применяется.
+  assert.deepEqual(options.map((o) => o.label), ['осмотреть доску', 'идти в коридор']);
+});
+
+test('авторская подмена сравнивается с итоговой меткой, а не с прежней', () => {
+  // Подмена переименована вслед за выходом: одна команда, ведёт в разговор.
+  const fixed = room('\nОписание.\n\n→ идти в общагу [[оклик#у-двери]]\n');
+  const { options } = expand(fixed, [{ ref: 'коридор', target: 'в общагу' }], []);
+  assert.deepEqual(options.map((o) => o.label), ['идти в общагу']);
+  assert.equal(options[0]!.target, 'scenes/оклик#у-двери');
+});
+
+test('устаревшая подмена после переименования — ошибка с обеими метками', () => {
+  const stale = room('\nОписание.\n\n→ идти в коридор [[оклик#у-двери]]\n');
+
+  assert.throws(
+    () => expand(stale, [{ ref: 'коридор', target: 'в общагу' }], []),
+    (e: unknown) =>
+      e instanceof ContentError &&
+      /«идти в коридор»/.test((e as Error).message) &&
+      /«идти в общагу»/.test((e as Error).message),
+  );
+
+  // Без подписи та же пара — обычное перекрытие.
+  assert.deepEqual(expand(stale, ['коридор'], []).options.map((o) => o.label), ['идти в коридор']);
 });

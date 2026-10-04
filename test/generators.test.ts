@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RULES } from '../app/server/validate/index.ts';
-import { content, doc, episode, node } from './helpers.ts';
+import { content, doc, episode, exit, node } from './helpers.ts';
 
 /**
  * Генератор, на который никто не отвечает, не выдаёт ни одной опции — и раньше
@@ -64,7 +64,7 @@ test('генератор с пустым источником ловится', (
   });
   const game = content({
     episodes: [episode('p', { verbs: ['осмотреть'] })],
-    docs: { 'episodes/p/rooms/r': doc('episodes/p/rooms/r', { type: 'room', nodes: [room], exits: ['x'] }) },
+    docs: { 'episodes/p/rooms/r': doc('episodes/p/rooms/r', { type: 'room', nodes: [room], exits: [exit('x')] }) },
   });
 
   const found = run('generators', game);

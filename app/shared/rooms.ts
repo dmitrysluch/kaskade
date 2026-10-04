@@ -16,7 +16,7 @@
  * (`app/server/content/rooms.ts`): оно работает с разобранными файлами.
  */
 
-import type { Doc, GameContent, Node, RoomRef } from './types.ts';
+import type { Doc, GameContent, Node, RoomExit, RoomRef } from './types.ts';
 
 /** Префикс виртуального адреса. Резолвер узнаёт его раньше файлового поиска. */
 export const VIRT = 'rooms-virt/';
@@ -99,6 +99,69 @@ export function roomRefOf(value: unknown): RoomRef | null {
     ...(stage != null && stage !== '' ? { stage } : {}),
     ...(node != null && node !== '' ? { node } : {}),
   };
+}
+
+/** Разрешённые поля объектного выхода: адрес и одна подпись, больше ничего. */
+const EXIT_KEYS = ['persistent', 'stage', 'node', 'target'];
+
+/**
+ * Подпись — буквальный однострочный текст. Нормализуется так же, как потом
+ * собирается команда: крайние и повторные пробелы значения не имеют.
+ */
+function caption(raw: string): string {
+  return raw.trim().replace(/\s+/g, ' ');
+}
+
+/**
+ * Разобрать запись `exits` ([[13a-локальные-подписи-выходов-тз]], «Валидация»).
+ *
+ * Возвращает причину, а не бросает: один и тот же разбор нужен и frontmatter
+ * комнаты, и атрибуту узла, а ругаться им приходится с разными файлами
+ * и строками. Молчаливого fallback нет нигде: число, список или пустая
+ * подпись — ошибка, а не повод подставить форму комнаты.
+ */
+export function parseExit(value: unknown): { ok: true; exit: RoomExit } | { ok: false; reason: string } {
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (text === '') return { ok: false, reason: 'пустая запись в exits' };
+    const ref = parseRoomRef(text);
+    return { ok: true, exit: { ref: ref ? formatRoomRef(ref) : text, target: null } };
+  }
+
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return { ok: false, reason: `выход "${String(value)}" — не адрес помещения {persistent, stage?, node?, target?}` };
+  }
+
+  const raw = value as Record<string, unknown>;
+  const unknown = Object.keys(raw).filter((key) => !EXIT_KEYS.includes(key));
+  if (unknown.length > 0) {
+    return { ok: false, reason: `у выхода неизвестное поле "${unknown[0]!}"; допустимы: ${EXIT_KEYS.join(', ')}` };
+  }
+  if ('stage' in raw && typeof raw.stage !== 'string') {
+    return { ok: false, reason: 'stage выхода — строка, например "04"' };
+  }
+
+  const ref = roomRefOf(raw);
+  if (!ref) return { ok: false, reason: `выход ${JSON.stringify(raw)} не разбирается в адрес помещения` };
+
+  if (!('target' in raw)) return { ok: true, exit: { ref: formatRoomRef(ref), target: null } };
+  if (typeof raw.target !== 'string') {
+    return { ok: false, reason: `подпись выхода ${ref.persistent} — строка, а не ${JSON.stringify(raw.target)}` };
+  }
+  if (/[\r\n]/.test(raw.target)) {
+    return { ok: false, reason: `подпись выхода ${ref.persistent} занимает одну строку` };
+  }
+  const target = caption(raw.target);
+  if (target === '') {
+    return { ok: false, reason: `пустая подпись выхода ${ref.persistent}: подпись либо есть, либо её нет` };
+  }
+
+  return { ok: true, exit: { ref: formatRoomRef(ref), target } };
+}
+
+/** Проекция в адреса: графу и планировщику срезов подписи не нужны. */
+export function exitRefs(exits: RoomExit[]): string[] {
+  return exits.map((e) => e.ref);
 }
 
 /** Обратно в канон: одна форма записи на весь движок. */
