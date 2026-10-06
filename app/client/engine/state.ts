@@ -710,6 +710,14 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
   /** Узел, на котором проход встал, и его текст в потоке — чтобы снять повтор. */
   let last: Node | undefined;
   let lastText: number | null = null;
+  /**
+   * Где в потоке начинался каждый контекст. Проход бывает длиннее одного места:
+   * разговор у двери кончается репликой Алерса и уводит в галерею, и эти
+   * реплики сказаны **до** того, как игрок вошёл. Метки нужны, чтобы реакция
+   * на повторный вход и граница посещения встали на свою границу, а не в
+   * начало всего, что проход успел показать.
+   */
+  const marks: { at: number; key: string | null }[] = [];
 
   while (current != null) {
     const addr = resolveTarget(content, state, current);
@@ -803,6 +811,7 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
       const { id, ms } = node.attrs.wait;
       state = { ...state, wait: { node: node.addr, id, ms, elapsed: 0 } };
     }
+    marks.push({ at: entries.length, key: logKey(content, state) });
     if (node.attrs.timeLabel) entries.push({ kind: 'time', text: node.attrs.timeLabel });
     /*
      * Приостановленный узел себя не повторяет: игрок его уже читал, и показать
@@ -855,7 +864,7 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
    * и ответ предмета новой попытки не дают.
    */
   return {
-    save: armPressure(content, context(content, save, state, { from, kept, entries, resuming, parked })),
+    save: armPressure(content, context(content, save, state, { from, kept, entries, marks, resuming, parked })),
     entries,
   };
 }
@@ -883,6 +892,8 @@ function context(
     from: string | null;
     kept: boolean;
     entries: StreamEntry[];
+    /** Где в потоке начинался каждый контекст прохода. */
+    marks: { at: number; key: string | null }[];
     resuming: boolean;
     /** Какая запись стека сработала возвратом. */
     parked: number | null;
@@ -940,9 +951,17 @@ function context(
   const node =
     changed && visited && !resuming ? content.nodes[`${sceneOf(after.episodeState.at)}#${REENTRY}`] : undefined;
   const reaction = node?.text ? [textEntry(content, after, interpolate(node.text, after))] : [];
+  /*
+   * Где кончается дорога и начинается это место. Проход бывает длиннее одного
+   * контекста: «Он выравнивает стопку о стол» сказано в разговоре у двери,
+   * и только следующий маршрут вводит игрока в галерею. Поэтому реакция на
+   * повторный вход встаёт не в начало прохода, а на эту границу — иначе
+   * комната здоровается раньше, чем собеседник договорил.
+   */
+  const began = beganAt(walk.marks, to, walk.entries.length);
   // Реакция становится частью того, что показано этим входом: и в логе,
   // и в `entries`, которые вернутся вызвавшему.
-  if (reaction.length > 0) walk.entries.unshift(...reaction);
+  if (reaction.length > 0) walk.entries.splice(began, 0, ...reaction);
 
   /*
    * Граница нового посещения (07-оболочка-тз, «Граница нового посещения»).
@@ -963,8 +982,25 @@ function context(
       ? [{ kind: 'visit' as const, text: '' }]
       : [];
 
-  logs[to] = [...base, ...border, ...walk.entries];
+  // Граница — там же, где реакция: она отделяет новое посещение, а не дорогу.
+  logs[to] = [...base, ...walk.entries.slice(0, began), ...border, ...walk.entries.slice(began)];
   return { ...after, logs, resume };
+}
+
+/**
+ * С какого места в потоке начался контекст, в котором проход остановился.
+ *
+ * Берётся последняя непрерывная череда меток этого ключа: если проход прошёл
+ * место насквозь, вышел и вернулся, границей является последний вход, а не
+ * первый. Меток нет — показывать нечего, и граница совпадает с концом.
+ */
+function beganAt(marks: { at: number; key: string | null }[], to: string | null, total: number): number {
+  let began = total;
+  for (let i = marks.length - 1; i >= 0; i--) {
+    if (marks[i]!.key !== to) break;
+    began = marks[i]!.at;
+  }
+  return began;
 }
 
 /** Тип заметки по адресу узла. */

@@ -22,6 +22,7 @@ import type { GameContent, SaveState } from '../app/shared/types.ts';
 const ROOM = 'episodes/p/rooms-virt/tu.dorm-room:00';
 const HALL = 'episodes/p/rooms-virt/tu.h1012:00';
 const TALK = 'episodes/p/scenes/talk';
+const DOOR = 'episodes/p/scenes/door';
 const BOOK = 'episodes/p/items/book';
 const roomKey = 'p|00|tu.dorm-room';
 
@@ -426,6 +427,51 @@ test('ни `log`, ни `reentry` — чистый поток и никакой �
   const g = game({ log: false, reentry: false });
   const away = enter(g, enter(g, save(), `${ROOM}#`).save, `${HALL}#`).save;
   assert.deepEqual(texts(g, enter(g, away, `${ROOM}#`).save), ['Комната на троих.']);
+});
+
+test('реакция на повторный вход идёт после того, что сказано по дороге', () => {
+  /*
+   * Проход бывает длиннее одного места: разговор у двери договаривает свою
+   * реплику и сам уводит в комнату. Реакция комнаты и граница посещения
+   * принадлежат входу, а не всему проходу, — иначе комната здоровается
+   * раньше, чем собеседник закончил.
+   */
+  const base = game();
+  // Разговор у двери: последняя реплика сказана здесь, а уводит она в комнату.
+  const g = content({
+    episodes: [episode('p', { entry: `${ROOM}#` })],
+    docs: {
+      ...base.docs,
+      [DOOR]: doc(DOOR, {
+        type: 'scene',
+        nodes: [
+          node(`${DOOR}#`, {
+            text: 'Он выравнивает стопку о стол.',
+            options: [option({ label: '', target: `${ROOM}#`, moves: true })],
+          }),
+        ],
+      }),
+    },
+  });
+
+  let s = enter(g, save(), `${ROOM}#`).save;
+  s = appendLog(g, s, [{ kind: 'echo', text: 'идти в аудиторию' }]);
+  s = enter(g, s, `${HALL}#`).save;
+  s = appendLog(g, s, [{ kind: 'echo', text: 'уйти' }]);
+  s = enter(g, s, `${DOOR}#`).save;
+
+  assert.equal(s.episodeState.at, `${ROOM}#`);
+  assert.deepEqual(
+    streamOf(g, s).map((e) => `${e.kind}: ${e.text}`),
+    [
+      'text: Комната на троих.',
+      'echo: идти в аудиторию',
+      'text: Он выравнивает стопку о стол.',
+      'visit: ',
+      'text: Тоби оборачивается к тебе.',
+      'text: Комната на троих.',
+    ],
+  );
 });
 
 test('повторный вход — это другое место, а не предмет и не оверлей', () => {
