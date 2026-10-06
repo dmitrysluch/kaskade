@@ -6,7 +6,7 @@ persistent: tu.faculty-corridor
 available: true
 label: кафедральный коридор
 target: в кафедральный коридор
-items: [00-program]
+items: [00-program, 03-door-202, 03-door-209, 03-door-217]
 exits:
   - persistent: tu.elevator
   - persistent: tu.secretariat
@@ -16,9 +16,22 @@ exits:
   - persistent: tu.doctoral-office
 ---
 
-Кафедральный коридор на втором этаже учебного корпуса. Рядом с лифтом — стенд программ.
+Двенадцать закрытых дверей вдоль коридора. Рядом с лифтом стенд программ.
+
+У лестницы служебный телефон и список внутренних номеров под стеклом.
+
+В торцевом окне видна парковка.
+
+→ [[#коридор]]
 
 ```options
 идти: exits
 осмотреть: items
 ```
+
+## коридор
+- items: [00-door-214, 00-numbers]
+
+## reentry
+
+Под стеклом списка номеров отражается окно на парковку.

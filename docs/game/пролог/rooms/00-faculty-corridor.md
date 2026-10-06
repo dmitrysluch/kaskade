@@ -5,5 +5,3 @@ persistent: tu.faculty-corridor
 stage: "00"
 available: true
 ---
-
-Дальше — закрытые кабинеты и окно в торце.

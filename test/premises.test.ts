@@ -76,7 +76,7 @@ test('свет переключается только в 01 и сохраняе
     },
   };
   for (let i = 0; i < 2; i++) {
-    assert.ok(labels(save).includes('уйти'), 'завершение дня доступно при обоих положениях света');
+    assert.ok(!labels(save).includes('уйти'), 'галерея не завершает день при любом положении света');
     save = act(save, 'переключить свет').save;
   }
   save = enter(game, start('03'), room('auditorium-gallery', '03')).save;

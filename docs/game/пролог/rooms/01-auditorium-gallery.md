@@ -4,7 +4,7 @@ type: room
 persistent: tu.auditorium-gallery
 stage: "01"
 available: true
-items: [01-notice]
+items: [01-board-notices, 01-coffee-machine]
 exits:
   - persistent: tu.yard
   - persistent: tu.library
@@ -12,16 +12,20 @@ exits:
   - persistent: tu.elevator
 ---
 
-Аудиторная галерея факультета, пусто, впереди лестница на выход.
-Автомат с кофе не работает с весны, на нём записка «[[ref-kaputt|kaputt]]» и смайлик.
-Из двадцати ламп горит половина: об экономии висит отдельная бумага.
-Доска объявлений во всю стену.
+Вдоль окон во двор тянется широкий подоконник. У стены кофейный автомат и доска объявлений.
 
-```options
-идти: exits
-осмотреть: items
-```
+→ [[#полусвет]]
 
-→ уйти [[transitions/02-club-entry]]
-  - if: prolog.after-lecture-done
-  - advance
+## свет
+- items: [campus-switch-on]
+
+Горят все двадцать ламп.
+
+→ переключить свет [[#полусвет]]
+
+## полусвет
+- items: [campus-switch-off]
+
+Горит десять ламп. Ряд у окон тёмный.
+
+→ переключить свет [[#свет]]

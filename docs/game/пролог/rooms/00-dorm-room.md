@@ -4,7 +4,7 @@ type: room
 persistent: tu.dorm-room
 stage: "00"
 available: true
-items: [00-computer, 00-schedule, 00-blister]
+items: [00-speaker, 00-window, 00-computer, 00-schedule, 00-blister]
 # Входной диспетчер выбирает состояние комнаты. Возврат с книгой имеет
 # приоритет: книга получена вне комнаты и сразу открывает `00-talk#с-книгой`.
 # Завершённый разговор возвращает прямо в `#после-разговора`, чтобы не
@@ -24,7 +24,9 @@ items: [00-computer, 00-schedule, 00-blister]
 ## комната
 - items: [00-toby]
 
-Комната на троих, теперь живут двое. На столе ноутбук и блистер, на подоконнике чужая колонка, на стене расписание.
+Три кровати. На третьей голый матрас, у стены свёрнуто одеяло.
+
+На столе ноутбук и блистер, на подоконнике колонка, на стене расписание.
 
 Тоби лежит поперёк своей кровати, ногами на стене, с ноутбуком на животе.
 
@@ -45,6 +47,7 @@ items: [00-computer, 00-schedule, 00-blister]
   - if: "has:00-book, !prolog.study-only-case"
 → лечь спать [[scenes/00-night]]
   - if: word:word-only-case
+  - advance
 
 ## один
 
@@ -54,6 +57,7 @@ items: [00-computer, 00-schedule, 00-blister]
   - if: "has:00-book, !prolog.study-only-case"
 → лечь спать [[scenes/00-night]]
   - if: word:word-only-case
+  - advance
 ## начало
 - once
 - give: 00-card

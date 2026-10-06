@@ -5,5 +5,3 @@ persistent: tu.elevator
 stage: "03"
 available: true
 ---
-
-Лифт соединяет столовую, аудиторную галерею и кафедральный этаж.

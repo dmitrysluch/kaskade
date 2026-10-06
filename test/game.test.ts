@@ -280,9 +280,15 @@ test('пролог проходится до конца, и на каждом ш
       const stage00 = save.activeStage === '00';
       const here = sceneOf(save.episodeState.at);
       const bearing = save.activeStage === '01' ?
-          save.flags['prolog.after-lecture-done'] ? ['уйти']
+          save.flags['prolog.after-lecture-done'] ?
+            here.endsWith('tu.dorm-room:01') ? ['лечь спать']
+            : here.endsWith('tu.dorm-corridor:01') ? ['идти в комнату']
+            : here.endsWith('tu.yard:01') ? ['идти в общагу']
+            : here.endsWith('tu.h1012:01') ? ['идти в аудиторную галерею']
+            : ['идти во двор']
           : here.endsWith('tu.auditorium-gallery:01') ? ['идти в аудиторию']
           : []
+        : save.activeStage === '02' && here.endsWith('tu.dorm-room:02') ? ['лечь спать']
         : !stage00 ? []
         : save.words['word-only-case'] === 'white' ? ['лечь спать', 'завалить деда']
         : save.inventory.includes('00-book') ?
@@ -580,12 +586,12 @@ test('предпросмотр берёт реплику Марго целево
   }
 
   /*
-   * За действием без реплики Марго предпросмотра нет. Берём ходьбу: у комнаты
-   * своих слов нет вовсе. Осмотр для этого уже не годится — в описаниях
-   * предметов теперь живут мысли Марго, и они её речь.
+   * За действием без реплики Марго предпросмотра нет. Вход в лифт содержит
+   * только описание кабины. В других комнатах и предметах бывают мысли Марго.
    */
-  const go = game.nodes['episodes/prolog/rooms-virt/tu.dorm-room:00#комната']!.options.find((o) => o.verb === 'идти')!;
-  assert.equal(previewOf(game, at('episodes/prolog/rooms-virt/tu.dorm-room:00#комната'), go), null);
+  const canteen = 'episodes/prolog/rooms-virt/tu.canteen:00#зал';
+  const go = game.nodes[canteen]!.options.find((o) => o.verb === 'идти')!;
+  assert.equal(previewOf(game, at(canteen), go), null);
 });
 
 test('предпросмотр проходит сквозь ремарку, но не сквозь чужую реплику', () => {
@@ -811,11 +817,9 @@ test('доска и Тоби независимо открывают несущ�
   assert.equal(program.words['word-containment'], 'white');
   assert.equal(program.flags['prolog.ahlers-program']?.value, true);
 
-  const library: SaveState = {
-    ...program,
-    openItem: null,
-    episodeState: { ...program.episodeState, at: 'episodes/prolog/rooms-virt/tu.library:00#' },
-  };
+  const library = enter(
+    game, { ...program, openItem: null }, 'episodes/prolog/rooms-virt/tu.library:00#',
+  ).save;
   let borrowed = library;
   for (const label of ['говорить с библиотекаршей', 'нужен Sicherheitsbehälter', 'протянуть билет', 'не моя, просто заинтересовало', 'забрать учебник']) {
     const action = buildCatalog(game, borrowed).find((o) => o.label === label)!;
