@@ -100,18 +100,33 @@ test('01: после лекции музыка появляется и при п
   assert.ok(labels(save).includes('заглянуть'), 'проход мимо не расходует встречу');
 });
 
-test('01: без объявления вопрос о музыке предшествует вопросу про басиста; после встречи можно спать', () => {
-  let save = enter(game, start('01', [AFTER]), room('dorm-corridor', '01')).save;
-  save = act(save, 'заглянуть');
-  assert.ok(labels(save).includes('что играете'));
-  assert.ok(!labels(save).includes('вам басист нужен'));
-  for (const label of ['что играете', 'вам басист нужен', 'а ты просто в ми миноре играй', 'выйти в коридор']) save = act(save, label);
-  assert.ok(!labels(save).includes('заглянуть'));
-  save = act(restored(save), 'идти в комнату');
-  assert.ok(labels(save).includes('лечь спать'));
+test('01: без объявления басист скрыт, обе музыкальные реплики доступны; после встречи можно спать', () => {
+  for (const reply of ['а начало Disorder тоже ваше', 'Warsaw ты хотел сказать']) {
+    let save = enter(game, start('01', [AFTER]), room('dorm-corridor', '01')).save;
+    save = act(save, 'заглянуть');
+    assert.ok(labels(save).includes('что играете'));
+    assert.ok(!buildCatalog(game, save).some(o => o.label === 'вам басист нужен'));
+    save = act(save, 'что играете');
+    assert.ok(!buildCatalog(game, save).some(o => o.label === 'вам басист нужен'), 'ветка не показывается даже заблокированной');
+    assert.ok(!buildCatalog(game, save).some(o => o.label === 'я и слэпить умею'));
+    assert.ok(labels(save).includes('а начало Disorder тоже ваше'));
+    assert.ok(labels(save).includes('Warsaw ты хотел сказать'));
+    save = act(restored(save), reply);
+    const exchange = game.nodes[save.episodeState.at]!.text;
+    if (reply === 'Warsaw ты хотел сказать') {
+      assert.match(exchange, /гитарист — Ты и демки слушала\?/);
+    } else {
+      assert.match(exchange, /вокалист — Я же говорил, рифф почти один в один\./);
+    }
+    assert.ok(!buildCatalog(game, save).some(o => o.label === 'вам басист нужен'));
+    save = act(save, 'выйти в коридор');
+    assert.ok(!labels(save).includes('заглянуть'));
+    save = act(restored(save), 'идти в комнату');
+    assert.ok(labels(save).includes('лечь спать'));
+  }
 });
 
-test('оба объявления запоминаются при осмотре и открывают прямой вопрос музыканту', () => {
+test('оба объявления открывают басиста только после общего вопроса «что играете»', () => {
   for (const stage of ['00', '01']) {
     let save = enter(game, start(stage), room('auditorium-gallery', stage)).save;
     save = act(save, 'осмотреть доску');
@@ -123,14 +138,37 @@ test('оба объявления запоминаются при осмотре
     if (stage === '00') save = changeStage(save, '01');
     save = enter(game, withFlags(save, [AFTER, 'prolog.lecture-done']), room('dorm-corridor', '01')).save;
     save = act(save, 'заглянуть');
+    assert.ok(labels(save).includes('что играете'));
+    assert.ok(!labels(save).includes('вам басист нужен'));
+    save = act(save, 'что играете');
     assert.ok(labels(save).includes('вам басист нужен'));
-    assert.ok(!labels(save).includes('что играете'));
+    assert.ok(labels(save).includes('а начало Disorder тоже ваше'));
+    assert.ok(labels(save).includes('Warsaw ты хотел сказать'));
+    for (const label of ['вам басист нужен', 'а ты просто в ми миноре играй', 'выйти в коридор']) save = act(save, label);
+    save = act(save, 'идти в комнату');
+    assert.ok(labels(save).includes('лечь спать'));
   }
 });
 
+test('01: слэп — второй ответ в ветке басиста, без выдачи инструмента и смены дня', () => {
+  let save = enter(game, start('01', [AFTER, NOTICE]), room('dorm-corridor', '01')).save;
+  for (const label of ['заглянуть', 'что играете', 'вам басист нужен']) save = act(save, label);
+  assert.ok(labels(save).includes('а ты просто в ми миноре играй'));
+  assert.ok(labels(save).includes('я и слэпить умею'));
+  const before = { inventory: save.inventory, flags: save.flags, date: save.currentDate };
+  save = act(restored(save), 'я и слэпить умею');
+  assert.match(game.nodes[save.episodeState.at]!.text, /марго — Я и слэпить умею\. А, ну да\. Вам же не надо\./);
+  assert.match(game.nodes[save.episodeState.at]!.text, /Гитарист перестаёт крутить колок\./);
+  assert.deepEqual({ inventory: save.inventory, flags: save.flags, date: save.currentDate }, before);
+  save = act(save, 'выйти в коридор');
+  assert.ok(!labels(save).includes('заглянуть'));
+  save = act(save, 'идти в комнату');
+  assert.ok(labels(save).includes('лечь спать'));
+});
+
 test('встречу можно оборвать на любой реплике, и после reload она не начинается заново', () => {
-  for (const path of [[], ['что играете'], ['что играете', 'вам басист нужен']]) {
-    let save = enter(game, start('01', [AFTER]), room('dorm-corridor', '01')).save;
+  for (const path of [[], ['что играете'], ['что играете', 'вам басист нужен'], ['что играете', 'а начало Disorder тоже ваше'], ['что играете', 'Warsaw ты хотел сказать']]) {
+    let save = enter(game, start('01', [AFTER, NOTICE]), room('dorm-corridor', '01')).save;
     save = act(save, 'заглянуть');
     for (const label of path) save = act(save, label);
     save = act(save, 'выйти в коридор');
