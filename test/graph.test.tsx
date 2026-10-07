@@ -8,7 +8,7 @@ import { ROOT } from '../app/server/content/paths.ts';
 import { debugSave } from '../app/client/adm/play.ts';
 import { allFlags } from '../app/client/adm/flags.ts';
 import { buildCatalog } from '../app/client/engine/catalog.ts';
-import { begin, streamOf } from '../app/client/engine/state.ts';
+import { begin, enter, openLevel, streamOf } from '../app/client/engine/state.ts';
 import { loadContent } from '../app/server/content/load.ts';
 import { movesFrom, sceneGraph, shortestPath, storyMap, walkSteps } from '../app/shared/graph.ts';
 import { SceneMap } from '../app/client/adm/Scene.tsx';
@@ -425,8 +425,28 @@ test('отладочный вход: сейв встаёт на узел и иг
   // и применяет его атрибуты.
   const session = begin(c, save);
   assert.equal(session.save.episodeState.at, addr);
-  assert.ok(streamOf(c, session.save).some((e) => e.text.includes('Прочитайте и верните')));
-  assert.ok(session.save.inventory.includes('02-protocol'), 'give узла отыгран');
+  assert.ok(streamOf(c, session.save).some((e) => e.text.includes('Прочитайте и подпишите')));
+  assert.equal(session.save.inventory.includes('02-protocol'), false, 'оригинал остался на столе');
+  assert.equal(session.save.inventory.includes('02-protocol-copy'), false, 'копия появится только после подписи');
+  const labels = buildCatalog(c, session.save).map((o) => o.label);
+  assert.equal(labels.includes('прочитать протокол'), true);
+  assert.equal(labels.includes('подписать протокол'), true);
+
+  const read = buildCatalog(c, session.save).find((o) => o.label === 'прочитать протокол')!;
+  const reading = {
+    ...enter(c, session.save, read.target!, read.moves).save,
+    openItem: openLevel(c, session.save, read),
+  };
+  const readingOptions = buildCatalog(c, reading);
+  assert.equal(readingOptions.some((o) => o.label === 'вперёд'), true, 'это ещё первая страница');
+  const close = readingOptions.find((o) => o.label === 'закрыть протокол')!;
+  const closed = { ...reading, openItem: openLevel(c, reading, close) };
+  assert.equal(closed.openItem, null, 'протокол можно закрыть, не дочитав');
+
+  const sign = buildCatalog(c, closed).find((o) => o.label === 'подписать протокол')!;
+  const signed = enter(c, closed, sign.target!, sign.moves).save;
+  assert.equal(signed.inventory.includes('02-protocol'), false);
+  assert.equal(signed.inventory.includes('02-protocol-copy'), true, 'после подписи выдают только копию');
 });
 
 test('отладочный вход живёт только на служебном адресе', () => {
