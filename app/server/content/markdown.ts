@@ -83,6 +83,8 @@ const ATTR_KEYS = new Set([
   'dates',
   // Помета на переходе: команда закрывает текущие возможности («Опция»).
   'advance',
+  // Помета на переходе: возможность заработана прежними действиями («Индикация»).
+  'earned',
   // Номер страницы предмета: секция становится состоянием, а не глаголом.
   'page',
   // Разрыв во времени перед кадром: подпись, а не строка прозы.
@@ -192,6 +194,8 @@ function parseAttrs(file: string, lines: { text: string; line: number }[]): Attr
         attrs.once = value !== false;
       } else if (key === 'advance') {
         attrs.advance = value !== false;
+      } else if (key === 'earned') {
+        attrs.earned = value !== false;
       } else if (key === 'wait') {
         const m = WAIT.exec(String(value).trim());
         if (!m) {

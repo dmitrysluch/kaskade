@@ -11,7 +11,7 @@
  * намеренно — метаинструкция не притворяется действием терминала.
  */
 
-import { ADVANCE_LEGEND, ADVANCE_MARK } from './lines.ts';
+import { ADVANCE_LEGEND, ADVANCE_MARK, EARNED_LEGEND, EARNED_MARK } from './lines.ts';
 import { TAP_HINT } from './mode.ts';
 
 const KEYS: [string, string][] = [
@@ -71,6 +71,13 @@ export function Manual({
             в автокомплите, чтобы узнать, что значит треугольник. */}
         <p className="manual-advance">
           <span className="advance">{ADVANCE_MARK}</span> {ADVANCE_LEGEND}
+        </p>
+
+        {/* Смысл звёздочки объясняется ровно здесь и один раз: в списке она
+            остаётся значком без подписи, иначе каждая заработанная реплика
+            тащила бы за собой объяснение и читалась бы как подсказка. */}
+        <p className="manual-advance">
+          <span className="earned">{EARNED_MARK}</span> {EARNED_LEGEND}
         </p>
 
         {/* Не «любая клавиша»: клавиша «дальше» в этой игре одна и та же везде —

@@ -473,6 +473,14 @@ export function optionAvailable(content: GameContent, save: SaveState, option: O
 interface Applied {
   save: SaveState;
   granted: string[];
+  /**
+   * Вещи, которые этот узел действительно забрал: их потерю надо показать
+   * (07-оболочка-тз, «Индикация заработанных реплик и потери предметов»).
+   *
+   * «Действительно» — ключевое: `take` у протокола стоит на возврате, и если
+   * бумаги на руках уже нет, объявлять потерю второй раз нечего.
+   */
+  taken: string[];
 }
 
 function applyAttrs(content: GameContent, save: SaveState, node: Node, stamp: string | null): Applied {
@@ -495,8 +503,10 @@ function applyAttrs(content: GameContent, save: SaveState, node: Node, stamp: st
       granted.push(name);
     }
   }
+  const taken: string[] = [];
   for (const name of node.attrs.take) {
     delete words[name];
+    if (inventory.includes(name)) taken.push(name);
     inventory = inventory.filter((x) => x !== name);
   }
 
@@ -533,6 +543,7 @@ function applyAttrs(content: GameContent, save: SaveState, node: Node, stamp: st
       episodeState: { ...save.episodeState, used },
     },
     granted,
+    taken,
   };
 }
 
@@ -552,6 +563,19 @@ function grantLine(content: GameContent, id: string, first: boolean): string {
   // живёт на `3`, — а строка та же.
   const label = Object.values(content.docs).find((d) => d.id === id)?.label ?? id;
   return `${label.toUpperCase()} — в инвентаре${first ? ', 3' : ''}`;
+}
+
+/**
+ * Потеря вещи видна так же, как выдача (07-оболочка-тз, «Индикация заработанных
+ * реплик и потери предметов»): `УЧЕБНИК — больше не в инвентаре`.
+ *
+ * Хоткея здесь нет намеренно: смотреть в инвентарь после того, как вещь оттуда
+ * ушла, незачем, — строка и есть весь ответ. Знаков `+` / `−` тоже: обе строки
+ * говорят словами, а различает их цвет.
+ */
+function lostLine(content: GameContent, id: string): string {
+  const label = Object.values(content.docs).find((d) => d.id === id)?.label ?? id;
+  return `${label.toUpperCase()} — больше не в инвентаре`;
 }
 
 /**
@@ -833,6 +857,11 @@ export function enter(content: GameContent, save: SaveState, addr: string, moves
         text: grantLine(content, id, word ? firstWord : firstItem),
         granted: { kind: word ? 'word' : 'item', id, label: label.toUpperCase() },
       });
+    });
+    // Потеря идёт после выдач: узел, который меняет вещь на вещь, сначала
+    // говорит, что дал, и только потом — что забрал.
+    applied.taken.forEach((id) => {
+      entries.push({ kind: 'lost', text: lostLine(content, id) });
     });
 
     const next: string | null = node.attrs.goto ?? nextRoute(content, state, node)?.target ?? null;

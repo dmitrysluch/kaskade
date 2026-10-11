@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ADVANCE_MARK, needsClass, PICK_MARK } from './lines.ts';
+import { ADVANCE_MARK, EARNED_MARK, needsClass, PICK_MARK } from './lines.ts';
 import { MARGIN, pad, type Seg } from './text.ts';
 import { familyLabel, type Row } from '../engine/families.ts';
 import type { CatalogOption } from '../engine/catalog.ts';
@@ -113,6 +113,7 @@ export function MobileScreen({ cols, status, stream, options, onPick, onBack, sy
                   .filter(Boolean)
                   .join(' ')}
               >
+                {row.kind === 'option' && option.attrs.earned ? `${EARNED_MARK} ` : ''}
                 {row.kind === 'option' && option.attrs.advance ? `${ADVANCE_MARK} ` : ''}
                 {label}
               </span>
