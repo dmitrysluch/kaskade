@@ -7,4 +7,4 @@ location: НОЙКЁЛЬН · ЗОННЕНАЛЛЕЕ
 timeLabel: восемь месяцев спустя
 ---
 
-→ [[scenes/02-club]]
+→ [[scenes/02-club-arrival]]
